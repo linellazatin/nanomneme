@@ -78,6 +78,15 @@ The CLI uses `./.nanomneme/memory.db` by default. Use `--global` for the dedicat
 global database, or `--db <path>` for another SQLite file. nanomneme does not merge
 global and project databases.
 
+## The 4Rs
+
+| Operation | What it does |
+|---|---|
+| `retain` | Creates a memory, or explicitly patches/restores one by `id`. It never deduplicates by content. |
+| `recall` | Resolves one known active, unexpired memory by `id`; returns no result when absent. |
+| `retrieve` | Discovers active memories with FTS5/BM25 text search, filters, ordering, and pagination. It can inspect expired records when requested. |
+| `remove` | Soft-deletes by default. `--purge` permanently deletes the memory, its tags, and its FTS entry. |
+
 ```sh
 # Retain or explicitly patch a memory.
 nmnm retain "Prefer concise documentation" --kind preference --tags docs,style
@@ -94,7 +103,7 @@ nmnm remove <memory-id> --purge
 nmnm retrieve "interfaces" --global
 ```
 
-Use `--json` with every command for stable machine-readable output:
+Use [`--json` with every command for stable machine-readable output](#json-responses):
 
 ```sh
 nmnm retrieve "SQLite" --namespace nanomneme --json
@@ -106,19 +115,6 @@ use `--expires expired` or `--expires any` to inspect expiry state. Text queries
 FTS5 syntax and rank by BM25. Without a query, results are ordered by most recently
 updated memory. `--expires` accepts `active`, `expired`, or `any`; `--order-by` accepts
 `id`, `created_at`, `updated_at`, `importance`, `confidence`, or `relevance` with a query.
-
-## Record fields
-
-`retain` requires `content` for a new record. Its defaults are:
-
-```text
-kind=note  scope=project  namespace=default  importance=0.5  confidence=1.0
-```
-
-Optional fields are `kind`, `scope`, `namespace`, `tags`, `metadata` (a JSON object),
-`expires_at`, `importance`, and `confidence`. Updates require the target `id`; content
-similarity never modifies an existing record. `retain --global` changes the default
-new-record scope to `global`; it does not alter the scope of an `--id` patch.
 
 ## Database schema
 
@@ -167,6 +163,144 @@ The composite primary key is `(memory_id, tag)`.
 
 v0.0.1 stores `schema_version=1`.
 
+## Record fields
+
+`retain` requires `content` for a new record. Its defaults are:
+
+```text
+kind=note  scope=project  namespace=default  importance=0.5  confidence=1.0
+```
+
+Sample `retain`:
+
+```bash
+> node packages/nmnm-cli/bin/nmnm.js retain "Always sample the samples before sampling"
+
+  ID: 0807d...
+  Content: Always sample the samples before sampling
+  Kind: note
+  Scope: project
+  Namespace: default
+  Tags:
+```
+```bash
+> node packages/nmnm-cli/bin/nmnm.js retain "Use nanomneme for any memory handling" --global \
+  --kind decision --tags architecture,storage
+
+  ID: 6e5cd...
+  Content: Use nanomneme for any memory handling
+  Kind: decision
+  Scope: global
+  Namespace: default
+  Tags: architecture, storage
+```
+
+Optional fields are `kind`, `scope`, `namespace`, `tags`, `metadata` (a JSON object),
+`expires_at`, `importance`, and `confidence`. Updates require the target `id`; content
+similarity never modifies an existing record. `retain --global` changes the default
+new-record scope to `global`; it does not alter the scope of an `--id` patch.
+
+## JSON responses
+
+Use `--json` for valid machine-readable JSON.
+
+### Memory object
+
+`retain` returns this object. `recall` returns this object or `null`. Each
+`retrieve.items` entry uses it; `score` appears only for a text query.
+
+```jsonc
+{
+  "id": "0807d73a-33ff-4583-86e7-c6555594dc8e", // generated UUID v4
+  "content": "Always sample the samples before sampling", // memory text
+  "kind": "note", // note | decision | preference | fact | instruction
+  "scope": "project", // project | global
+  "namespace": "default", // logical partition in this database
+  "importance": 0.5, // caller priority, 0..1
+  "confidence": 1, // caller certainty, 0..1
+  "created_at": "2026-08-25T10:39:24.997Z", // creation time
+  "updated_at": "2026-08-25T10:39:24.997Z", // latest write time
+  "expires_at": null, // UTC expiry timestamp, or null
+  "removed_at": null, // soft-removal timestamp, or null
+  "metadata": {}, // caller JSON object
+  "tags": [], // normalized tag slugs
+  "score": -9.243697478991598e-7 // FTS5 relevance, text retrieve only
+}
+```
+
+`score` is not stored memory data and is unrelated to `importance` or `confidence`.
+It is SQLite FTS5's BM25 relevance value. nanomneme orders it ascending, so a lower
+(more negative) value ranks first. See [SQLite FTS5 BM25](https://www.sqlite.org/fts5.html#the_bm25_function).
+
+### `retain --json`
+
+Returns the memory object above after creation, explicit patching, or restoration.
+`score` is omitted.
+
+### `recall <id> --json`
+
+Returns the memory object above for one active, unexpired ID; otherwise returns `null`:
+
+### `retrieve [query] --json`
+
+```jsonc
+{
+  "total": 1, // all matches before limit and offset
+  "items": [
+    { /* memory object above; score is included only when query is supplied */ }
+  ]
+}
+```
+
+### `remove <id> --json`
+
+Soft removal is the default. A missing active record returns `null`.
+
+```jsonc
+{ 
+  "id": "0807d73a-33ff-4583-86e7-c6555594dc8e", 
+  "mode": "soft", 
+  "removed_at": "2026-08-25T10:40:00.000Z" 
+} // restorable
+
+{ 
+  "id": "0807d73a-33ff-4583-86e7-c6555594dc8e", 
+  "mode": "hard", 
+  "purged_at": "2026-08-25T10:41:00.000Z" 
+} // --purge; irreversible
+```
+
+## Runtime references
+
+- [Node.js 22 `node:sqlite` documentation](https://nodejs.org/download/release/v22.23.2/docs/api/sqlite.html)
+- [SQLite FTS5 and BM25 documentation](https://www.sqlite.org/fts5.html#the_bm25_function)
+
+## Operations and recovery
+
+`remove` is a soft delete by default. It removes the record from ordinary recall and
+retrieve operations, but retains the row, tags, and ID. Restore it with `retain --id`:
+
+```sh
+nmnm remove <memory-id>
+nmnm retain "Restored or updated content" --id <memory-id>
+```
+
+Use `--purge` only when permanent deletion is intended. It deletes the memory row,
+its tags, and its full-text entry; the ID cannot be restored.
+
+```sh
+nmnm remove <memory-id> --purge
+```
+
+To back up a database, close all nanomneme processes and copy its SQLite file:
+
+```sh
+cp .nanomneme/memory.db memory-backup.db
+```
+
+The database is ordinary SQLite and can be inspected with any SQLite tool. Direct
+writes are unsupported because they can desynchronize the FTS index and tags.
+
 ## Namespace
 
 `namespace` partitions memories within one SQLite database and is an AND-filter, not
@@ -200,38 +334,3 @@ memory_id  tag
 
 The project record would normally live in `./.nanomneme/memory.db`; the global record
 would live in `~/.local/share/nanomneme/memory.db`. Both use the same schema.
-
-## Operations and recovery
-
-`remove` is a soft delete by default. It removes the record from ordinary recall and
-retrieve operations, but retains the row, tags, and ID. Restore it with `retain --id`:
-
-```sh
-nmnm remove <memory-id>
-nmnm retain "Restored or updated content" --id <memory-id>
-```
-
-Use `--purge` only when permanent deletion is intended. It deletes the memory row,
-its tags, and its full-text entry; the ID cannot be restored.
-
-```sh
-nmnm remove <memory-id> --purge
-```
-
-To back up a database, close all nanomneme processes and copy its SQLite file:
-
-```sh
-cp .nanomneme/memory.db memory-backup.db
-```
-
-The database is ordinary SQLite and can be inspected with any SQLite tool. Direct
-writes are unsupported because they can desynchronize the FTS index and tags.
-
-## Not in v0.0.1
-
-- MCP or harness adapters
-- global-plus-project database merging
-- restore or permanent purge commands
-- record history, supersession, or automatic consolidation
-- vectors, embeddings, rerankers, or LLM calls
-- syncing, server mode, encryption, or multi-user support

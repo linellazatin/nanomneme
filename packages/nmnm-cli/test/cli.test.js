@@ -42,9 +42,18 @@ test('CLI performs all 4Rs with JSON output', async () => {
 test('CLI prints readable output without --json and reports invalid input', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-cli-'));
   const db = join(directory, 'memory.db');
-  const result = run('retain', 'Readable output', '--db', db);
+  const result = run(
+    'retain', 'Readable output', '--db', db,
+    '--importance', '0.8', '--confidence', '0.9', '--metadata', '{"source":"test"}',
+  );
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /^ID: /m);
+  assert.match(result.stdout, /^Importance: 0.8$/m);
+  assert.match(result.stdout, /^Confidence: 0.9$/m);
+  assert.match(result.stdout, /^Expires: never$/m);
+  assert.match(result.stdout, /^Created: \d{4}-\d{2}-\d{2}T/m);
+  assert.match(result.stdout, /^Updated: \d{4}-\d{2}-\d{2}T/m);
+  assert.match(result.stdout, /^Metadata: {"source":"test"}$/m);
 
   const invalid = run('retain', '--db', db);
   assert.notEqual(invalid.status, 0);
@@ -102,10 +111,12 @@ test('CLI restores soft removals and purges with an explicit flag', async () => 
   const restored = run('retain', 'Restored target', '--id', memory.id, '--db', db, '--json');
   assert.equal(JSON.parse(restored.stdout).content, 'Restored target');
   const purged = run('remove', memory.id, '--purge', '--db', db, '--json');
-  assert.equal(JSON.parse(purged.stdout).mode, 'hard');
+  assert.equal(JSON.parse(purged.stdout).mode, 'purge');
   const readableTarget = JSON.parse(run('retain', 'Readable purge target', '--db', db, '--json').stdout);
   const purgedReadable = run('remove', readableTarget.id, '--purge', '--db', db);
   assert.match(purgedReadable.stdout, /^Purged: /m);
+  assert.match(purgedReadable.stdout, /^Mode: purge$/m);
+  assert.match(purgedReadable.stdout, /^Purged at: \d{4}-\d{2}-\d{2}T/m);
 
   const invalid = run('retrieve', '--purge', '--db', db);
   assert.notEqual(invalid.status, 0);

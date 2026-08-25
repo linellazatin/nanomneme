@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.0.2 - 2026-08-25
+
+### Changed
+
+- Rename permanent removal mode from `hard` to `purge`, matching `--purge`.
+- Expand readable retain and recall output; readable remove output now includes mode and timestamp.
+
 ## 0.0.1 - 2026-08-25
 
 ### Added

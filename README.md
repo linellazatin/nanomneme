@@ -109,6 +109,11 @@ Use [`--json` with every command for stable machine-readable output](#json-respo
 nmnm retrieve "SQLite" --namespace nanomneme --json
 ```
 
+Without `--json`, `retain` and `recall` print the complete stored record: identity,
+content, classification, scores, tags, expiry, timestamps, and metadata. `retrieve`
+stays compact for scanning; use `recall <id>` to inspect one result. `remove` prints
+the selected mode and its removal or purge timestamp.
+
 `retrieve` combines every supplied filter with AND. When multiple tags are supplied,
 each returned memory has every requested tag. Active memories are returned by default;
 use `--expires expired` or `--expires any` to inspect expiry state. Text queries use
@@ -257,16 +262,16 @@ Returns the memory object above for one active, unexpired ID; otherwise returns 
 Soft removal is the default. A missing active record returns `null`.
 
 ```jsonc
-{ 
-  "id": "0807d73a-33ff-4583-86e7-c6555594dc8e", 
-  "mode": "soft", 
-  "removed_at": "2026-08-25T10:40:00.000Z" 
+{
+  "id": "0807d73a-33ff-4583-86e7-c6555594dc8e",
+  "mode": "soft", // soft | purge
+  "removed_at": "2026-08-25T10:40:00.000Z"
 } // restorable
 
-{ 
-  "id": "0807d73a-33ff-4583-86e7-c6555594dc8e", 
-  "mode": "hard", 
-  "purged_at": "2026-08-25T10:41:00.000Z" 
+{
+  "id": "0807d73a-33ff-4583-86e7-c6555594dc8e",
+  "mode": "purge", // soft | purge
+  "purged_at": "2026-08-25T10:41:00.000Z"
 } // --purge; irreversible
 ```
 

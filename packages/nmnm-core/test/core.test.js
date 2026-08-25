@@ -136,18 +136,18 @@ test('retain restores a soft-removed memory and preserves unspecified fields', a
   assert.equal(store.retrieve({ query: 'Restored' }).items[0].id, memory.id);
 });
 
-test('hard remove permanently deletes active and soft-removed memories', async (t) => {
+test('purge remove permanently deletes active and soft-removed memories', async (t) => {
   const store = await createStore(t);
   const active = store.retain({ content: 'Active purge target', tags: ['active'] });
-  const purgedActive = store.remove({ id: active.id, mode: 'hard' });
-  assert.equal(purgedActive.mode, 'hard');
+  const purgedActive = store.remove({ id: active.id, mode: 'purge' });
+  assert.equal(purgedActive.mode, 'purge');
   assert.equal(store.retrieve({ query: 'Active purge' }).total, 0);
   assert.throws(() => store.retain({ id: active.id, content: 'Cannot restore' }), /does not exist/);
 
   const removed = store.retain({ content: 'Removed purge target', tags: ['removed'] });
   store.remove({ id: removed.id });
-  const purgedRemoved = store.remove({ id: removed.id, mode: 'hard' });
-  assert.equal(purgedRemoved.mode, 'hard');
+  const purgedRemoved = store.remove({ id: removed.id, mode: 'purge' });
+  assert.equal(purgedRemoved.mode, 'purge');
   assert.throws(() => store.retain({ id: removed.id, content: 'Cannot restore' }), /does not exist/);
 });
 
@@ -168,5 +168,6 @@ test('enforces canonical public field conventions', async (t) => {
   assert.throws(() => store.retain({ content: 'x', importance: 1.1 }), /importance/);
   assert.throws(() => store.retrieve({ limit: 0 }), /limit/);
   assert.throws(() => store.retrieve({ confidence: { gte: 2 } }), /confidence/);
+  assert.throws(() => store.remove({ id: '00000000-0000-4000-8000-000000000000', mode: 'hard' }), /mode/);
   assert.throws(() => store.remove({ id: '00000000-0000-4000-8000-000000000000', mode: 'forever' }), /mode/);
 });

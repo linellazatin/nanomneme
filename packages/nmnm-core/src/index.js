@@ -245,20 +245,20 @@ export function open(path) {
     },
 
     remove({ id, mode = 'soft' }) {
-      if (!['soft', 'hard'].includes(mode)) throw new TypeError('mode must be soft or hard');
+      if (!['soft', 'purge'].includes(mode)) throw new TypeError('mode must be soft or purge');
       const memory = read(memoryId(id), mode === 'soft');
       if (!memory) return null;
       const timestamp = new Date().toISOString();
       transaction(() => {
         db.prepare('DELETE FROM memories_fts WHERE rowid = (SELECT rowid FROM memories WHERE id = ?)').run(memory.id);
-        if (mode === 'hard') {
+        if (mode === 'purge') {
           db.prepare('DELETE FROM memory_tags WHERE memory_id = ?').run(memory.id);
           db.prepare('DELETE FROM memories WHERE id = ?').run(memory.id);
         } else {
           db.prepare('UPDATE memories SET removed_at = ?, updated_at = ? WHERE id = ?').run(timestamp, timestamp, memory.id);
         }
       });
-      return mode === 'hard'
+      return mode === 'purge'
         ? { id: memory.id, mode, purged_at: timestamp }
         : { id: memory.id, mode, removed_at: timestamp };
     },

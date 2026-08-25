@@ -102,15 +102,21 @@ function readable(value) {
     const rows = value.items.map((memory) => `${memory.id}  ${memory.kind}  ${memory.content}`).join('\n');
     return `Total: ${value.total}${rows ? `\n${rows}` : ''}\n`;
   }
-  if (value.purged_at) return `Purged: ${value.id}\n`;
-  if (value.removed_at) return `Removed: ${value.id}\n`;
+  if (value.purged_at) return `Purged: ${value.id}\nMode: ${value.mode}\nPurged at: ${value.purged_at}\n`;
+  if (value.removed_at) return `Removed: ${value.id}\nMode: ${value.mode}\nRemoved at: ${value.removed_at}\n`;
   return [
     `ID: ${value.id}`,
     `Content: ${value.content}`,
     `Kind: ${value.kind}`,
     `Scope: ${value.scope}`,
     `Namespace: ${value.namespace}`,
-    `Tags: ${value.tags.join(', ')}`,
+    `Importance: ${value.importance}`,
+    `Confidence: ${value.confidence}`,
+    `Tags: ${value.tags.join(', ') || 'none'}`,
+    `Expires: ${value.expires_at ?? 'never'}`,
+    `Created: ${value.created_at}`,
+    `Updated: ${value.updated_at}`,
+    `Metadata: ${JSON.stringify(value.metadata)}`,
   ].join('\n') + '\n';
 }
 
@@ -139,7 +145,7 @@ export function main(args = process.argv.slice(2)) {
     } else if (command === 'retrieve') result = store.retrieve(retrieveInput(positionals, options));
     else if (command === 'remove') {
       if (positionals.length !== 1) throw new TypeError('remove requires an id');
-      result = store.remove({ id: positionals[0], mode: options.purge ? 'hard' : 'soft' });
+      result = store.remove({ id: positionals[0], mode: options.purge ? 'purge' : 'soft' });
     } else throw new TypeError(`unknown command: ${command}`);
     return { result, json: options.json };
   } finally {

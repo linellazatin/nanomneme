@@ -1,12 +1,12 @@
 {
   "name": "nmnm-cli",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "type": "module",
   "bin": {
     "nmnm": "./bin/nmnm.js"
   },
   "dependencies": {
-    "nmnm-core": "0.0.1"
+    "nmnm-core": "0.0.2"
   },
   "engines": {
     "node": ">=22.13.0"

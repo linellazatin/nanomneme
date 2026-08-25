@@ -1,0 +1,14 @@
+{
+  "name": "nmnm-cli",
+  "version": "0.0.1",
+  "type": "module",
+  "bin": {
+    "nmnm": "./bin/nmnm.js"
+  },
+  "dependencies": {
+    "nmnm-core": "0.0.1"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  }
+}

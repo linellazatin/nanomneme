@@ -10,7 +10,7 @@ embeddings, a vector store, a server, or background processing.
 nmnm CLI
    |
    v
-nmnm-core: retain / recall / retrieve / remove
+nmnm-core: 4Rs + verify, export/import, and FTS repair
    |
    v
 node:sqlite + SQLite FTS5
@@ -72,7 +72,11 @@ From this workspace:
 npm install
 node packages/nmnm-cli/bin/nmnm.js retain "Use SQLite for storage" \
   --kind decision --tags architecture,storage
+nmnm --version
 ```
+
+`nmnm --version` (or `nmnm -v`) prints the installed CLI version without opening or
+creating a database.
 
 The CLI uses `./.nanomneme/memory.db` by default. Use `--global` for the dedicated
 global database, or `--db <path>` for another SQLite file. nanomneme does not merge
@@ -101,7 +105,17 @@ nmnm remove <memory-id>
 nmnm retain "Updated documentation preference" --id <memory-id>
 nmnm remove <memory-id> --purge
 nmnm retrieve "interfaces" --global
+nmnm verify --json
+nmnm export --out memory.jsonl
+nmnm import memory.jsonl --db restored.db --json
+nmnm repair --rebuild-fts --json
 ```
+
+`verify`, `export`, `import`, and `repair` are maintenance/portability operations, not
+additional memory operations. `verify` is a report-only database diagnostic. It checks
+schema, SQLite integrity, field conventions, foreign keys, tags, and FTS consistency.
+It never repairs a database. A defect report exits with status `1`; a missing database
+also fails rather than creating an empty SQLite file.
 
 Use [`--json` with every command for stable machine-readable output](#json-responses):
 
@@ -163,10 +177,12 @@ The composite primary key is `(memory_id, tag)`.
 
 | Column | Type | Default | Description and allowed values |
 |---|---|---|---|
-| `key` | `TEXT` | `schema_version` | Core-owned metadata key. v0.0.1 creates only `schema_version`. |
-| `value` | `TEXT` | `1` | Value for `schema_version` in v0.0.1. |
+| `key` | `TEXT` | `schema_version` | Core-owned metadata key. The current schema stores only `schema_version`. |
+| `value` | `TEXT` | `1` | Current schema version. |
 
-v0.0.1 stores `schema_version=1`.
+New databases start at `schema_version=1`. Future cores apply registered forward
+migrations transactionally. A database created by a newer core, or an existing
+unversioned database, is rejected without modification.
 
 ## Record fields
 
@@ -275,10 +291,47 @@ Soft removal is the default. A missing active record returns `null`.
 } // --purge; irreversible
 ```
 
+### `verify --json`
+
+Verification always returns a report. `issues` is empty when `ok` is `true`; otherwise
+each group identifies the failed check, its count, and affected memory IDs or schema
+object names.
+
+```jsonc
+{
+  "ok": false,
+  "schema_version": 1,
+  "issues": [
+    {
+      "code": "fts_missing", // sqlite_integrity | foreign_key | schema_* | memory_field | tag_field | fts_*
+      "count": 1,
+      "ids": ["0807d73a-33ff-4583-86e7-c6555594dc8e"]
+    }
+  ]
+}
+```
+
 ## Runtime references
 
 - [Node.js 22 `node:sqlite` documentation](https://nodejs.org/download/release/v22.23.2/docs/api/sqlite.html)
 - [SQLite FTS5 and BM25 documentation](https://www.sqlite.org/fts5.html#the_bm25_function)
+
+## Portability and repair
+
+`export` writes canonical JSONL: a format header followed by one complete record per
+line. Active, expired, and soft-removed records are included; transient `score` is not.
+Use `--out <file>` for a file or omit it to write JSONL to stdout. `import <file>`
+validates the complete input before opening the destination and commits atomically;
+duplicate or existing IDs reject the whole import.
+
+```sh
+nmnm export --out memory.jsonl
+nmnm import memory.jsonl --db another.db --json
+```
+
+`repair --rebuild-fts` rebuilds only derived FTS rows for active memories, then runs
+verification. It never changes canonical records, tags, metadata, or schema and exits
+nonzero if verification still reports issues.
 
 ## Operations and recovery
 
@@ -304,7 +357,9 @@ cp .nanomneme/memory.db memory-backup.db
 ```
 
 The database is ordinary SQLite and can be inspected with any SQLite tool. Direct
-writes are unsupported because they can desynchronize the FTS index and tags.
+writes are unsupported because they can desynchronize the FTS index and tags. Use
+`nmnm verify` to diagnose this drift; it reports defects but never repairs or changes
+stored data.
 
 ## Namespace
 

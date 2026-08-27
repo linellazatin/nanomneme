@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
@@ -10,6 +10,29 @@ const ORDER_FIELDS = new Set(['id', 'created_at', 'updated_at', 'importance', 'c
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const SLUG = /^[a-z][a-z0-9-]*$/;
 const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+const SCHEMA_VERSION = 1;
+const SCHEMA = `
+  CREATE TABLE nmnm_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;
+  CREATE TABLE memories (
+    id TEXT PRIMARY KEY, content TEXT NOT NULL, kind TEXT NOT NULL, scope TEXT NOT NULL,
+    namespace TEXT NOT NULL, importance REAL NOT NULL, confidence REAL NOT NULL,
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL, expires_at TEXT, removed_at TEXT,
+    metadata TEXT NOT NULL
+  ) STRICT;
+  CREATE TABLE memory_tags (
+    memory_id TEXT NOT NULL REFERENCES memories(id), tag TEXT NOT NULL,
+    PRIMARY KEY (memory_id, tag)
+  ) STRICT;
+  CREATE VIRTUAL TABLE memories_fts USING fts5(content);
+  INSERT INTO nmnm_meta(key, value) VALUES ('schema_version', '${SCHEMA_VERSION}');
+`;
+const SCHEMA_COLUMNS = {
+  nmnm_meta: ['key', 'value'],
+  memories: ['id', 'content', 'kind', 'scope', 'namespace', 'importance', 'confidence', 'created_at', 'updated_at', 'expires_at', 'removed_at', 'metadata'],
+  memory_tags: ['memory_id', 'tag'],
+  memories_fts: ['content'],
+};
+const MIGRATIONS = new Map();
 
 function text(value, name) {
   if (typeof value !== 'string' || !value.trim()) throw new TypeError(`${name} must be a non-empty string`);
@@ -84,30 +107,91 @@ function integer(value, name, fallback, minimum) {
   return value;
 }
 
-export function open(path) {
+function schemaVersion(db) {
+  const meta = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'nmnm_meta'").get();
+  if (!meta) throw new Error('database is not a versioned nanomneme database');
+  const row = db.prepare("SELECT value FROM nmnm_meta WHERE key = 'schema_version'").get();
+  if (!row || !/^[1-9]\d*$/.test(row.value)) throw new Error('database has an invalid nanomneme schema_version');
+  return Number(row.value);
+}
+
+function migrate(db, version) {
+  let current = version;
+  while (current < SCHEMA_VERSION) {
+    const migration = MIGRATIONS.get(current);
+    if (!migration) throw new Error(`database schema version ${current} has no migration path to ${SCHEMA_VERSION}`);
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      migration(db);
+      current += 1;
+      db.prepare("UPDATE nmnm_meta SET value = ? WHERE key = 'schema_version'").run(String(current));
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+  return current;
+}
+
+function issueReporter() {
+  const issues = new Map();
+  return {
+    add(code, id = null) {
+      const issue = issues.get(code) ?? { code, count: 0, ids: [] };
+      issue.count += 1;
+      if (id != null) issue.ids.push(String(id));
+      issues.set(code, issue);
+    },
+    list() {
+      return [...issues.values()]
+        .map((issue) => ({ ...issue, ids: [...new Set(issue.ids)].sort() }))
+        .sort((left, right) => left.code.localeCompare(right.code));
+    },
+  };
+}
+
+function importedRecord(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('import records must be objects');
+  for (const field of ['id', 'content', 'kind', 'scope', 'namespace', 'importance', 'confidence', 'created_at', 'updated_at', 'expires_at', 'removed_at', 'metadata', 'tags']) {
+    if (!Object.hasOwn(value, field)) throw new TypeError(`import record is missing ${field}`);
+  }
+  const createdAt = date(value.created_at, 'created_at');
+  const updatedAt = date(value.updated_at, 'updated_at');
+  if (!createdAt || !updatedAt) throw new TypeError('import record timestamps are required');
+  return {
+    id: memoryId(value.id),
+    content: text(value.content, 'content'),
+    kind: kind(value.kind),
+    scope: scope(value.scope),
+    namespace: slug(value.namespace, 'namespace'),
+    importance: score(value.importance, 'importance'),
+    confidence: score(value.confidence, 'confidence'),
+    created_at: createdAt,
+    updated_at: updatedAt,
+    expires_at: date(value.expires_at, 'expires_at'),
+    removed_at: date(value.removed_at, 'removed_at'),
+    metadata: metadata(value.metadata),
+    tags: tags(value.tags),
+  };
+}
+
+export function open(path, { create = true } = {}) {
   text(path, 'path');
-  mkdirSync(dirname(path), { recursive: true });
+  if (typeof create !== 'boolean') throw new TypeError('create must be a boolean');
+  const fresh = !existsSync(path);
+  if (fresh && !create) throw new Error(`database does not exist: ${path}`);
+  if (fresh) mkdirSync(dirname(path), { recursive: true });
   const db = new DatabaseSync(path, { timeout: 5000 });
-  db.exec(`
-    PRAGMA foreign_keys = ON;
-    CREATE TABLE IF NOT EXISTS nmnm_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;
-    CREATE TABLE IF NOT EXISTS memories (
-      id TEXT PRIMARY KEY, content TEXT NOT NULL, kind TEXT NOT NULL, scope TEXT NOT NULL,
-      namespace TEXT NOT NULL, importance REAL NOT NULL, confidence REAL NOT NULL,
-      created_at TEXT NOT NULL, updated_at TEXT NOT NULL, expires_at TEXT, removed_at TEXT,
-      metadata TEXT NOT NULL
-    ) STRICT;
-    CREATE TABLE IF NOT EXISTS memory_tags (
-      memory_id TEXT NOT NULL REFERENCES memories(id), tag TEXT NOT NULL,
-      PRIMARY KEY (memory_id, tag)
-    ) STRICT;
-    INSERT OR IGNORE INTO nmnm_meta(key, value) VALUES ('schema_version', '1');
-  `);
   try {
-    db.exec('CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(content)');
+    db.exec('PRAGMA foreign_keys = ON;');
+    const version = fresh ? (db.exec(SCHEMA), SCHEMA_VERSION) : schemaVersion(db);
+    if (version > SCHEMA_VERSION) throw new Error(`database schema version ${version} is newer than this version of nanomneme`);
+    migrate(db, version);
   } catch (error) {
     db.close();
-    throw new Error('SQLite FTS5 support is required', { cause: error });
+    if (fresh && /fts5/i.test(error.message)) throw new Error('SQLite FTS5 support is required', { cause: error });
+    throw error;
   }
 
   const active = 'm.removed_at IS NULL AND (m.expires_at IS NULL OR m.expires_at > ?)';
@@ -242,6 +326,101 @@ export function open(path) {
         if (query) throw new TypeError(`invalid FTS5 query: ${error.message}`);
         throw error;
       }
+    },
+
+    export() {
+      return db.prepare('SELECT * FROM memories ORDER BY id').all().map(hydrate).map(({ score: _score, ...memory }) => memory);
+    },
+
+    import(records) {
+      if (!Array.isArray(records)) throw new TypeError('import records must be an array');
+      const next = records.map(importedRecord);
+      const ids = new Set();
+      for (const record of next) {
+        if (ids.has(record.id)) throw new RangeError(`import contains duplicate id ${record.id}`);
+        ids.add(record.id);
+        if (db.prepare('SELECT 1 FROM memories WHERE id = ?').get(record.id)) throw new RangeError(`memory ${record.id} already exists`);
+      }
+      transaction(() => {
+        for (const record of next) {
+          db.prepare(`INSERT INTO memories (id, content, kind, scope, namespace, importance, confidence, created_at, updated_at, expires_at, removed_at, metadata) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+            .run(record.id, record.content, record.kind, record.scope, record.namespace, record.importance, record.confidence, record.created_at, record.updated_at, record.expires_at, record.removed_at, JSON.stringify(record.metadata));
+          writeTags(record.id, record.tags);
+          if (record.removed_at == null) syncFts(record.id, record.content);
+        }
+      });
+      return { imported: next.length };
+    },
+
+    rebuildFts() {
+      const ftsSchema = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'memories_fts'").get();
+      if (!ftsSchema || !/^CREATE VIRTUAL TABLE\s+memories_fts\s+USING\s+fts5\b/i.test(ftsSchema.sql)) throw new Error('a valid SQLite FTS5 table is required to rebuild FTS');
+      const rebuilt = db.prepare('SELECT COUNT(*) AS count FROM memories WHERE removed_at IS NULL').get().count;
+      transaction(() => {
+        db.exec('DELETE FROM memories_fts');
+        db.exec('INSERT INTO memories_fts(rowid, content) SELECT rowid, content FROM memories WHERE removed_at IS NULL');
+      });
+      return { mode: 'rebuild-fts', rebuilt };
+    },
+
+    verify() {
+      const report = issueReporter();
+      const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all().map(({ name }) => name);
+      for (const [table, columns] of Object.entries(SCHEMA_COLUMNS)) {
+        if (!tables.includes(table)) {
+          report.add('schema_missing', table);
+          continue;
+        }
+        const actual = db.prepare(`PRAGMA table_info(${table})`).all().map(({ name }) => name);
+        if (columns.some((column) => !actual.includes(column))) report.add('schema_columns', table);
+      }
+      const ftsSchema = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'memories_fts'").get();
+      if (ftsSchema && !/^CREATE VIRTUAL TABLE\s+memories_fts\s+USING\s+fts5\b/i.test(ftsSchema.sql)) report.add('schema_fts', 'memories_fts');
+      for (const row of db.prepare('PRAGMA integrity_check').all()) {
+        const value = Object.values(row)[0];
+        if (value !== 'ok') report.add('sqlite_integrity');
+      }
+      for (const row of db.prepare('PRAGMA foreign_key_check').all()) report.add('foreign_key', `${row.table}:${row.rowid}`);
+
+      const memories = tables.includes('memories')
+        ? db.prepare('SELECT rowid, * FROM memories ORDER BY id').all()
+        : [];
+      for (const memory of memories) {
+        try {
+          memoryId(memory.id);
+          text(memory.content, 'content');
+          kind(memory.kind);
+          scope(memory.scope);
+          slug(memory.namespace, 'namespace');
+          score(memory.importance, 'importance');
+          score(memory.confidence, 'confidence');
+          date(memory.created_at, 'created_at');
+          date(memory.updated_at, 'updated_at');
+          date(memory.expires_at, 'expires_at');
+          date(memory.removed_at, 'removed_at');
+          metadata(JSON.parse(memory.metadata));
+        } catch {
+          report.add('memory_field', memory.id);
+        }
+      }
+      if (tables.includes('memory_tags')) {
+        for (const tag of db.prepare('SELECT memory_id, tag FROM memory_tags ORDER BY memory_id, tag').all()) {
+          try { memoryId(tag.memory_id); slug(tag.tag, 'tag'); } catch { report.add('tag_field', tag.memory_id); }
+        }
+      }
+      if (tables.includes('memories_fts') && tables.includes('memories')) {
+        const fts = new Map(db.prepare('SELECT rowid, content FROM memories_fts').all().map((row) => [row.rowid, row]));
+        for (const memory of memories) {
+          const indexed = fts.get(memory.rowid);
+          fts.delete(memory.rowid);
+          if (memory.removed_at != null && indexed) report.add('fts_removed', memory.id);
+          else if (memory.removed_at == null && !indexed) report.add('fts_missing', memory.id);
+          else if (indexed && indexed.content !== memory.content) report.add('fts_mismatch', memory.id);
+        }
+        for (const rowid of fts.keys()) report.add('fts_orphan', rowid);
+      }
+      const issues = report.list();
+      return { ok: issues.length === 0, schema_version: SCHEMA_VERSION, issues };
     },
 
     remove({ id, mode = 'soft' }) {

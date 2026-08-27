@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.0.3 - 2026-08-27
+
+### Added
+
+- Transactional schema-version lifecycle checks and an explicit `verify` diagnostic.
+- `nmnm verify` with readable and JSON reports; detected defects exit with status `1`.
+- Canonical JSONL `export`/`import` with atomic validation and ID conflict checks.
+- Explicit `repair --rebuild-fts` for rebuilding derived full-text rows.
+- Add `nmnm --version` and `nmnm -v` CLI flags.
+
 ## 0.0.2 - 2026-08-25
 
 ### Changed

@@ -1,12 +1,69 @@
 import assert from 'node:assert/strict';
-import { access, mkdtemp } from 'node:fs/promises';
+import { access, mkdtemp, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 const cli = fileURLToPath(new URL('../bin/nmnm.js', import.meta.url));
+
+test('CLI reports its package version without opening a database', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-version-'));
+  const long = runIn(directory, '--version');
+  const short = runIn(directory, '-v');
+
+  assert.equal(long.status, 0, long.stderr);
+  assert.equal(short.status, 0, short.stderr);
+  assert.equal(long.stdout, '0.0.3\n');
+  assert.equal(short.stdout, '0.0.3\n');
+  await assert.rejects(access(join(directory, '.nanomneme', 'memory.db')));
+});
+
+test('CLI exports canonical JSONL and imports it atomically', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-portable-cli-'));
+  const source = join(directory, 'source.db');
+  const target = join(directory, 'target.db');
+  const first = JSON.parse(run('retain', 'Portable CLI memory', '--db', source, '--tags', 'portable', '--json').stdout);
+  const removed = JSON.parse(run('retain', 'Removed portable CLI memory', '--db', source, '--json').stdout);
+  run('remove', removed.id, '--db', source);
+
+  const exported = run('export', '--db', source);
+  assert.equal(exported.status, 0, exported.stderr);
+  const lines = exported.stdout.trimEnd().split('\n').map((line) => JSON.parse(line));
+  assert.deepEqual(lines[0], { _format: 'nanomneme', _version: 1 });
+  assert.equal(lines.length, 3);
+  const file = join(directory, 'memory.jsonl');
+  await writeFile(file, exported.stdout);
+
+  const imported = run('import', file, '--db', target, '--json');
+  assert.equal(imported.status, 0, imported.stderr);
+  assert.deepEqual(JSON.parse(imported.stdout), { imported: 2 });
+  assert.equal(JSON.parse(run('recall', first.id, '--db', target, '--json').stdout).id, first.id);
+  assert.equal(JSON.parse(run('recall', removed.id, '--db', target, '--json').stdout), null);
+});
+
+test('CLI repairs FTS only with the explicit rebuild flag', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-repair-cli-'));
+  const db = join(directory, 'memory.db');
+  const memory = JSON.parse(run('retain', 'Repair CLI target', '--db', db, '--json').stdout);
+  const raw = new DatabaseSync(db);
+  const row = raw.prepare('SELECT rowid FROM memories WHERE id = ?').get(memory.id);
+  raw.prepare('DELETE FROM memories_fts WHERE rowid = ?').run(row.rowid);
+  raw.close();
+
+  const repaired = run('repair', '--rebuild-fts', '--db', db, '--json');
+  assert.equal(repaired.status, 0, repaired.stderr);
+  assert.deepEqual(JSON.parse(repaired.stdout), {
+    mode: 'rebuild-fts',
+    rebuilt: 1,
+    verification: { ok: true, schema_version: 1, issues: [] },
+  });
+  const missingFlag = run('repair', '--db', db);
+  assert.notEqual(missingFlag.status, 0);
+  assert.match(missingFlag.stderr, /--rebuild-fts is required/);
+});
 
 function run(...args) {
   return spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8' });
@@ -37,6 +94,40 @@ test('CLI performs all 4Rs with JSON output', async () => {
   const removed = run('remove', memory.id, '--db', db, '--json');
   assert.equal(JSON.parse(removed.stdout).id, memory.id);
   assert.equal(JSON.parse(run('recall', memory.id, '--db', db, '--json').stdout), null);
+});
+
+test('CLI verifies existing project and global databases', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-verify-cli-'));
+  const db = join(directory, 'memory.db');
+  const retained = JSON.parse(run('retain', 'Verify CLI target', '--db', db, '--json').stdout);
+  const healthy = run('verify', '--db', db, '--json');
+  assert.equal(healthy.status, 0, healthy.stderr);
+  assert.deepEqual(JSON.parse(healthy.stdout), { ok: true, schema_version: 1, issues: [] });
+  const readable = run('verify', '--db', db);
+  assert.equal(readable.status, 0, readable.stderr);
+  assert.match(readable.stdout, /^OK$/m);
+  assert.match(readable.stdout, /^Schema version: 1$/m);
+
+  const raw = new DatabaseSync(db);
+  const row = raw.prepare('SELECT rowid FROM memories WHERE id = ?').get(retained.id);
+  raw.prepare('DELETE FROM memories_fts WHERE rowid = ?').run(row.rowid);
+  raw.close();
+  const damaged = run('verify', '--db', db, '--json');
+  assert.equal(damaged.status, 1);
+  assert.equal(JSON.parse(damaged.stdout).issues[0].code, 'fts_missing');
+
+  const home = await mkdtemp(join(tmpdir(), 'nmnm-verify-home-'));
+  runIn(home, 'retain', 'Global verify target', '--global');
+  const global = runIn(home, 'verify', '--global', '--json');
+  assert.equal(global.status, 0, global.stderr);
+  assert.equal(JSON.parse(global.stdout).ok, true);
+
+  const missing = run('verify', '--db', join(directory, 'missing.db'));
+  assert.notEqual(missing.status, 0);
+  assert.match(missing.stderr, /does not exist/);
+  const unexpectedArgument = run('verify', 'unexpected', '--db', db);
+  assert.notEqual(unexpectedArgument.status, 0);
+  assert.match(unexpectedArgument.stderr, /does not accept arguments/);
 });
 
 test('CLI prints readable output without --json and reports invalid input', async () => {

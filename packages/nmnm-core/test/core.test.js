@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 
 import { open } from '../src/index.js';
@@ -12,6 +13,125 @@ async function createStore(t) {
   t.after(() => store.close());
   return store;
 }
+
+test('open refuses a missing database when creation is disabled', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-open-'));
+  const path = join(directory, 'missing.db');
+
+  assert.throws(() => open(path, { create: false }), /does not exist/);
+});
+
+test('open rejects a database created by a newer schema', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-schema-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  store.close();
+  const db = new DatabaseSync(path);
+  db.prepare("UPDATE nmnm_meta SET value = '2' WHERE key = 'schema_version'").run();
+  db.close();
+
+  assert.throws(() => open(path), /newer than this version of nanomneme/);
+});
+
+test('open rejects an existing unversioned database', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-unversioned-'));
+  const path = join(directory, 'memory.db');
+  const db = new DatabaseSync(path);
+  db.exec('CREATE TABLE memories (id TEXT PRIMARY KEY) STRICT');
+  db.close();
+
+  assert.throws(() => open(path), /not a versioned nanomneme database/);
+});
+
+test('verify reports a healthy database without modifying it', async (t) => {
+  const store = await createStore(t);
+  const memory = store.retain({ content: 'Verify target', tags: ['integrity'] });
+
+  assert.deepEqual(store.verify(), { ok: true, schema_version: 1, issues: [] });
+  assert.equal(store.recall({ id: memory.id }).id, memory.id);
+});
+
+test('verify reports field, tag, and FTS defects without repairing them', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-verify-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  t.after(() => store.close());
+  const active = store.retain({ content: 'Original FTS content' });
+  const removed = store.retain({ content: 'Soft removed FTS content' });
+  store.remove({ id: removed.id });
+  const db = new DatabaseSync(path);
+  t.after(() => db.close());
+  db.exec('PRAGMA foreign_keys = OFF');
+  db.prepare("UPDATE memories SET content = ?, kind = ? WHERE id = ?").run('Changed canonical content', 'summary', active.id);
+  db.prepare('INSERT INTO memory_tags(memory_id, tag) VALUES (?, ?)').run(active.id, 'Invalid Tag');
+  const removedRow = db.prepare('SELECT rowid FROM memories WHERE id = ?').get(removed.id);
+  db.prepare('INSERT INTO memories_fts(rowid, content) VALUES (?, ?)').run(removedRow.rowid, 'Soft removed FTS content');
+  db.prepare('INSERT INTO memories_fts(rowid, content) VALUES (?, ?)').run(9999, 'Orphan FTS content');
+
+  const result = store.verify();
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.issues.map(({ code }) => code), ['fts_mismatch', 'fts_orphan', 'fts_removed', 'memory_field', 'tag_field']);
+  assert.equal(db.prepare('SELECT content FROM memories_fts WHERE rowid = ?').get(removedRow.rowid).content, 'Soft removed FTS content');
+});
+
+test('verify requires an FTS5 virtual table rather than a same-named table', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-verify-schema-'));
+  const path = join(directory, 'memory.db');
+  const initial = open(path);
+  initial.close();
+  const db = new DatabaseSync(path);
+  db.exec('DROP TABLE memories_fts; CREATE TABLE memories_fts (content TEXT NOT NULL) STRICT');
+  db.close();
+  const store = open(path);
+  t.after(() => store.close());
+
+  assert.equal(store.verify().issues.find(({ code }) => code === 'schema_fts').ids[0], 'memories_fts');
+});
+
+test('export preserves canonical records, including expired and soft-removed memories', async (t) => {
+  const store = await createStore(t);
+  const active = store.retain({ content: 'Active export target', metadata: { source: 'test' }, tags: ['portable'] });
+  const removed = store.retain({ content: 'Removed export target', tags: ['portable'] });
+  store.remove({ id: removed.id });
+  const expired = store.retain({ content: 'Expired export target', expires_at: '2000-01-01T00:00:00.000Z' });
+
+  const records = store.export();
+  assert.deepEqual(records.map(({ id }) => id), [active.id, expired.id, removed.id].sort());
+  assert.equal(records.find(({ id }) => id === active.id).metadata.source, 'test');
+  assert.equal(Object.hasOwn(records[0], 'score'), false);
+  assert.equal(records.find(({ id }) => id === removed.id).removed_at != null, true);
+});
+
+test('import round-trips records and rejects conflicts atomically', async (t) => {
+  const source = await createStore(t);
+  const memory = source.retain({ content: 'Portable memory', tags: ['portable'], metadata: { source: 'test' } });
+  const records = source.export();
+  const target = await createStore(t);
+
+  assert.deepEqual(target.import(records), { imported: 1 });
+  assert.deepEqual(target.recall({ id: memory.id }), memory);
+  assert.throws(() => target.import([
+    records[0],
+    { ...records[0], id: '11111111-1111-4111-8111-111111111111' },
+  ]), /already exists/);
+  assert.equal(target.retrieve({}).total, 1);
+});
+
+test('rebuildFts repairs derived rows without changing canonical memories', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-rebuild-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  t.after(() => store.close());
+  const first = store.retain({ content: 'First rebuild target' });
+  const second = store.retain({ content: 'Second rebuild target' });
+  const db = new DatabaseSync(path);
+  db.prepare('DELETE FROM memories_fts WHERE rowid = (SELECT rowid FROM memories WHERE id = ?)').run(first.id);
+  db.prepare('INSERT INTO memories_fts(rowid, content) VALUES (?, ?)').run(9999, 'Orphan rebuild row');
+  db.close();
+  assert.deepEqual(store.rebuildFts(), { mode: 'rebuild-fts', rebuilt: 2 });
+  assert.equal(store.verify().ok, true);
+  assert.equal(store.recall({ id: first.id }).content, 'First rebuild target');
+});
 
 test('retain creates an active memory that recall returns', async (t) => {
   const store = await createStore(t);

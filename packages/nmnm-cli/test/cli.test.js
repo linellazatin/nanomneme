@@ -225,6 +225,44 @@ test('CLI retrieves project then global memories with --both', async () => {
   );
 });
 
+test('CLI paginates --both across the project-first result sequence', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-both-page-'));
+  runIn(directory, 'retain', 'Project first', '--importance', '0.1');
+  const projectSecond = JSON.parse(runIn(directory, 'retain', 'Project second', '--importance', '0.2', '--json').stdout);
+  const globalFirst = JSON.parse(runIn(directory, 'retain', 'Global first', '--global', '--importance', '0.3', '--json').stdout);
+  runIn(directory, 'retain', 'Global second', '--global', '--importance', '0.4');
+
+  const result = runIn(directory, 'retrieve', '--both', '--order-by', 'importance', '--offset', '1', '--limit', '2', '--json');
+
+  assert.equal(result.status, 0, result.stderr);
+  const retrieved = JSON.parse(result.stdout);
+  assert.equal(retrieved.total, 4);
+  assert.deepEqual(
+    retrieved.items.map(({ id, store }) => ({ id, store })),
+    [{ id: projectSecond.id, store: 'project' }, { id: globalFirst.id, store: 'global' }],
+  );
+});
+
+test('CLI keeps duplicate IDs from both stores as separate results', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-both-duplicate-'));
+  const memory = JSON.parse(runIn(directory, 'retain', 'Duplicated identity', '--json').stdout);
+  const exported = runIn(directory, 'export');
+  const file = join(directory, 'memory.jsonl');
+  await writeFile(file, exported.stdout);
+  const imported = runIn(directory, 'import', file, '--global');
+  assert.equal(imported.status, 0, imported.stderr);
+
+  const result = runIn(directory, 'retrieve', 'Duplicated', '--both', '--json');
+
+  assert.equal(result.status, 0, result.stderr);
+  const retrieved = JSON.parse(result.stdout);
+  assert.equal(retrieved.total, 2);
+  assert.deepEqual(
+    retrieved.items.map(({ id, store }) => ({ id, store })),
+    [{ id: memory.id, store: 'project' }, { id: memory.id, store: 'global' }],
+  );
+});
+
 test('CLI restricts --both to unambiguous retrieval', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-both-flags-'));
   const customDb = join(directory, 'custom.db');

@@ -185,6 +185,8 @@ export function main(args = process.argv.slice(2)) {
   if (command === 'retrieve' && options.both) {
     const result = { items: [], total: 0 };
     const input = retrieveInput(positionals, options);
+    const offset = input.offset ?? 0;
+    const end = offset + (input.limit ?? 20);
     for (const [storeName, path] of [
       ['project', databasePath({}, { create: false })],
       ['global', databasePath({ global: true }, { create: false })],
@@ -192,13 +194,15 @@ export function main(args = process.argv.slice(2)) {
       if (!existsSync(path)) continue;
       const store = open(path, { create: false });
       try {
-        const retrieved = store.retrieve(input);
+        // ponytail: fetch one page prefix per store; use store-aware offsets if large offsets become common.
+        const retrieved = store.retrieve({ ...input, limit: end, offset: 0 });
         result.total += retrieved.total;
         result.items.push(...retrieved.items.map((memory) => ({ store: storeName, ...memory })));
       } finally {
         store.close();
       }
     }
+    result.items = result.items.slice(offset, end);
     return { result, json: options.json, failed: false };
   }
   const db = databasePath(options, { create: !readonly });

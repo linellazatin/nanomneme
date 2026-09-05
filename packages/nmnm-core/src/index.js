@@ -311,7 +311,7 @@ export function open(path, { create = true } = {}) {
       }
       const orderBy = selector.order_by ?? (query ? 'relevance' : 'updated_at');
       const ordering = orderBy === 'relevance' && query
-        ? 'score ASC, m.id ASC'
+        ? 'score ASC, m.importance DESC, m.id ASC'
         : ORDER_FIELDS.has(orderBy)
           ? `m.${orderBy} ${orderBy === 'updated_at' ? 'DESC' : 'ASC'}, m.id ASC`
           : null;

@@ -241,7 +241,7 @@ test('retrieve baseline preserves deterministic relevance and explicit ordering'
   assert.deepEqual(store.retrieve({ query: 'SQLite memory retrieval', namespace: 'retrieval' }).items.map(({ id }) => id), [exact.id]);
   const overlap = store.retrieve({ query: 'SQLite OR memory', namespace: 'retrieval' }).items.map(({ id }) => id);
   assert.equal(overlap[0], exact.id);
-  assert.deepEqual(overlap.slice(1), [sqlite.id, memory.id].sort());
+  assert.deepEqual(overlap.slice(1), [sqlite.id, memory.id]);
   assert.deepEqual(
     store.retrieve({ namespace: 'retrieval', tags: ['architecture', 'retrieval'] }).items.map(({ id }) => id),
     [exact.id],

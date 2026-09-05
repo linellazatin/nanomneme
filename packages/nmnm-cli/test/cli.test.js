@@ -192,6 +192,22 @@ test('CLI keeps project defaults and rejects ambiguous database flags', async ()
   assert.match(conflict.stderr, /--global cannot be combined with --db/);
 });
 
+test('CLI retrieval selects only the requested project, global, or custom database', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-store-selection-'));
+  const customDb = join(directory, 'custom.db');
+  const project = JSON.parse(runIn(directory, 'retain', 'Project isolation', '--json').stdout);
+  const global = JSON.parse(runIn(directory, 'retain', 'Global isolation', '--global', '--json').stdout);
+  const custom = JSON.parse(runIn(directory, 'retain', 'Custom isolation', '--db', customDb, '--json').stdout);
+
+  const projectResult = JSON.parse(runIn(directory, 'retrieve', 'isolation', '--json').stdout);
+  const globalResult = JSON.parse(runIn(directory, 'retrieve', 'isolation', '--global', '--json').stdout);
+  const customResult = JSON.parse(runIn(directory, 'retrieve', 'isolation', '--db', customDb, '--json').stdout);
+
+  assert.deepEqual(projectResult.items.map(({ id }) => id), [project.id]);
+  assert.deepEqual(globalResult.items.map(({ id }) => id), [global.id]);
+  assert.deepEqual(customResult.items.map(({ id }) => id), [custom.id]);
+});
+
 test('CLI restores soft removals and purges with an explicit flag', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-remove-'));
   const db = join(directory, 'memory.db');

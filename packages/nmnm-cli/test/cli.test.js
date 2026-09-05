@@ -211,6 +211,46 @@ test('CLI retrieval selects only the requested project, global, or custom databa
   assert.equal(Object.hasOwn(JSON.parse(runIn(directory, 'recall', project.id, '--json').stdout), 'store'), false);
 });
 
+test('CLI retrieves project then global memories with --both', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-both-'));
+  const project = JSON.parse(runIn(directory, 'retain', 'Project combined', '--json').stdout);
+  const global = JSON.parse(runIn(directory, 'retain', 'Global combined', '--global', '--json').stdout);
+
+  const result = runIn(directory, 'retrieve', 'combined', '--both', '--json');
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(
+    JSON.parse(result.stdout).items.map(({ id, store }) => ({ id, store })),
+    [{ id: project.id, store: 'project' }, { id: global.id, store: 'global' }],
+  );
+});
+
+test('CLI restricts --both to unambiguous retrieval', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-both-flags-'));
+  const customDb = join(directory, 'custom.db');
+
+  for (const [args, message] of [
+    [['retrieve', '--both', '--global'], /--both cannot be combined with --global or --db/],
+    [['retrieve', '--both', '--db', customDb], /--both cannot be combined with --global or --db/],
+    [['retain', 'Invalid', '--both'], /--both is only valid with retrieve/],
+  ]) {
+    const result = runIn(directory, ...args);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, message);
+  }
+});
+
+test('CLI treats missing --both databases as empty without creating them', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-both-missing-'));
+
+  const result = runIn(directory, 'retrieve', '--both', '--json');
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), { items: [], total: 0 });
+  await assert.rejects(access(join(directory, '.nanomneme', 'memory.db')));
+  await assert.rejects(access(join(directory, '.local', 'share', 'nanomneme', 'memory.db')));
+});
+
 test('CLI restores soft removals and purges with an explicit flag', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-remove-'));
   const db = join(directory, 'memory.db');

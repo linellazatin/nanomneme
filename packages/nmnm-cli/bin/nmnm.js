@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { open } from 'nmnm-core';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir, platform } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
@@ -19,12 +19,12 @@ Commands:
 
 Common options: --db <path> --global --json --version, -v
 Retain options: --id --kind note|decision|preference|fact|instruction --scope project|global --namespace <lowercase-slug> --tags <lowercase-slug,...> --importance 0..1 --confidence 0..1 --expires-at <UTC ISO> --metadata <JSON>
-Retrieve options: --kind note|decision|preference|fact|instruction --scope project|global --namespace <lowercase-slug> --tags <lowercase-slug,...> --expires active|expired|any --importance-gte <n> --importance-lte <n> --confidence-gte <n> --confidence-lte <n> --order-by <field> --limit <n> --offset <n>`;
+Retrieve options: --both --kind note|decision|preference|fact|instruction --scope project|global --namespace <lowercase-slug> --tags <lowercase-slug,...> --expires active|expired|any --importance-gte <n> --importance-lte <n> --confidence-gte <n> --confidence-lte <n> --order-by <field> --limit <n> --offset <n>`;
 
 const OPTION_NAMES = new Set([
   'db', 'json', 'id', 'kind', 'scope', 'namespace', 'tags', 'importance', 'confidence',
   'expires-at', 'metadata', 'importance-gte', 'importance-lte', 'confidence-gte', 'confidence-lte',
-  'order-by', 'limit', 'offset', 'expires', 'global', 'purge', 'rebuild-fts', 'out', 'help',
+  'order-by', 'limit', 'offset', 'expires', 'global', 'both', 'purge', 'rebuild-fts', 'out', 'help',
 ]);
 
 function parse(args) {
@@ -38,7 +38,7 @@ function parse(args) {
     }
     const name = argument.slice(2);
     if (!OPTION_NAMES.has(name)) throw new TypeError(`unknown option: ${argument}`);
-    if (name === 'json' || name === 'global' || name === 'purge' || name === 'rebuild-fts' || name === 'help') {
+    if (name === 'json' || name === 'global' || name === 'both' || name === 'purge' || name === 'rebuild-fts' || name === 'help') {
       options[name] = true;
       continue;
     }
@@ -175,11 +175,32 @@ export function main(args = process.argv.slice(2)) {
   if (options['rebuild-fts'] && command !== 'repair') throw new TypeError('--rebuild-fts is only valid with repair');
   if (options.out && command !== 'export') throw new TypeError('--out is only valid with export');
   if (command === 'export' && options.json) throw new TypeError('--json is not valid with export');
+  if (options.both && command !== 'retrieve') throw new TypeError('--both is only valid with retrieve');
+  if (options.both && (options.global || options.db)) throw new TypeError('--both cannot be combined with --global or --db');
   const verification = command === 'verify' || command === 'repair';
   const readonly = verification || command === 'export';
   const records = command === 'import'
     ? (positionals.length === 1 ? importJsonl(positionals[0]) : (() => { throw new TypeError('import requires one file'); })())
     : null;
+  if (command === 'retrieve' && options.both) {
+    const result = { items: [], total: 0 };
+    const input = retrieveInput(positionals, options);
+    for (const [storeName, path] of [
+      ['project', databasePath({}, { create: false })],
+      ['global', databasePath({ global: true }, { create: false })],
+    ]) {
+      if (!existsSync(path)) continue;
+      const store = open(path, { create: false });
+      try {
+        const retrieved = store.retrieve(input);
+        result.total += retrieved.total;
+        result.items.push(...retrieved.items.map((memory) => ({ store: storeName, ...memory })));
+      } finally {
+        store.close();
+      }
+    }
+    return { result, json: options.json, failed: false };
+  }
   const db = databasePath(options, { create: !readonly });
   const store = open(db, { create: !readonly });
   try {

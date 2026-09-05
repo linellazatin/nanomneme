@@ -289,6 +289,23 @@ test('CLI treats missing --both databases as empty without creating them', async
   await assert.rejects(access(join(directory, '.local', 'share', 'nanomneme', 'memory.db')));
 });
 
+test('CLI validates --both selectors when both databases are missing', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-both-invalid-'));
+
+  for (const [args, message] of [
+    [['--limit', '0'], /limit must be an integer between 1 and 1000/],
+    [['--offset', '-1'], /offset must be an integer between 0 and 1000/],
+    [['--kind', 'summary'], /kind must be/],
+    [['"'], /invalid FTS5 query/],
+  ]) {
+    const result = runIn(directory, 'retrieve', ...args, '--both');
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, message);
+  }
+  await assert.rejects(access(join(directory, '.nanomneme', 'memory.db')));
+  await assert.rejects(access(join(directory, '.local', 'share', 'nanomneme', 'memory.db')));
+});
+
 test('CLI restores soft removals and purges with an explicit flag', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-remove-'));
   const db = join(directory, 'memory.db');

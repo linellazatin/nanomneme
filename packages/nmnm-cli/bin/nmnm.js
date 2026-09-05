@@ -19,7 +19,7 @@ Commands:
 
 Common options: --db <path> --global --json --version, -v
 Retain options: --id --kind note|decision|preference|fact|instruction --scope project|global --namespace <lowercase-slug> --tags <lowercase-slug,...> --importance 0..1 --confidence 0..1 --expires-at <UTC ISO> --metadata <JSON>
-Retrieve options: --both --kind note|decision|preference|fact|instruction --scope project|global --namespace <lowercase-slug> --tags <lowercase-slug,...> --expires active|expired|any --importance-gte <n> --importance-lte <n> --confidence-gte <n> --confidence-lte <n> --order-by <field> --limit <n> --offset <n>`;
+Retrieve options: --both --kind note|decision|preference|fact|instruction --scope project|global --namespace <lowercase-slug> --tags <lowercase-slug,...> --expires active|expired|any --importance-gte <n> --importance-lte <n> --confidence-gte <n> --confidence-lte <n> --order-by <field> --limit 1..1000 --offset 0..1000`;
 
 const OPTION_NAMES = new Set([
   'db', 'json', 'id', 'kind', 'scope', 'namespace', 'tags', 'importance', 'confidence',
@@ -185,8 +185,10 @@ export function main(args = process.argv.slice(2)) {
   if (command === 'retrieve' && options.both) {
     const result = { items: [], total: 0 };
     const input = retrieveInput(positionals, options);
-    const offset = input.offset ?? 0;
-    const end = offset + (input.limit ?? 20);
+    const validationStore = open(':memory:');
+    try { validationStore.retrieve(input); } finally { validationStore.close(); }
+    let offset = input.offset ?? 0;
+    let remaining = input.limit ?? 20;
     for (const [storeName, path] of [
       ['project', databasePath({}, { create: false })],
       ['global', databasePath({ global: true }, { create: false })],
@@ -194,15 +196,17 @@ export function main(args = process.argv.slice(2)) {
       if (!existsSync(path)) continue;
       const store = open(path, { create: false });
       try {
-        // ponytail: fetch one page prefix per store; use store-aware offsets if large offsets become common.
-        const retrieved = store.retrieve({ ...input, limit: end, offset: 0 });
+        const retrieved = store.retrieve({ ...input, limit: Math.max(remaining, 1), offset });
         result.total += retrieved.total;
-        result.items.push(...retrieved.items.map((memory) => ({ store: storeName, ...memory })));
+        if (remaining) {
+          result.items.push(...retrieved.items.map((memory) => ({ store: storeName, ...memory })));
+          remaining -= retrieved.items.length;
+        }
+        offset = Math.max(0, offset - retrieved.total);
       } finally {
         store.close();
       }
     }
-    result.items = result.items.slice(offset, end);
     return { result, json: options.json, failed: false };
   }
   const db = databasePath(options, { create: !readonly });

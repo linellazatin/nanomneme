@@ -203,9 +203,12 @@ test('CLI retrieval selects only the requested project, global, or custom databa
   const globalResult = JSON.parse(runIn(directory, 'retrieve', 'isolation', '--global', '--json').stdout);
   const customResult = JSON.parse(runIn(directory, 'retrieve', 'isolation', '--db', customDb, '--json').stdout);
 
-  assert.deepEqual(projectResult.items.map(({ id }) => id), [project.id]);
-  assert.deepEqual(globalResult.items.map(({ id }) => id), [global.id]);
-  assert.deepEqual(customResult.items.map(({ id }) => id), [custom.id]);
+  assert.deepEqual(projectResult.items.map(({ id, store }) => ({ id, store })), [{ id: project.id, store: 'project' }]);
+  assert.deepEqual(globalResult.items.map(({ id, store }) => ({ id, store })), [{ id: global.id, store: 'global' }]);
+  assert.deepEqual(customResult.items.map(({ id, store }) => ({ id, store })), [{ id: custom.id, store: 'custom' }]);
+  assert.equal(runIn(directory, 'retrieve', 'isolation').stdout, `Total: 1\nproject  ${project.id}  note  Project isolation\n`);
+  assert.equal(Object.hasOwn(project, 'store'), false);
+  assert.equal(Object.hasOwn(JSON.parse(runIn(directory, 'recall', project.id, '--json').stdout), 'store'), false);
 });
 
 test('CLI restores soft removals and purges with an explicit flag', async () => {

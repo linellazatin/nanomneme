@@ -115,7 +115,7 @@ function readable(value) {
     return `Issues: ${value.issues.length}\nSchema version: ${value.schema_version}\n${issues}\n`;
   }
   if (Array.isArray(value.items)) {
-    const rows = value.items.map((memory) => `${memory.id}  ${memory.kind}  ${memory.content}`).join('\n');
+    const rows = value.items.map((memory) => `${memory.store}  ${memory.id}  ${memory.kind}  ${memory.content}`).join('\n');
     return `Total: ${value.total}${rows ? `\n${rows}` : ''}\n`;
   }
   if (value.purged_at) return `Purged: ${value.id}\nMode: ${value.mode}\nPurged at: ${value.purged_at}\n`;
@@ -143,6 +143,10 @@ function databasePath(options, { create = true } = {}) {
   const path = join(homedir(), '.local', 'share', 'nanomneme', 'memory.db');
   if (create) mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   return path;
+}
+
+function databaseStore(options) {
+  return options.db ? 'custom' : options.global ? 'global' : 'project';
 }
 
 function exportJsonl(records) {
@@ -184,7 +188,10 @@ export function main(args = process.argv.slice(2)) {
     else if (command === 'recall') {
       if (positionals.length !== 1) throw new TypeError('recall requires an id');
       result = store.recall({ id: positionals[0] });
-    } else if (command === 'retrieve') result = store.retrieve(retrieveInput(positionals, options));
+    } else if (command === 'retrieve') {
+      const retrieved = store.retrieve(retrieveInput(positionals, options));
+      result = { ...retrieved, items: retrieved.items.map((memory) => ({ store: databaseStore(options), ...memory })) };
+    }
     else if (command === 'remove') {
       if (positionals.length !== 1) throw new TypeError('remove requires an id');
       result = store.remove({ id: positionals[0], mode: options.purge ? 'purge' : 'soft' });

@@ -224,7 +224,8 @@ export function main(args = process.argv.slice(2)) {
   if (!command) return { help: true };
   validateCommand(command, positionals, options);
   const verification = command === 'verify' || command === 'repair';
-  const readonly = verification || command === 'export';
+  const readOnly = command === 'verify' || command === 'export';
+  const requiresExisting = verification || readOnly;
   const records = command === 'import' ? importJsonl(positionals[0]) : null;
   if (records) {
     const validationStore = open(':memory:');
@@ -257,9 +258,9 @@ export function main(args = process.argv.slice(2)) {
     }
     return { result, json: options.json, failed: false };
   }
-  const db = databasePath(options, { create: !readonly });
+  const db = databasePath(options, { create: !requiresExisting });
   if (command === 'export' && options.out && sameFile(db, options.out)) throw new TypeError('--out cannot reference the source database');
-  const store = open(db, { create: !readonly });
+  const store = open(db, { create: !requiresExisting, readOnly });
   try {
     let result;
     if (command === 'retain') result = store.retain(retainInput(positionals, options));

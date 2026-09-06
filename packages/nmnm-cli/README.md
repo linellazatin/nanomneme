@@ -15,7 +15,8 @@ nmnm retrieve "operator documentation" --both
 ```
 
 The CLI defaults to `./.nanomneme/memory.db`. Use `--global` for the standard global
-database or `--db <path>` for a custom database. See the repository README for all
-commands, storage behavior, and recovery guidance. `export --out <file>` replaces its
-destination atomically after the complete JSONL file is written. `verify` and `export`
-open their source databases read-only; `repair` remains writable.
+database or `--db <path>` for a custom database. See the
+[User Manual](https://github.com/linellazatin/nanomneme/blob/main/docs/USER_MANUAL.md)
+for commands and recovery workflows. `export --out <file>` replaces its destination
+atomically after the complete JSONL file is written. `verify` and `export` open their
+source databases read-only; `repair` remains writable.

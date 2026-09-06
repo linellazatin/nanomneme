@@ -21,9 +21,11 @@ try {
 ```
 
 The public API provides `open(path)`, the 4Rs, canonical portability records,
-integrity verification, and FTS repair. See the repository README for the complete
-data contract and API examples. Imports reject unknown fields, values that require
-normalization, and `updated_at` values earlier than `created_at`.
+integrity verification, and FTS repair. See the
+[User Manual](https://github.com/linellazatin/nanomneme/blob/main/docs/USER_MANUAL.md)
+for task-based guidance and the repository README for the complete data contract.
+Imports reject unknown fields, values that require normalization, and `updated_at`
+values earlier than `created_at`.
 
 Use `open(path, { readOnly: true })` for diagnostics and exports that must not create,
 migrate, or modify a database.

@@ -122,6 +122,37 @@ test('verify requires an FTS5 virtual table rather than a same-named table', asy
   assert.equal(store.verify().issues.find(({ code }) => code === 'schema_fts').ids[0], 'memories_fts');
 });
 
+test('verify reports unexpected schema columns', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-verify-extra-column-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  t.after(() => store.close());
+  const db = new DatabaseSync(path);
+  t.after(() => db.close());
+  db.exec('ALTER TABLE memories ADD COLUMN extra TEXT');
+
+  assert.deepEqual(store.verify().issues, [
+    { code: 'schema_columns', count: 1, ids: ['memories'] },
+  ]);
+});
+
+test('verify reports unusable table columns without throwing', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-verify-unusable-columns-'));
+  const path = join(directory, 'memory.db');
+  const initial = open(path);
+  initial.close();
+  const db = new DatabaseSync(path);
+  db.exec('DROP TABLE memories_fts; CREATE TABLE memories_fts (wrong TEXT) STRICT');
+  db.close();
+  const store = open(path);
+  t.after(() => store.close());
+
+  assert.deepEqual(store.verify().issues, [
+    { code: 'schema_columns', count: 1, ids: ['memories_fts'] },
+    { code: 'schema_fts', count: 1, ids: ['memories_fts'] },
+  ]);
+});
+
 test('export preserves canonical records, including expired and soft-removed memories', async (t) => {
   const store = await createStore(t);
   const active = store.retain({ content: 'Active export target', metadata: { source: 'test' }, tags: ['portable'] });
@@ -473,6 +504,20 @@ test('verify reports impossible stored timestamps', async (t) => {
   const db = new DatabaseSync(path);
   t.after(() => db.close());
   db.prepare('UPDATE memories SET created_at = ? WHERE id = ?').run('2026-02-31T00:00:00.000Z', memory.id);
+
+  assert.deepEqual(store.verify().issues, [{ code: 'memory_field', count: 1, ids: [memory.id] }]);
+});
+
+test('verify reports updated_at earlier than created_at', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-verify-date-order-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  t.after(() => store.close());
+  const memory = store.retain({ content: 'Corrupt timestamp order target' });
+  const db = new DatabaseSync(path);
+  t.after(() => db.close());
+  db.prepare('UPDATE memories SET created_at = ?, updated_at = ? WHERE id = ?')
+    .run('2026-09-06T01:00:00.000Z', '2026-09-06T00:00:00.000Z', memory.id);
 
   assert.deepEqual(store.verify().issues, [{ code: 'memory_field', count: 1, ids: [memory.id] }]);
 });

@@ -388,23 +388,27 @@ export function open(path, { create = true, readOnly = false } = {}) {
     verify() {
       const report = issueReporter();
       const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all().map(({ name }) => name);
+      const tableColumns = new Map();
       for (const [table, columns] of Object.entries(SCHEMA_COLUMNS)) {
         if (!tables.includes(table)) {
           report.add('schema_missing', table);
           continue;
         }
         const actual = db.prepare(`PRAGMA table_info(${table})`).all().map(({ name }) => name);
-        if (columns.some((column) => !actual.includes(column))) report.add('schema_columns', table);
+        tableColumns.set(table, actual);
+        if (actual.length !== columns.length || columns.some((column, index) => actual[index] !== column)) report.add('schema_columns', table);
       }
       const ftsSchema = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'memories_fts'").get();
-      if (ftsSchema && !/^CREATE VIRTUAL TABLE\s+memories_fts\s+USING\s+fts5\b/i.test(ftsSchema.sql)) report.add('schema_fts', 'memories_fts');
+      const validFts = ftsSchema && /^CREATE VIRTUAL TABLE\s+memories_fts\s+USING\s+fts5\b/i.test(ftsSchema.sql);
+      if (ftsSchema && !validFts) report.add('schema_fts', 'memories_fts');
       for (const row of db.prepare('PRAGMA integrity_check').all()) {
         const value = Object.values(row)[0];
         if (value !== 'ok') report.add('sqlite_integrity');
       }
       for (const row of db.prepare('PRAGMA foreign_key_check').all()) report.add('foreign_key', `${row.table}:${row.rowid}`);
 
-      const memories = tables.includes('memories')
+      const hasColumns = (table) => SCHEMA_COLUMNS[table].every((column) => tableColumns.get(table)?.includes(column));
+      const memories = hasColumns('memories')
         ? db.prepare('SELECT rowid, * FROM memories ORDER BY id').all()
         : [];
       for (const memory of memories) {
@@ -416,8 +420,9 @@ export function open(path, { create = true, readOnly = false } = {}) {
           slug(memory.namespace, 'namespace');
           score(memory.importance, 'importance');
           score(memory.confidence, 'confidence');
-          date(memory.created_at, 'created_at');
-          date(memory.updated_at, 'updated_at');
+          const createdAt = date(memory.created_at, 'created_at');
+          const updatedAt = date(memory.updated_at, 'updated_at');
+          if (updatedAt < createdAt) throw new TypeError('updated_at must not precede created_at');
           date(memory.expires_at, 'expires_at');
           date(memory.removed_at, 'removed_at');
           metadata(JSON.parse(memory.metadata));
@@ -425,12 +430,12 @@ export function open(path, { create = true, readOnly = false } = {}) {
           report.add('memory_field', memory.id);
         }
       }
-      if (tables.includes('memory_tags')) {
+      if (hasColumns('memory_tags')) {
         for (const tag of db.prepare('SELECT memory_id, tag FROM memory_tags ORDER BY memory_id, tag').all()) {
           try { memoryId(tag.memory_id); slug(tag.tag, 'tag'); } catch { report.add('tag_field', tag.memory_id); }
         }
       }
-      if (tables.includes('memories_fts') && tables.includes('memories')) {
+      if (validFts && hasColumns('memories_fts') && hasColumns('memories')) {
         const fts = new Map(db.prepare('SELECT rowid, content FROM memories_fts').all().map((row) => [row.rowid, row]));
         for (const memory of memories) {
           const indexed = fts.get(memory.rowid);

@@ -16,9 +16,18 @@ test('CLI reports its package version without opening a database', async () => {
 
   assert.equal(long.status, 0, long.stderr);
   assert.equal(short.status, 0, short.stderr);
-  assert.equal(long.stdout, '0.0.4\n');
-  assert.equal(short.stdout, '0.0.4\n');
+  assert.equal(long.stdout, '0.0.5\n');
+  assert.equal(short.stdout, '0.0.5\n');
   await assert.rejects(access(join(directory, '.nanomneme', 'memory.db')));
+});
+
+test('CLI help lists command-specific maintenance options', () => {
+  const result = run('--help');
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Remove options: --purge/);
+  assert.match(result.stdout, /Export options: --out <file>/);
+  assert.match(result.stdout, /Repair options: --rebuild-fts/);
 });
 
 test('CLI rejects options unsupported by each command without creating a database', async () => {

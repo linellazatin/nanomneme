@@ -20,7 +20,10 @@ Commands:
 
 Common options: --db <path> --global --json --version, -v
 Retain options: --id --kind note|decision|preference|fact|instruction --scope project|global --namespace <lowercase-slug> --tags <lowercase-slug,...> --importance 0..1 --confidence 0..1 --expires-at <UTC ISO> --metadata <JSON>
-Retrieve options: --both --kind note|decision|preference|fact|instruction --scope project|global --namespace <lowercase-slug> --tags <lowercase-slug,...> --expires active|expired|any --importance-gte <n> --importance-lte <n> --confidence-gte <n> --confidence-lte <n> --order-by <field> --limit 1..1000 --offset 0..1000`;
+Retrieve options: --both --kind note|decision|preference|fact|instruction --scope project|global --namespace <lowercase-slug> --tags <lowercase-slug,...> --expires active|expired|any --importance-gte <n> --importance-lte <n> --confidence-gte <n> --confidence-lte <n> --order-by <field> --limit 1..1000 --offset 0..1000
+Remove options: --purge
+Export options: --out <file>
+Repair options: --rebuild-fts`;
 
 const COMMON_OPTIONS = ['db', 'global', 'json', 'help'];
 const COMMAND_OPTIONS = {

@@ -28,6 +28,7 @@ test('CLI help lists command-specific maintenance options', () => {
   assert.match(result.stdout, /Remove options: --purge/);
   assert.match(result.stdout, /Export options: --out <file>/);
   assert.match(result.stdout, /Repair options: --rebuild-fts/);
+  assert.match(result.stdout, /Use -- before content or a query that starts with --/);
 });
 
 test('CLI rejects options unsupported by each command without creating a database', async () => {
@@ -66,6 +67,18 @@ test('CLI validates commands and positional arguments before creating a database
     assert.match(result.stderr, message);
   }
   await assert.rejects(access(join(directory, '.nanomneme', 'memory.db')));
+});
+
+test('CLI accepts -- before content or a query that starts with --', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-end-options-'));
+  const db = join(directory, 'memory.db');
+  const retained = run('retain', '--db', db, '--json', '--', '--leading content');
+
+  assert.equal(retained.status, 0, retained.stderr);
+  assert.equal(JSON.parse(retained.stdout).content, '--leading content');
+  const query = run('retrieve', '--db', db, '--json', '--', '--leading');
+  assert.notEqual(query.status, 0);
+  assert.match(query.stderr, /invalid FTS5 query/);
 });
 
 test('CLI exports canonical JSONL and imports it atomically', async () => {

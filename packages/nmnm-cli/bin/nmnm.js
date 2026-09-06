@@ -19,6 +19,7 @@ Commands:
   repair               Rebuild derived data with --rebuild-fts.
 
 Common options: --db <path> --global --json --version, -v
+Use -- before content or a query that starts with --.
 Retain options: --id --kind note|decision|preference|fact|instruction --scope project|global --namespace <lowercase-slug> --tags <lowercase-slug,...> --importance 0..1 --confidence 0..1 --expires-at <UTC ISO> --metadata <JSON>
 Retrieve options: --both --kind note|decision|preference|fact|instruction --scope project|global --namespace <lowercase-slug> --tags <lowercase-slug,...> --expires active|expired|any --importance-gte <n> --importance-lte <n> --confidence-gte <n> --confidence-lte <n> --order-by <field> --limit 1..1000 --offset 0..1000
 Remove options: --purge
@@ -41,10 +42,15 @@ const OPTION_NAMES = new Set(Object.values(COMMAND_OPTIONS).flat());
 function parse(args) {
   const options = {};
   const positionals = [];
+  let endOptions = false;
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
-    if (!argument.startsWith('--')) {
+    if (endOptions || !argument.startsWith('--')) {
       positionals.push(argument);
+      continue;
+    }
+    if (argument === '--') {
+      endOptions = true;
       continue;
     }
     const name = argument.slice(2);

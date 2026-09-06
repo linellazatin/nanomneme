@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { access, link, mkdtemp, symlink, writeFile } from 'node:fs/promises';
+import { access, link, mkdir, mkdtemp, readFile, readdir, symlink, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -130,6 +130,38 @@ test('CLI refuses to export over its source database or an alias', async () => {
     assert.equal(recalled.status, 0, recalled.stderr);
     assert.equal(JSON.parse(recalled.stdout).id, memory.id);
   }
+});
+
+test('CLI atomically replaces an existing export file', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-export-atomic-'));
+  const source = join(directory, 'memory.db');
+  const output = join(directory, 'memory.jsonl');
+  const snapshot = join(directory, 'previous.jsonl');
+  run('retain', 'Atomic export target', '--db', source);
+  await writeFile(output, 'previous export\n');
+  await link(output, snapshot);
+
+  const exported = run('export', '--db', source, '--out', output);
+
+  assert.equal(exported.status, 0, exported.stderr);
+  assert.equal(await readFile(snapshot, 'utf8'), 'previous export\n');
+  assert.deepEqual(JSON.parse((await readFile(output, 'utf8')).split('\n')[0]), { _format: 'nanomneme', _version: 1 });
+  assert.equal((await readdir(directory)).some((name) => name.startsWith('.memory.jsonl.')), false);
+});
+
+test('CLI removes temporary files when atomic export replacement fails', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-export-cleanup-'));
+  const source = join(directory, 'memory.db');
+  const output = join(directory, 'memory.jsonl');
+  run('retain', 'Failed export target', '--db', source);
+  await mkdir(output);
+  await writeFile(join(output, 'marker'), 'unchanged');
+
+  const exported = run('export', '--db', source, '--out', output);
+
+  assert.notEqual(exported.status, 0);
+  assert.equal(await readFile(join(output, 'marker'), 'utf8'), 'unchanged');
+  assert.equal((await readdir(directory)).some((name) => name.startsWith('.memory.jsonl.')), false);
 });
 
 test('CLI repairs FTS only with the explicit rebuild flag', async () => {

@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 import { open } from 'nmnm-core';
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, platform } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 
 const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 const HELP = `Usage: nmnm <command> [arguments] [options]
@@ -185,6 +186,18 @@ function sameFile(left, right) {
   return leftStat.dev === rightStat.dev && leftStat.ino === rightStat.ino;
 }
 
+function writeFileAtomic(path, contents) {
+  const output = resolve(path);
+  const temporary = join(dirname(output), `.${basename(output)}.${randomUUID()}.tmp`);
+  try {
+    writeFileSync(temporary, contents, { encoding: 'utf8', flag: 'wx' });
+    renameSync(temporary, output);
+  } catch (error) {
+    rmSync(temporary, { force: true });
+    throw error;
+  }
+}
+
 function exportJsonl(records) {
   return [JSON.stringify({ _format: 'nanomneme', _version: 1 }), ...records.map((record) => JSON.stringify(record))].join('\n') + '\n';
 }
@@ -261,7 +274,7 @@ export function main(args = process.argv.slice(2)) {
       const recordsToExport = store.export();
       const text = exportJsonl(recordsToExport);
       if (options.out) {
-        writeFileSync(options.out, text, 'utf8');
+        writeFileAtomic(options.out, text);
         result = { exported: recordsToExport.length, path: options.out };
       } else {
         return { raw: text, json: false };

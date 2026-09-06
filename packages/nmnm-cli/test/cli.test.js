@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { access, mkdtemp, writeFile } from 'node:fs/promises';
+import { access, link, mkdtemp, symlink, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -16,8 +16,46 @@ test('CLI reports its package version without opening a database', async () => {
 
   assert.equal(long.status, 0, long.stderr);
   assert.equal(short.status, 0, short.stderr);
-  assert.equal(long.stdout, '0.0.3\n');
-  assert.equal(short.stdout, '0.0.3\n');
+  assert.equal(long.stdout, '0.0.4\n');
+  assert.equal(short.stdout, '0.0.4\n');
+  await assert.rejects(access(join(directory, '.nanomneme', 'memory.db')));
+});
+
+test('CLI rejects options unsupported by each command without creating a database', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-options-'));
+  const id = '00000000-0000-4000-8000-000000000000';
+
+  for (const [args, message] of [
+    [['retain', 'Memory', '--limit', '1'], /--limit is not valid with retain/],
+    [['recall', id, '--tags', 'test'], /--tags is not valid with recall/],
+    [['retrieve', '--metadata', '{}'], /--metadata is not valid with retrieve/],
+    [['remove', id, '--kind', 'note'], /--kind is not valid with remove/],
+    [['verify', '--limit', '1'], /--limit is not valid with verify/],
+    [['export', '--limit', '1'], /--limit is not valid with export/],
+    [['import', 'missing.jsonl', '--limit', '1'], /--limit is not valid with import/],
+    [['repair', '--limit', '1'], /--limit is not valid with repair/],
+  ]) {
+    const result = runIn(directory, ...args);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, message);
+  }
+  await assert.rejects(access(join(directory, '.nanomneme', 'memory.db')));
+});
+
+test('CLI validates commands and positional arguments before creating a database', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-command-'));
+
+  for (const [args, message] of [
+    [['--limit', '1'], /command is required/],
+    [['unknown'], /unknown command: unknown/],
+    [['recall'], /recall requires an id/],
+    [['retrieve', 'one', 'two'], /retrieve accepts one query argument/],
+    [['verify', 'unexpected'], /verify does not accept arguments/],
+  ]) {
+    const result = runIn(directory, ...args);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, message);
+  }
   await assert.rejects(access(join(directory, '.nanomneme', 'memory.db')));
 });
 
@@ -42,6 +80,25 @@ test('CLI exports canonical JSONL and imports it atomically', async () => {
   assert.deepEqual(JSON.parse(imported.stdout), { imported: 2 });
   assert.equal(JSON.parse(run('recall', first.id, '--db', target, '--json').stdout).id, first.id);
   assert.equal(JSON.parse(run('recall', removed.id, '--db', target, '--json').stdout), null);
+});
+
+test('CLI refuses to export over its source database or an alias', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-export-safety-'));
+  const source = join(directory, 'memory.db');
+  const hardlink = join(directory, 'memory-hardlink.db');
+  const symlinkPath = join(directory, 'memory-symlink.db');
+  const memory = JSON.parse(run('retain', 'Export safety', '--db', source, '--json').stdout);
+  await link(source, hardlink);
+  await symlink(source, symlinkPath);
+
+  for (const output of [source, hardlink, symlinkPath]) {
+    const exported = run('export', '--db', source, '--out', output);
+    assert.notEqual(exported.status, 0);
+    assert.match(exported.stderr, /--out cannot reference the source database/);
+    const recalled = run('recall', memory.id, '--db', source, '--json');
+    assert.equal(recalled.status, 0, recalled.stderr);
+    assert.equal(JSON.parse(recalled.stdout).id, memory.id);
+  }
 });
 
 test('CLI repairs FTS only with the explicit rebuild flag', async () => {
@@ -149,6 +206,9 @@ test('CLI prints readable output without --json and reports invalid input', asyn
   const invalid = run('retain', '--db', db);
   assert.notEqual(invalid.status, 0);
   assert.match(invalid.stderr, /content/);
+  const emptyNumber = run('retain', 'Invalid empty number', '--importance', '', '--db', db);
+  assert.notEqual(emptyNumber.status, 0);
+  assert.match(emptyNumber.stderr, /importance/);
 });
 
 test('CLI can retrieve expired memories explicitly', async () => {
@@ -190,6 +250,120 @@ test('CLI keeps project defaults and rejects ambiguous database flags', async ()
   const conflict = runIn(directory, 'retrieve', '--global', '--db', join(directory, 'other.db'));
   assert.notEqual(conflict.status, 0);
   assert.match(conflict.stderr, /--global cannot be combined with --db/);
+});
+
+test('CLI retrieval selects only the requested project, global, or custom database', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-store-selection-'));
+  const customDb = join(directory, 'custom.db');
+  const project = JSON.parse(runIn(directory, 'retain', 'Project isolation', '--json').stdout);
+  const global = JSON.parse(runIn(directory, 'retain', 'Global isolation', '--global', '--json').stdout);
+  const custom = JSON.parse(runIn(directory, 'retain', 'Custom isolation', '--db', customDb, '--json').stdout);
+
+  const projectResult = JSON.parse(runIn(directory, 'retrieve', 'isolation', '--json').stdout);
+  const globalResult = JSON.parse(runIn(directory, 'retrieve', 'isolation', '--global', '--json').stdout);
+  const customResult = JSON.parse(runIn(directory, 'retrieve', 'isolation', '--db', customDb, '--json').stdout);
+
+  assert.deepEqual(projectResult.items.map(({ id, store }) => ({ id, store })), [{ id: project.id, store: 'project' }]);
+  assert.deepEqual(globalResult.items.map(({ id, store }) => ({ id, store })), [{ id: global.id, store: 'global' }]);
+  assert.deepEqual(customResult.items.map(({ id, store }) => ({ id, store })), [{ id: custom.id, store: 'custom' }]);
+  assert.equal(runIn(directory, 'retrieve', 'isolation').stdout, `Total: 1\nproject  ${project.id}  note  Project isolation\n`);
+  assert.equal(Object.hasOwn(project, 'store'), false);
+  assert.equal(Object.hasOwn(JSON.parse(runIn(directory, 'recall', project.id, '--json').stdout), 'store'), false);
+});
+
+test('CLI retrieves project then global memories with --both', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-both-'));
+  const project = JSON.parse(runIn(directory, 'retain', 'Project combined', '--json').stdout);
+  const global = JSON.parse(runIn(directory, 'retain', 'Global combined', '--global', '--json').stdout);
+
+  const result = runIn(directory, 'retrieve', 'combined', '--both', '--json');
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(
+    JSON.parse(result.stdout).items.map(({ id, store }) => ({ id, store })),
+    [{ id: project.id, store: 'project' }, { id: global.id, store: 'global' }],
+  );
+});
+
+test('CLI paginates --both across the project-first result sequence', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-both-page-'));
+  runIn(directory, 'retain', 'Project first', '--importance', '0.1');
+  const projectSecond = JSON.parse(runIn(directory, 'retain', 'Project second', '--importance', '0.2', '--json').stdout);
+  const globalFirst = JSON.parse(runIn(directory, 'retain', 'Global first', '--global', '--importance', '0.3', '--json').stdout);
+  runIn(directory, 'retain', 'Global second', '--global', '--importance', '0.4');
+
+  const result = runIn(directory, 'retrieve', '--both', '--order-by', 'importance', '--offset', '1', '--limit', '2', '--json');
+
+  assert.equal(result.status, 0, result.stderr);
+  const retrieved = JSON.parse(result.stdout);
+  assert.equal(retrieved.total, 4);
+  assert.deepEqual(
+    retrieved.items.map(({ id, store }) => ({ id, store })),
+    [{ id: projectSecond.id, store: 'project' }, { id: globalFirst.id, store: 'global' }],
+  );
+});
+
+test('CLI keeps duplicate IDs from both stores as separate results', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-both-duplicate-'));
+  const memory = JSON.parse(runIn(directory, 'retain', 'Duplicated identity', '--json').stdout);
+  const exported = runIn(directory, 'export');
+  const file = join(directory, 'memory.jsonl');
+  await writeFile(file, exported.stdout);
+  const imported = runIn(directory, 'import', file, '--global');
+  assert.equal(imported.status, 0, imported.stderr);
+
+  const result = runIn(directory, 'retrieve', 'Duplicated', '--both', '--json');
+
+  assert.equal(result.status, 0, result.stderr);
+  const retrieved = JSON.parse(result.stdout);
+  assert.equal(retrieved.total, 2);
+  assert.deepEqual(
+    retrieved.items.map(({ id, store }) => ({ id, store })),
+    [{ id: memory.id, store: 'project' }, { id: memory.id, store: 'global' }],
+  );
+});
+
+test('CLI restricts --both to unambiguous retrieval', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-both-flags-'));
+  const customDb = join(directory, 'custom.db');
+
+  for (const [args, message] of [
+    [['retrieve', '--both', '--global'], /--both cannot be combined with --global or --db/],
+    [['retrieve', '--both', '--db', customDb], /--both cannot be combined with --global or --db/],
+    [['retain', 'Invalid', '--both'], /--both is only valid with retrieve/],
+  ]) {
+    const result = runIn(directory, ...args);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, message);
+  }
+});
+
+test('CLI treats missing --both databases as empty without creating them', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-both-missing-'));
+
+  const result = runIn(directory, 'retrieve', '--both', '--json');
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), { items: [], total: 0 });
+  await assert.rejects(access(join(directory, '.nanomneme', 'memory.db')));
+  await assert.rejects(access(join(directory, '.local', 'share', 'nanomneme', 'memory.db')));
+});
+
+test('CLI validates --both selectors when both databases are missing', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-both-invalid-'));
+
+  for (const [args, message] of [
+    [['--limit', '0'], /limit must be an integer between 1 and 1000/],
+    [['--offset', '-1'], /offset must be an integer between 0 and 1000/],
+    [['--kind', 'summary'], /kind must be/],
+    [['"'], /invalid FTS5 query/],
+  ]) {
+    const result = runIn(directory, 'retrieve', ...args, '--both');
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, message);
+  }
+  await assert.rejects(access(join(directory, '.nanomneme', 'memory.db')));
+  await assert.rejects(access(join(directory, '.local', 'share', 'nanomneme', 'memory.db')));
 });
 
 test('CLI restores soft removals and purges with an explicit flag', async () => {

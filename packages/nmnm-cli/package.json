@@ -1,14 +1,27 @@
 {
   "name": "nmnm-cli",
-  "version": "0.0.3",
+  "version": "0.0.4",
+  "description": "Local-first SQLite memory command-line interface for nanomneme",
   "type": "module",
   "bin": {
-    "nmnm": "./bin/nmnm.js"
+    "nmnm": "bin/nmnm.js"
   },
+  "files": [
+    "bin/nmnm.js",
+    "README.md",
+    "LICENSE"
+  ],
   "dependencies": {
-    "nmnm-core": "0.0.3"
+    "nmnm-core": "0.0.4"
   },
   "engines": {
     "node": ">=22.13.0"
+  },
+  "license": "MIT",
+  "author": "Linel Lazatin",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/linellazatin/nanomneme.git",
+    "directory": "packages/nmnm-cli"
   }
 }

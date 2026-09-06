@@ -4,6 +4,10 @@
 It uses lexical FTS5/BM25 retrieval and structured filters. It does not use an LLM,
 embeddings, a vector store, a server, or background processing.
 
+> Version 0.0.4 adds deterministic importance tie-breaking, explicit project-plus-global
+> retrieval, stricter input validation, and publish-ready packages while keeping the core
+> single-store - basically hardening.
+
 ## Architecture
 
 ```text
@@ -20,13 +24,13 @@ project database or separate global database
 ```
 
 `nmnm-core` owns validation, schema creation, transactional writes, tag maintenance,
-and FTS synchronization. The CLI only parses options, calls one core operation, and
-formats the result. No harness, protocol, or model dependency is in the core.
+and FTS synchronization. The CLI parses options, calls core operations, and formats
+results. No harness, protocol, or model dependency is in the core.
 
 ## Scope and database location
 
 `scope` labels a memory. Database selection determines which SQLite file receives a
-command. Project and global databases use the same schema but are never merged.
+command. Project and global databases use the same schema and remain separate files.
 
 | Use | Scope value | Database path |
 |---|---|---|
@@ -50,11 +54,13 @@ overrides that default but does not select a different database.
 nmnm retain "Prefer concise operator docs" \
   --global
 nmnm retrieve "operator docs" --global
+nmnm retrieve "operator docs" --both
 ```
 
 `--global` and `--db` cannot be combined. On other platforms, use `--db` explicitly.
-Reading both databases in one command, including precedence rules, is deliberately
-deferred.
+For retrieval only, `--both` reads the default project database followed by the
+standard global database. It cannot be combined with `--global` or `--db`. A missing
+database contributes no results and is not created.
 
 ## Requirements
 
@@ -75,12 +81,20 @@ node packages/nmnm-cli/bin/nmnm.js retain "Use SQLite for storage" \
 nmnm --version
 ```
 
+`nmnm-core` and `nmnm-cli` are independently publishable packages. Each package
+tarball contains only its runtime entrypoint, manifest, package README, and MIT license;
+workspace tests and root documentation are not published with either package. Publish
+`nmnm-core` before `nmnm-cli`, which pins the matching core version.
+
 `nmnm --version` (or `nmnm -v`) prints the installed CLI version without opening or
 creating a database.
 
+Options are command-specific. Unsupported options, unknown commands, and invalid
+positional argument counts fail before the CLI opens or creates a database.
+
 The CLI uses `./.nanomneme/memory.db` by default. Use `--global` for the dedicated
-global database, or `--db <path>` for another SQLite file. nanomneme does not merge
-global and project databases.
+global database, `--db <path>` for another SQLite file, or `retrieve --both` to query
+the project and global databases in that order.
 
 ## The 4Rs
 
@@ -105,6 +119,7 @@ nmnm remove <memory-id>
 nmnm retain "Updated documentation preference" --id <memory-id>
 nmnm remove <memory-id> --purge
 nmnm retrieve "interfaces" --global
+nmnm retrieve "interfaces" --both
 nmnm verify --json
 nmnm export --out memory.jsonl
 nmnm import memory.jsonl --db restored.db --json
@@ -125,13 +140,16 @@ nmnm retrieve "SQLite" --namespace nanomneme --json
 
 Without `--json`, `retain` and `recall` print the complete stored record: identity,
 content, classification, scores, tags, expiry, timestamps, and metadata. `retrieve`
-stays compact for scanning; use `recall <id>` to inspect one result. `remove` prints
-the selected mode and its removal or purge timestamp.
+stays compact for scanning and begins each row with its `project`, `global`, or
+`custom` store. Use `recall <id>` to inspect one result. `remove` prints the selected
+mode and its removal or purge timestamp.
 
 `retrieve` combines every supplied filter with AND. When multiple tags are supplied,
 each returned memory has every requested tag. Active memories are returned by default;
 use `--expires expired` or `--expires any` to inspect expiry state. Text queries use
-FTS5 syntax and rank by BM25. Without a query, results are ordered by most recently
+FTS5 syntax: space-separated terms are conjunctive, while `OR` matches alternatives.
+They rank by BM25; equal scores favor higher importance, then ID. Without a query,
+results are ordered by most recently
 updated memory. `--expires` accepts `active`, `expired`, or `any`; `--order-by` accepts
 `id`, `created_at`, `updated_at`, `importance`, `confidence`, or `relevance` with a query.
 
@@ -148,21 +166,21 @@ serve tags, full-text retrieval, and schema metadata.
 | `content` | `TEXT` | None, required | Any non-empty, trimmed string. |
 | `kind` | `TEXT` | `note` | Exactly one of `note`, `decision`, `preference`, `fact`, or `instruction`. |
 | `scope` | `TEXT` | `project` | Exactly `project` or `global`. `retain --global` defaults new records to `global`; this label does not determine the database path. |
-| `namespace` | `TEXT` | `default` | Lowercase kebab-case domain/owner slug, such as `nanomneme` or `user`. It partitions one database; use `default` otherwise. |
+| `namespace` | `TEXT` | `default` | Lowercase kebab-case domain/owner slug, such as `nanomneme` or `user`; consecutive or trailing hyphens are invalid. It partitions one database; use `default` otherwise. |
 | `importance` | `REAL` | `0.5` | Finite number from `0` through `1`, inclusive. |
 | `confidence` | `REAL` | `1.0` | Finite number from `0` through `1`, inclusive. |
-| `created_at` | `TEXT` | Core-generated | UTC ISO-8601 timestamp set when the record is created. |
-| `updated_at` | `TEXT` | Core-generated | UTC ISO-8601 timestamp set on create, patch, soft removal, or restoration. |
-| `expires_at` | `TEXT` | `NULL` | `NULL` or a UTC timestamp in `YYYY-MM-DDTHH:mm:ss.sssZ` form. Expired records are excluded from normal reads. |
-| `removed_at` | `TEXT` | `NULL` | `NULL` when active or restored; a core-generated UTC ISO-8601 timestamp after soft removal. |
-| `metadata` | `TEXT` | `{}` | JSON object stored as inspectable text. Values may be strings, numbers, booleans, `null`, arrays, or objects. No reserved keys or retrieval semantics. |
+| `created_at` | `TEXT` | Core-generated | Valid UTC ISO-8601 timestamp set when the record is created. |
+| `updated_at` | `TEXT` | Core-generated | Valid UTC ISO-8601 timestamp set on create, patch, soft removal, or restoration. |
+| `expires_at` | `TEXT` | `NULL` | `NULL` or a valid UTC timestamp in exact `YYYY-MM-DDTHH:mm:ss.sssZ` form. Expired records are excluded from normal reads. |
+| `removed_at` | `TEXT` | `NULL` | `NULL` when active or restored; a valid core-generated UTC ISO-8601 timestamp after soft removal. |
+| `metadata` | `TEXT` | `{}` | JSON object stored as inspectable text. Values may be strings, finite numbers, booleans, `null`, arrays, or plain objects; unsupported instances and values JSON would omit or coerce are rejected. No reserved keys or retrieval semantics. |
 
 ### `memory_tags`
 
 | Column | Type | Default | Description and allowed values |
 |---|---|---|---|
 | `memory_id` | `TEXT` | None, required | An existing `memories.id` UUID. It is maintained by the core. |
-| `tag` | `TEXT` | None, required | Lowercase kebab-case slug, e.g. `architecture` or `operator-docs`; trimmed, deduplicated, and sorted. |
+| `tag` | `TEXT` | None, required | Lowercase kebab-case slug, e.g. `architecture` or `operator-docs`; consecutive or trailing hyphens are invalid. Tags are trimmed, deduplicated, and sorted. |
 
 The composite primary key is `(memory_id, tag)`.
 
@@ -228,7 +246,7 @@ Use `--json` for valid machine-readable JSON.
 ### Memory object
 
 `retain` returns this object. `recall` returns this object or `null`. Each
-`retrieve.items` entry uses it; `score` appears only for a text query.
+`retrieve.items` entry adds `store`; `score` also appears for a text query.
 
 ```jsonc
 {
@@ -251,7 +269,11 @@ Use `--json` for valid machine-readable JSON.
 
 `score` is not stored memory data and is unrelated to `importance` or `confidence`.
 It is SQLite FTS5's BM25 relevance value. nanomneme orders it ascending, so a lower
-(more negative) value ranks first. See [SQLite FTS5 BM25](https://www.sqlite.org/fts5.html#the_bm25_function).
+(more negative) value ranks first; equal scores favor higher importance, then ID. See [SQLite FTS5 BM25](https://www.sqlite.org/fts5.html#the_bm25_function).
+
+The core retrieval corpus covers exact and `OR` queries, filters, expiry, recency,
+explicit ordering, and deterministic ties. `confidence` can filter results but does
+not affect relevance ranking.
 
 ### `retain --json`
 
@@ -268,10 +290,21 @@ Returns the memory object above for one active, unexpired ID; otherwise returns 
 {
   "total": 1, // all matches before limit and offset
   "items": [
-    { /* memory object above; score is included only when query is supplied */ }
+    { "store": "project" /* plus the memory object; score appears with a query */ }
   ]
 }
 ```
+
+`store` identifies the selected database: `project` for the default database,
+`global` with `--global`, and `custom` with `--db`. It is retrieval provenance, not a
+canonical memory field, so `retain`, `recall`, and exports do not add it.
+
+`retrieve --both` queries the project and global databases independently and appends
+global items after project items; BM25 scores are not compared across databases.
+Missing databases are treated as empty without being created. `total` is the sum of
+all matches, then `--offset` and `--limit` apply once to the combined project-first
+sequence. Selectors are validated even when both databases are missing. Matching IDs
+from both stores remain separate items identified by `store`.
 
 ### `remove <id> --json`
 
@@ -323,6 +356,9 @@ line. Active, expired, and soft-removed records are included; transient `score` 
 Use `--out <file>` for a file or omit it to write JSONL to stdout. `import <file>`
 validates the complete input before opening the destination and commits atomically;
 duplicate or existing IDs reject the whole import.
+
+The export path must not be the source database or a symlink or hardlink to it. The
+CLI rejects these aliases before opening or writing the database.
 
 ```sh
 nmnm export --out memory.jsonl

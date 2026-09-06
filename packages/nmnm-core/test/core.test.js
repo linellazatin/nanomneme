@@ -199,6 +199,95 @@ test('retrieve combines FTS, field filters, and all requested tags', async (t) =
   assert.equal(typeof result.items[0].score, 'number');
 });
 
+test('retrieve baseline preserves deterministic relevance and explicit ordering', async (t) => {
+  const store = await createStore(t);
+  const exact = store.retain({
+    content: 'SQLite memory retrieval',
+    kind: 'decision',
+    namespace: 'retrieval',
+    tags: ['architecture', 'retrieval'],
+    importance: 0.9,
+    confidence: 0.8,
+  });
+  const sqlite = store.retain({
+    content: 'SQLite retrieval',
+    kind: 'note',
+    namespace: 'retrieval',
+    tags: ['retrieval'],
+    importance: 0.7,
+    confidence: 0.9,
+  });
+  const memory = store.retain({
+    content: 'Memory retrieval',
+    kind: 'note',
+    namespace: 'retrieval',
+    tags: ['retrieval'],
+    importance: 0.5,
+    confidence: 0.6,
+  });
+  const expired = store.retain({
+    content: 'SQLite memory retrieval expired',
+    namespace: 'retrieval',
+    expires_at: '2000-01-01T00:00:00.000Z',
+  });
+  const removed = store.retain({ content: 'SQLite memory retrieval removed', namespace: 'retrieval' });
+  const firstTie = store.retain({ content: 'First tie', namespace: 'ties', importance: 0.5 });
+  const secondTie = store.retain({ content: 'Second tie', namespace: 'ties', importance: 0.5 });
+  const older = store.retain({ content: 'Older listing', namespace: 'recency' });
+  await new Promise((resolve) => setTimeout(resolve, 1));
+  const newer = store.retain({ content: 'Newer listing', namespace: 'recency' });
+  store.remove({ id: removed.id });
+
+  assert.deepEqual(store.retrieve({ query: 'SQLite memory retrieval', namespace: 'retrieval' }).items.map(({ id }) => id), [exact.id]);
+  const overlap = store.retrieve({ query: 'SQLite OR memory', namespace: 'retrieval' }).items.map(({ id }) => id);
+  assert.equal(overlap[0], exact.id);
+  assert.deepEqual(overlap.slice(1), [sqlite.id, memory.id]);
+  assert.deepEqual(
+    store.retrieve({ namespace: 'retrieval', tags: ['architecture', 'retrieval'] }).items.map(({ id }) => id),
+    [exact.id],
+  );
+  assert.deepEqual(
+    store.retrieve({ namespace: 'retrieval', order_by: 'importance' }).items.map(({ id }) => id),
+    [memory.id, sqlite.id, exact.id],
+  );
+  assert.deepEqual(
+    store.retrieve({ namespace: 'retrieval', order_by: 'confidence' }).items.map(({ id }) => id),
+    [memory.id, exact.id, sqlite.id],
+  );
+  assert.deepEqual(store.retrieve({ namespace: 'retrieval', expires: 'expired' }).items.map(({ id }) => id), [expired.id]);
+  assert.deepEqual(
+    store.retrieve({ namespace: 'ties', order_by: 'importance' }).items.map(({ id }) => id),
+    [firstTie.id, secondTie.id].sort(),
+  );
+  assert.deepEqual(store.retrieve({ namespace: 'recency' }).items.map(({ id }) => id), [newer.id, older.id]);
+});
+
+test('relevance prefers importance when lexical scores tie', async (t) => {
+  const store = await createStore(t);
+  const record = {
+    content: 'Priority ranking target',
+    kind: 'note',
+    scope: 'project',
+    namespace: 'priority',
+    confidence: 1,
+    created_at: '2026-01-01T00:00:00.000Z',
+    updated_at: '2026-01-01T00:00:00.000Z',
+    expires_at: null,
+    removed_at: null,
+    metadata: {},
+    tags: [],
+  };
+  store.import([
+    { ...record, id: '10000000-0000-4000-8000-000000000001', importance: 0.1 },
+    { ...record, id: 'f0000000-0000-4000-8000-000000000002', importance: 0.9 },
+  ]);
+
+  assert.deepEqual(
+    store.retrieve({ query: 'Priority ranking target', namespace: 'priority' }).items.map(({ importance }) => importance),
+    [0.9, 0.1],
+  );
+});
+
 test('retrieve excludes expired and removed memories and supports pagination', async (t) => {
   const store = await createStore(t);
   const first = store.retain({ content: 'first visible memory' });
@@ -269,6 +358,47 @@ test('purge remove permanently deletes active and soft-removed memories', async 
   const purgedRemoved = store.remove({ id: removed.id, mode: 'purge' });
   assert.equal(purgedRemoved.mode, 'purge');
   assert.throws(() => store.retain({ id: removed.id, content: 'Cannot restore' }), /does not exist/);
+});
+
+test('rejects impossible canonical timestamps on retain and import', async (t) => {
+  const store = await createStore(t);
+  const memory = store.retain({ content: 'Valid timestamp target' });
+  const impossible = '2026-02-31T00:00:00.000Z';
+
+  assert.throws(() => store.retain({ content: 'Impossible date', expires_at: impossible }), /expires_at/);
+  assert.throws(() => store.import([{ ...memory, created_at: impossible }]), /created_at/);
+});
+
+test('rejects non-canonical kebab-case slugs across public paths', async (t) => {
+  const store = await createStore(t);
+  const memory = store.retain({ content: 'Valid slug target' });
+
+  assert.throws(() => store.retain({ content: 'Trailing hyphen', namespace: 'project-' }), /namespace/);
+  assert.throws(() => store.retrieve({ tags: ['double--hyphen'] }), /tag/);
+  assert.throws(() => store.import([{ ...memory, namespace: 'project-' }]), /namespace/);
+});
+
+test('rejects metadata values that JSON would silently coerce or omit', async (t) => {
+  const store = await createStore(t);
+
+  assert.throws(() => store.retain({ content: 'Undefined metadata', metadata: { value: undefined } }), /metadata/);
+  assert.throws(() => store.retain({ content: 'Non-finite metadata', metadata: { value: NaN } }), /metadata/);
+  assert.throws(() => store.retain({ content: 'Nested metadata', metadata: { values: [1, undefined] } }), /metadata/);
+  assert.throws(() => store.retain({ content: 'Date metadata', metadata: { value: new Date() } }), /metadata/);
+  assert.throws(() => store.retain({ content: 'Map metadata', metadata: { value: new Map() } }), /metadata/);
+});
+
+test('verify reports impossible stored timestamps', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-verify-date-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  t.after(() => store.close());
+  const memory = store.retain({ content: 'Corrupt timestamp target' });
+  const db = new DatabaseSync(path);
+  t.after(() => db.close());
+  db.prepare('UPDATE memories SET created_at = ? WHERE id = ?').run('2026-02-31T00:00:00.000Z', memory.id);
+
+  assert.deepEqual(store.verify().issues, [{ code: 'memory_field', count: 1, ids: [memory.id] }]);
 });
 
 test('enforces canonical public field conventions', async (t) => {

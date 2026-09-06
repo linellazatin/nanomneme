@@ -22,4 +22,5 @@ try {
 
 The public API provides `open(path)`, the 4Rs, canonical portability records,
 integrity verification, and FTS repair. See the repository README for the complete
-data contract and API examples.
+data contract and API examples. Imports reject unknown fields, values that require
+normalization, and `updated_at` values earlier than `created_at`.

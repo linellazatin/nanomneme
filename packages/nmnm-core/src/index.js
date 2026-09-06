@@ -10,6 +10,7 @@ const ORDER_FIELDS = new Set(['id', 'created_at', 'updated_at', 'importance', 'c
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const SLUG = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+const IMPORT_FIELDS = ['id', 'content', 'kind', 'scope', 'namespace', 'importance', 'confidence', 'created_at', 'updated_at', 'expires_at', 'removed_at', 'metadata', 'tags'];
 const SCHEMA_VERSION = 1;
 const SCHEMA = `
   CREATE TABLE nmnm_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;
@@ -164,13 +165,16 @@ function issueReporter() {
 
 function importedRecord(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('import records must be objects');
-  for (const field of ['id', 'content', 'kind', 'scope', 'namespace', 'importance', 'confidence', 'created_at', 'updated_at', 'expires_at', 'removed_at', 'metadata', 'tags']) {
+  const unknown = Object.keys(value).find((field) => !IMPORT_FIELDS.includes(field));
+  if (unknown) throw new TypeError(`import record has unknown field ${unknown}`);
+  for (const field of IMPORT_FIELDS) {
     if (!Object.hasOwn(value, field)) throw new TypeError(`import record is missing ${field}`);
   }
   const createdAt = date(value.created_at, 'created_at');
   const updatedAt = date(value.updated_at, 'updated_at');
   if (!createdAt || !updatedAt) throw new TypeError('import record timestamps are required');
-  return {
+  if (updatedAt < createdAt) throw new TypeError('updated_at must not precede created_at');
+  const record = {
     id: memoryId(value.id),
     content: text(value.content, 'content'),
     kind: kind(value.kind),
@@ -185,6 +189,11 @@ function importedRecord(value) {
     metadata: metadata(value.metadata),
     tags: tags(value.tags),
   };
+  for (const field of ['id', 'content', 'kind', 'scope', 'namespace']) {
+    if (record[field] !== value[field]) throw new TypeError(`${field} must already be canonical`);
+  }
+  if (record.tags.length !== value.tags.length || record.tags.some((tag, index) => tag !== value.tags[index])) throw new TypeError('tags must already be canonical');
+  return record;
 }
 
 export function open(path, { create = true } = {}) {

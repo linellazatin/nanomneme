@@ -117,6 +117,48 @@ test('import round-trips records and rejects conflicts atomically', async (t) =>
   assert.equal(target.retrieve({}).total, 1);
 });
 
+test('import rejects fields outside the canonical record', async (t) => {
+  const source = await createStore(t);
+  const target = await createStore(t);
+  source.retain({ content: 'Unknown field target' });
+  const [record] = source.export();
+
+  assert.throws(() => target.import([{ ...record, score: 0 }]), /unknown field score/);
+  assert.equal(target.export().length, 0);
+});
+
+test('import rejects values that require canonical normalization', async (t) => {
+  const source = await createStore(t);
+  const target = await createStore(t);
+  source.retain({ content: 'Canonical import target', tags: ['alpha', 'beta'] });
+  const [record] = source.export();
+
+  for (const [field, value] of [
+    ['id', ` ${record.id}`],
+    ['content', ` ${record.content}`],
+    ['kind', ` ${record.kind}`],
+    ['scope', ` ${record.scope}`],
+    ['namespace', ` ${record.namespace}`],
+    ['tags', ['beta', 'alpha']],
+  ]) {
+    assert.throws(() => target.import([{ ...record, [field]: value }]), new RegExp(field));
+  }
+  assert.equal(target.export().length, 0);
+});
+
+test('import rejects updated_at earlier than created_at', async (t) => {
+  const source = await createStore(t);
+  const target = await createStore(t);
+  const memory = source.retain({ content: 'Timestamp order target' });
+
+  assert.throws(() => target.import([{
+    ...memory,
+    created_at: '2026-09-06T01:00:00.000Z',
+    updated_at: '2026-09-06T00:00:00.000Z',
+  }]), /updated_at must not precede created_at/);
+  assert.equal(target.export().length, 0);
+});
+
 test('rebuildFts repairs derived rows without changing canonical memories', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-rebuild-'));
   const path = join(directory, 'memory.db');

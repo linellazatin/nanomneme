@@ -8,7 +8,7 @@ const KINDS = new Set(['note', 'decision', 'preference', 'fact', 'instruction'])
 const SCOPES = new Set(['project', 'global']);
 const ORDER_FIELDS = new Set(['id', 'created_at', 'updated_at', 'importance', 'confidence']);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-const SLUG = /^[a-z][a-z0-9-]*$/;
+const SLUG = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 const SCHEMA_VERSION = 1;
 const SCHEMA = `
@@ -70,14 +70,22 @@ function score(value, name) {
 
 function date(value, name) {
   if (value == null) return null;
-  if (typeof value !== 'string' || !TIMESTAMP.test(value) || Number.isNaN(Date.parse(value))) throw new TypeError(`${name} must be a UTC ISO-8601 timestamp`);
+  const timestamp = typeof value === 'string' && TIMESTAMP.test(value) ? Date.parse(value) : NaN;
+  if (Number.isNaN(timestamp) || new Date(timestamp).toISOString() !== value) throw new TypeError(`${name} must be a UTC ISO-8601 timestamp`);
   return value;
 }
 
 function metadata(value) {
   if (value == null) return {};
   if (typeof value !== 'object' || Array.isArray(value)) throw new TypeError('metadata must be a JSON object');
-  try { return JSON.parse(JSON.stringify(value)); } catch { throw new TypeError('metadata must be JSON-serializable'); }
+  try {
+    return JSON.parse(JSON.stringify(value, (_key, item) => {
+      if (item === undefined || ['bigint', 'function', 'symbol'].includes(typeof item) || (typeof item === 'number' && !Number.isFinite(item))) throw new TypeError();
+      return item;
+    }));
+  } catch {
+    throw new TypeError('metadata must contain only JSON values');
+  }
 }
 
 function tags(value) {

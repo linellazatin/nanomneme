@@ -360,6 +360,45 @@ test('purge remove permanently deletes active and soft-removed memories', async 
   assert.throws(() => store.retain({ id: removed.id, content: 'Cannot restore' }), /does not exist/);
 });
 
+test('rejects impossible canonical timestamps on retain and import', async (t) => {
+  const store = await createStore(t);
+  const memory = store.retain({ content: 'Valid timestamp target' });
+  const impossible = '2026-02-31T00:00:00.000Z';
+
+  assert.throws(() => store.retain({ content: 'Impossible date', expires_at: impossible }), /expires_at/);
+  assert.throws(() => store.import([{ ...memory, created_at: impossible }]), /created_at/);
+});
+
+test('rejects non-canonical kebab-case slugs across public paths', async (t) => {
+  const store = await createStore(t);
+  const memory = store.retain({ content: 'Valid slug target' });
+
+  assert.throws(() => store.retain({ content: 'Trailing hyphen', namespace: 'project-' }), /namespace/);
+  assert.throws(() => store.retrieve({ tags: ['double--hyphen'] }), /tag/);
+  assert.throws(() => store.import([{ ...memory, namespace: 'project-' }]), /namespace/);
+});
+
+test('rejects metadata values that JSON would silently coerce or omit', async (t) => {
+  const store = await createStore(t);
+
+  assert.throws(() => store.retain({ content: 'Undefined metadata', metadata: { value: undefined } }), /metadata/);
+  assert.throws(() => store.retain({ content: 'Non-finite metadata', metadata: { value: NaN } }), /metadata/);
+  assert.throws(() => store.retain({ content: 'Nested metadata', metadata: { values: [1, undefined] } }), /metadata/);
+});
+
+test('verify reports impossible stored timestamps', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-verify-date-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  t.after(() => store.close());
+  const memory = store.retain({ content: 'Corrupt timestamp target' });
+  const db = new DatabaseSync(path);
+  t.after(() => db.close());
+  db.prepare('UPDATE memories SET created_at = ? WHERE id = ?').run('2026-02-31T00:00:00.000Z', memory.id);
+
+  assert.deepEqual(store.verify().issues, [{ code: 'memory_field', count: 1, ids: [memory.id] }]);
+});
+
 test('enforces canonical public field conventions', async (t) => {
   const store = await createStore(t);
   assert.throws(() => store.retain({ content: 'x', metadata: '{not json' }), /metadata/);

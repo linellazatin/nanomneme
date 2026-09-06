@@ -82,6 +82,37 @@ test('CLI exports canonical JSONL and imports it atomically', async () => {
   assert.equal(JSON.parse(run('recall', removed.id, '--db', target, '--json').stdout), null);
 });
 
+test('CLI validates complete import input before creating the destination', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-cli-import-validation-'));
+  const source = join(directory, 'invalid.jsonl');
+  const destination = join(directory, 'destination.sqlite');
+  const lines = [
+    JSON.stringify({ _format: 'nanomneme', _version: 1 }),
+    JSON.stringify({
+      id: '7b8d1ac8-9a1d-4a73-913f-f7d5486ee090',
+      kind: 'invalid',
+      scope: 'project',
+      namespace: 'default',
+      content: 'Invalid memory',
+      importance: 0.5,
+      confidence: 1,
+      tags: [],
+      metadata: {},
+      created_at: '2026-09-06T00:00:00.000Z',
+      updated_at: '2026-09-06T00:00:00.000Z',
+      expires_at: null,
+      removed_at: null,
+    }),
+  ];
+  await writeFile(source, `${lines.join('\n')}\n`);
+
+  const result = run('import', source, '--db', destination);
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /kind/);
+  await assert.rejects(access(destination));
+});
+
 test('CLI refuses to export over its source database or an alias', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-export-safety-'));
   const source = join(directory, 'memory.db');

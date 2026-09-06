@@ -213,6 +213,10 @@ export function main(args = process.argv.slice(2)) {
   const verification = command === 'verify' || command === 'repair';
   const readonly = verification || command === 'export';
   const records = command === 'import' ? importJsonl(positionals[0]) : null;
+  if (records) {
+    const validationStore = open(':memory:');
+    try { validationStore.import(records); } finally { validationStore.close(); }
+  }
   if (command === 'retrieve' && options.both) {
     const result = { items: [], total: 0 };
     const input = retrieveInput(positionals, options);

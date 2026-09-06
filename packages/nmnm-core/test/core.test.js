@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp } from 'node:fs/promises';
+import { access, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -19,6 +19,40 @@ test('open refuses a missing database when creation is disabled', async () => {
   const path = join(directory, 'missing.db');
 
   assert.throws(() => open(path, { create: false }), /does not exist/);
+});
+
+test('open readOnly mode refuses a missing database without creating it', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-read-only-missing-'));
+  const path = join(directory, 'missing.db');
+  let store;
+
+  try {
+    assert.throws(() => { store = open(path, { readOnly: true }); }, /does not exist/);
+  } finally {
+    store?.close();
+  }
+  await assert.rejects(access(path));
+});
+
+test('open readOnly mode permits reads and rejects writes', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-read-only-'));
+  const path = join(directory, 'memory.db');
+  const writable = open(path);
+  const memory = writable.retain({ content: 'Read-only target' });
+  writable.close();
+  const readOnly = open(path, { readOnly: true });
+  t.after(() => readOnly.close());
+
+  assert.equal(readOnly.recall({ id: memory.id }).id, memory.id);
+  assert.throws(() => readOnly.retain({ content: 'Rejected write' }), /readonly/);
+});
+
+test('open validates the readOnly option before filesystem changes', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-read-only-option-'));
+  const path = join(directory, 'missing.db');
+
+  assert.throws(() => open(path, { readOnly: 'yes' }), /readOnly must be a boolean/);
+  await assert.rejects(access(path));
 });
 
 test('open rejects a database created by a newer schema', async () => {

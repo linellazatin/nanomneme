@@ -196,18 +196,20 @@ function importedRecord(value) {
   return record;
 }
 
-export function open(path, { create = true } = {}) {
+export function open(path, { create = true, readOnly = false } = {}) {
   text(path, 'path');
   if (typeof create !== 'boolean') throw new TypeError('create must be a boolean');
+  if (typeof readOnly !== 'boolean') throw new TypeError('readOnly must be a boolean');
   const fresh = !existsSync(path);
-  if (fresh && !create) throw new Error(`database does not exist: ${path}`);
+  if (fresh && (!create || readOnly)) throw new Error(`database does not exist: ${path}`);
   if (fresh) mkdirSync(dirname(path), { recursive: true });
-  const db = new DatabaseSync(path, { timeout: 5000 });
+  const db = new DatabaseSync(path, { timeout: 5000, readOnly });
   try {
     db.exec('PRAGMA foreign_keys = ON;');
     const version = fresh ? (db.exec(SCHEMA), SCHEMA_VERSION) : schemaVersion(db);
     if (version > SCHEMA_VERSION) throw new Error(`database schema version ${version} is newer than this version of nanomneme`);
-    migrate(db, version);
+    if (readOnly && version < SCHEMA_VERSION) throw new Error(`database schema version ${version} requires migration before read-only use`);
+    if (!readOnly) migrate(db, version);
   } catch (error) {
     db.close();
     if (fresh && /fts5/i.test(error.message)) throw new Error('SQLite FTS5 support is required', { cause: error });

@@ -1,9 +1,22 @@
 {
   "name": "nmnm-core",
   "version": "0.0.4",
+  "description": "Deterministic local SQLite memory core for nanomneme",
   "type": "module",
   "exports": "./src/index.js",
+  "files": [
+    "src/index.js",
+    "README.md",
+    "LICENSE"
+  ],
   "engines": {
     "node": ">=22.13.0"
+  },
+  "license": "MIT",
+  "author": "Linel Lazatin",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/linellazatin/nanomneme.git",
+    "directory": "packages/nmnm-core"
   }
 }

@@ -33,6 +33,7 @@ const SCHEMA_COLUMNS = {
   memory_tags: ['memory_id', 'tag'],
   memories_fts: ['content'],
 };
+const MEMORY_SELECT = SCHEMA_COLUMNS.memories.map((column) => `m.${column}`).join(', ');
 const MIGRATIONS = new Map();
 
 function text(value, name) {
@@ -226,8 +227,8 @@ export function open(path, { create = true, readOnly = false } = {}) {
   const read = (id, activeOnly = true) => {
     const targetId = memoryId(id);
     const row = activeOnly
-      ? db.prepare(`SELECT * FROM memories m WHERE m.id = ? AND ${active}`).get(targetId, new Date().toISOString())
-      : db.prepare('SELECT * FROM memories m WHERE m.id = ?').get(targetId);
+      ? db.prepare(`SELECT ${MEMORY_SELECT} FROM memories m WHERE m.id = ? AND ${active}`).get(targetId, new Date().toISOString())
+      : db.prepare(`SELECT ${MEMORY_SELECT} FROM memories m WHERE m.id = ?`).get(targetId);
     return row ? hydrate(row) : null;
   };
   const transaction = (work) => {
@@ -341,7 +342,7 @@ export function open(path, { create = true, readOnly = false } = {}) {
       const condition = where.join(' AND ');
       try {
         const total = db.prepare(`SELECT COUNT(*) AS total FROM memories m ${join} WHERE ${condition}`).get(...parameters).total;
-        const rows = db.prepare(`SELECT m.*, ${query ? 'bm25(memories_fts) AS score' : 'NULL AS score'} FROM memories m ${join} WHERE ${condition} ORDER BY ${ordering} LIMIT ? OFFSET ?`)
+        const rows = db.prepare(`SELECT ${MEMORY_SELECT}, ${query ? 'bm25(memories_fts) AS score' : 'NULL AS score'} FROM memories m ${join} WHERE ${condition} ORDER BY ${ordering} LIMIT ? OFFSET ?`)
           .all(...parameters, limit, offset);
         return { total, items: rows.map(hydrate) };
       } catch (error) {
@@ -351,7 +352,7 @@ export function open(path, { create = true, readOnly = false } = {}) {
     },
 
     export() {
-      return db.prepare('SELECT * FROM memories ORDER BY id').all().map(hydrate).map(({ score: _score, ...memory }) => memory);
+      return db.prepare(`SELECT ${MEMORY_SELECT} FROM memories m ORDER BY m.id`).all().map(hydrate);
     },
 
     import(records) {

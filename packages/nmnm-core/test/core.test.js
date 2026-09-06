@@ -136,6 +136,45 @@ test('verify reports unexpected schema columns', async (t) => {
   ]);
 });
 
+test('public memory results omit unexpected database columns', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-canonical-results-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  t.after(() => store.close());
+  const memory = store.retain({ content: 'Canonical result target' });
+  const db = new DatabaseSync(path);
+  db.exec('ALTER TABLE memories ADD COLUMN extra TEXT');
+  db.prepare('UPDATE memories SET extra = ? WHERE id = ?').run('must not leak', memory.id);
+  db.close();
+  const fields = [
+    'confidence', 'content', 'created_at', 'expires_at', 'id', 'importance', 'kind',
+    'metadata', 'namespace', 'removed_at', 'scope', 'tags', 'updated_at',
+  ];
+
+  assert.deepEqual(Object.keys(store.recall({ id: memory.id })).sort(), fields);
+  assert.deepEqual(Object.keys(store.retrieve({}).items[0]).sort(), fields);
+});
+
+test('export remains importable with unexpected database columns', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-canonical-export-'));
+  const sourcePath = join(directory, 'source.db');
+  const source = open(sourcePath);
+  t.after(() => source.close());
+  const memory = source.retain({ content: 'Canonical export target' });
+  const db = new DatabaseSync(sourcePath);
+  db.exec('ALTER TABLE memories ADD COLUMN extra TEXT');
+  db.prepare('UPDATE memories SET extra = ? WHERE id = ?').run('must not export', memory.id);
+  db.close();
+  assert.equal(source.verify().ok, false);
+  const records = source.export();
+  const target = open(join(directory, 'target.db'));
+  t.after(() => target.close());
+
+  assert.equal(Object.hasOwn(records[0], 'extra'), false);
+  assert.deepEqual(target.import(records), { imported: 1 });
+  assert.equal(target.recall({ id: memory.id }).id, memory.id);
+});
+
 test('verify reports unusable table columns without throwing', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-verify-unusable-columns-'));
   const path = join(directory, 'memory.db');

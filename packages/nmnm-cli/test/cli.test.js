@@ -16,8 +16,8 @@ test('CLI reports its package version without opening a database', async () => {
 
   assert.equal(long.status, 0, long.stderr);
   assert.equal(short.status, 0, short.stderr);
-  assert.equal(long.stdout, '0.0.3\n');
-  assert.equal(short.stdout, '0.0.3\n');
+  assert.equal(long.stdout, '0.0.4\n');
+  assert.equal(short.stdout, '0.0.4\n');
   await assert.rejects(access(join(directory, '.nanomneme', 'memory.db')));
 });
 

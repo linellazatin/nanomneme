@@ -384,6 +384,8 @@ test('rejects metadata values that JSON would silently coerce or omit', async (t
   assert.throws(() => store.retain({ content: 'Undefined metadata', metadata: { value: undefined } }), /metadata/);
   assert.throws(() => store.retain({ content: 'Non-finite metadata', metadata: { value: NaN } }), /metadata/);
   assert.throws(() => store.retain({ content: 'Nested metadata', metadata: { values: [1, undefined] } }), /metadata/);
+  assert.throws(() => store.retain({ content: 'Date metadata', metadata: { value: new Date() } }), /metadata/);
+  assert.throws(() => store.retain({ content: 'Map metadata', metadata: { value: new Map() } }), /metadata/);
 });
 
 test('verify reports impossible stored timestamps', async (t) => {

@@ -206,6 +206,9 @@ test('CLI prints readable output without --json and reports invalid input', asyn
   const invalid = run('retain', '--db', db);
   assert.notEqual(invalid.status, 0);
   assert.match(invalid.stderr, /content/);
+  const emptyNumber = run('retain', 'Invalid empty number', '--importance', '', '--db', db);
+  assert.notEqual(emptyNumber.status, 0);
+  assert.match(emptyNumber.stderr, /importance/);
 });
 
 test('CLI can retrieve expired memories explicitly', async () => {

@@ -79,8 +79,11 @@ function metadata(value) {
   if (value == null) return {};
   if (typeof value !== 'object' || Array.isArray(value)) throw new TypeError('metadata must be a JSON object');
   try {
-    return JSON.parse(JSON.stringify(value, (_key, item) => {
-      if (item === undefined || ['bigint', 'function', 'symbol'].includes(typeof item) || (typeof item === 'number' && !Number.isFinite(item))) throw new TypeError();
+    return JSON.parse(JSON.stringify(value, function (_key, item) {
+      const original = this[_key];
+      const type = typeof original;
+      if (original === undefined || ['bigint', 'function', 'symbol'].includes(type) || (type === 'number' && !Number.isFinite(original))) throw new TypeError();
+      if (original && type === 'object' && (typeof original.toJSON === 'function' || (!Array.isArray(original) && ![Object.prototype, null].includes(Object.getPrototypeOf(original))))) throw new TypeError();
       return item;
     }));
   } catch {

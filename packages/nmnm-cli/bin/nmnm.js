@@ -79,7 +79,7 @@ function validateCommand(command, positionals, options) {
 }
 
 function number(value) {
-  return value === undefined ? undefined : Number(value);
+  return value === undefined ? undefined : value.trim() ? Number(value) : NaN;
 }
 
 function json(value) {

@@ -10,6 +10,7 @@ const ORDER_FIELDS = new Set(['id', 'created_at', 'updated_at', 'importance', 'c
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const SLUG = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+const IMPORT_FIELDS = ['id', 'content', 'kind', 'scope', 'namespace', 'importance', 'confidence', 'created_at', 'updated_at', 'expires_at', 'removed_at', 'metadata', 'tags'];
 const SCHEMA_VERSION = 1;
 const SCHEMA = `
   CREATE TABLE nmnm_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;
@@ -32,6 +33,7 @@ const SCHEMA_COLUMNS = {
   memory_tags: ['memory_id', 'tag'],
   memories_fts: ['content'],
 };
+const MEMORY_SELECT = SCHEMA_COLUMNS.memories.map((column) => `m.${column}`).join(', ');
 const MIGRATIONS = new Map();
 
 function text(value, name) {
@@ -164,13 +166,16 @@ function issueReporter() {
 
 function importedRecord(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('import records must be objects');
-  for (const field of ['id', 'content', 'kind', 'scope', 'namespace', 'importance', 'confidence', 'created_at', 'updated_at', 'expires_at', 'removed_at', 'metadata', 'tags']) {
+  const unknown = Object.keys(value).find((field) => !IMPORT_FIELDS.includes(field));
+  if (unknown) throw new TypeError(`import record has unknown field ${unknown}`);
+  for (const field of IMPORT_FIELDS) {
     if (!Object.hasOwn(value, field)) throw new TypeError(`import record is missing ${field}`);
   }
   const createdAt = date(value.created_at, 'created_at');
   const updatedAt = date(value.updated_at, 'updated_at');
   if (!createdAt || !updatedAt) throw new TypeError('import record timestamps are required');
-  return {
+  if (updatedAt < createdAt) throw new TypeError('updated_at must not precede created_at');
+  const record = {
     id: memoryId(value.id),
     content: text(value.content, 'content'),
     kind: kind(value.kind),
@@ -185,20 +190,27 @@ function importedRecord(value) {
     metadata: metadata(value.metadata),
     tags: tags(value.tags),
   };
+  for (const field of ['id', 'content', 'kind', 'scope', 'namespace']) {
+    if (record[field] !== value[field]) throw new TypeError(`${field} must already be canonical`);
+  }
+  if (record.tags.length !== value.tags.length || record.tags.some((tag, index) => tag !== value.tags[index])) throw new TypeError('tags must already be canonical');
+  return record;
 }
 
-export function open(path, { create = true } = {}) {
+export function open(path, { create = true, readOnly = false } = {}) {
   text(path, 'path');
   if (typeof create !== 'boolean') throw new TypeError('create must be a boolean');
+  if (typeof readOnly !== 'boolean') throw new TypeError('readOnly must be a boolean');
   const fresh = !existsSync(path);
-  if (fresh && !create) throw new Error(`database does not exist: ${path}`);
+  if (fresh && (!create || readOnly)) throw new Error(`database does not exist: ${path}`);
   if (fresh) mkdirSync(dirname(path), { recursive: true });
-  const db = new DatabaseSync(path, { timeout: 5000 });
+  const db = new DatabaseSync(path, { timeout: 5000, readOnly });
   try {
     db.exec('PRAGMA foreign_keys = ON;');
     const version = fresh ? (db.exec(SCHEMA), SCHEMA_VERSION) : schemaVersion(db);
     if (version > SCHEMA_VERSION) throw new Error(`database schema version ${version} is newer than this version of nanomneme`);
-    migrate(db, version);
+    if (readOnly && version < SCHEMA_VERSION) throw new Error(`database schema version ${version} requires migration before read-only use`);
+    if (!readOnly) migrate(db, version);
   } catch (error) {
     db.close();
     if (fresh && /fts5/i.test(error.message)) throw new Error('SQLite FTS5 support is required', { cause: error });
@@ -215,8 +227,8 @@ export function open(path, { create = true } = {}) {
   const read = (id, activeOnly = true) => {
     const targetId = memoryId(id);
     const row = activeOnly
-      ? db.prepare(`SELECT * FROM memories m WHERE m.id = ? AND ${active}`).get(targetId, new Date().toISOString())
-      : db.prepare('SELECT * FROM memories m WHERE m.id = ?').get(targetId);
+      ? db.prepare(`SELECT ${MEMORY_SELECT} FROM memories m WHERE m.id = ? AND ${active}`).get(targetId, new Date().toISOString())
+      : db.prepare(`SELECT ${MEMORY_SELECT} FROM memories m WHERE m.id = ?`).get(targetId);
     return row ? hydrate(row) : null;
   };
   const transaction = (work) => {
@@ -330,7 +342,7 @@ export function open(path, { create = true } = {}) {
       const condition = where.join(' AND ');
       try {
         const total = db.prepare(`SELECT COUNT(*) AS total FROM memories m ${join} WHERE ${condition}`).get(...parameters).total;
-        const rows = db.prepare(`SELECT m.*, ${query ? 'bm25(memories_fts) AS score' : 'NULL AS score'} FROM memories m ${join} WHERE ${condition} ORDER BY ${ordering} LIMIT ? OFFSET ?`)
+        const rows = db.prepare(`SELECT ${MEMORY_SELECT}, ${query ? 'bm25(memories_fts) AS score' : 'NULL AS score'} FROM memories m ${join} WHERE ${condition} ORDER BY ${ordering} LIMIT ? OFFSET ?`)
           .all(...parameters, limit, offset);
         return { total, items: rows.map(hydrate) };
       } catch (error) {
@@ -340,7 +352,7 @@ export function open(path, { create = true } = {}) {
     },
 
     export() {
-      return db.prepare('SELECT * FROM memories ORDER BY id').all().map(hydrate).map(({ score: _score, ...memory }) => memory);
+      return db.prepare(`SELECT ${MEMORY_SELECT} FROM memories m ORDER BY m.id`).all().map(hydrate);
     },
 
     import(records) {
@@ -377,23 +389,27 @@ export function open(path, { create = true } = {}) {
     verify() {
       const report = issueReporter();
       const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all().map(({ name }) => name);
+      const tableColumns = new Map();
       for (const [table, columns] of Object.entries(SCHEMA_COLUMNS)) {
         if (!tables.includes(table)) {
           report.add('schema_missing', table);
           continue;
         }
         const actual = db.prepare(`PRAGMA table_info(${table})`).all().map(({ name }) => name);
-        if (columns.some((column) => !actual.includes(column))) report.add('schema_columns', table);
+        tableColumns.set(table, actual);
+        if (actual.length !== columns.length || columns.some((column, index) => actual[index] !== column)) report.add('schema_columns', table);
       }
       const ftsSchema = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'memories_fts'").get();
-      if (ftsSchema && !/^CREATE VIRTUAL TABLE\s+memories_fts\s+USING\s+fts5\b/i.test(ftsSchema.sql)) report.add('schema_fts', 'memories_fts');
+      const validFts = ftsSchema && /^CREATE VIRTUAL TABLE\s+memories_fts\s+USING\s+fts5\b/i.test(ftsSchema.sql);
+      if (ftsSchema && !validFts) report.add('schema_fts', 'memories_fts');
       for (const row of db.prepare('PRAGMA integrity_check').all()) {
         const value = Object.values(row)[0];
         if (value !== 'ok') report.add('sqlite_integrity');
       }
       for (const row of db.prepare('PRAGMA foreign_key_check').all()) report.add('foreign_key', `${row.table}:${row.rowid}`);
 
-      const memories = tables.includes('memories')
+      const hasColumns = (table) => SCHEMA_COLUMNS[table].every((column) => tableColumns.get(table)?.includes(column));
+      const memories = hasColumns('memories')
         ? db.prepare('SELECT rowid, * FROM memories ORDER BY id').all()
         : [];
       for (const memory of memories) {
@@ -405,8 +421,9 @@ export function open(path, { create = true } = {}) {
           slug(memory.namespace, 'namespace');
           score(memory.importance, 'importance');
           score(memory.confidence, 'confidence');
-          date(memory.created_at, 'created_at');
-          date(memory.updated_at, 'updated_at');
+          const createdAt = date(memory.created_at, 'created_at');
+          const updatedAt = date(memory.updated_at, 'updated_at');
+          if (updatedAt < createdAt) throw new TypeError('updated_at must not precede created_at');
           date(memory.expires_at, 'expires_at');
           date(memory.removed_at, 'removed_at');
           metadata(JSON.parse(memory.metadata));
@@ -414,12 +431,12 @@ export function open(path, { create = true } = {}) {
           report.add('memory_field', memory.id);
         }
       }
-      if (tables.includes('memory_tags')) {
+      if (hasColumns('memory_tags')) {
         for (const tag of db.prepare('SELECT memory_id, tag FROM memory_tags ORDER BY memory_id, tag').all()) {
           try { memoryId(tag.memory_id); slug(tag.tag, 'tag'); } catch { report.add('tag_field', tag.memory_id); }
         }
       }
-      if (tables.includes('memories_fts') && tables.includes('memories')) {
+      if (validFts && hasColumns('memories_fts') && hasColumns('memories')) {
         const fts = new Map(db.prepare('SELECT rowid, content FROM memories_fts').all().map((row) => [row.rowid, row]));
         for (const memory of memories) {
           const indexed = fts.get(memory.rowid);

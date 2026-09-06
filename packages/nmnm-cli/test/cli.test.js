@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { access, link, mkdtemp, symlink, writeFile } from 'node:fs/promises';
+import { access, link, mkdir, mkdtemp, readFile, readdir, symlink, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -16,9 +16,19 @@ test('CLI reports its package version without opening a database', async () => {
 
   assert.equal(long.status, 0, long.stderr);
   assert.equal(short.status, 0, short.stderr);
-  assert.equal(long.stdout, '0.0.4\n');
-  assert.equal(short.stdout, '0.0.4\n');
+  assert.equal(long.stdout, '0.0.5\n');
+  assert.equal(short.stdout, '0.0.5\n');
   await assert.rejects(access(join(directory, '.nanomneme', 'memory.db')));
+});
+
+test('CLI help lists command-specific maintenance options', () => {
+  const result = run('--help');
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Remove options: --purge/);
+  assert.match(result.stdout, /Export options: --out <file>/);
+  assert.match(result.stdout, /Repair options: --rebuild-fts/);
+  assert.match(result.stdout, /Use -- before content or a query that starts with --/);
 });
 
 test('CLI rejects options unsupported by each command without creating a database', async () => {
@@ -59,6 +69,18 @@ test('CLI validates commands and positional arguments before creating a database
   await assert.rejects(access(join(directory, '.nanomneme', 'memory.db')));
 });
 
+test('CLI accepts -- before content or a query that starts with --', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-end-options-'));
+  const db = join(directory, 'memory.db');
+  const retained = run('retain', '--db', db, '--json', '--', '--leading content');
+
+  assert.equal(retained.status, 0, retained.stderr);
+  assert.equal(JSON.parse(retained.stdout).content, '--leading content');
+  const query = run('retrieve', '--db', db, '--json', '--', '--leading');
+  assert.notEqual(query.status, 0);
+  assert.match(query.stderr, /invalid FTS5 query/);
+});
+
 test('CLI exports canonical JSONL and imports it atomically', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-portable-cli-'));
   const source = join(directory, 'source.db');
@@ -82,6 +104,37 @@ test('CLI exports canonical JSONL and imports it atomically', async () => {
   assert.equal(JSON.parse(run('recall', removed.id, '--db', target, '--json').stdout), null);
 });
 
+test('CLI validates complete import input before creating the destination', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-cli-import-validation-'));
+  const source = join(directory, 'invalid.jsonl');
+  const destination = join(directory, 'destination.sqlite');
+  const lines = [
+    JSON.stringify({ _format: 'nanomneme', _version: 1 }),
+    JSON.stringify({
+      id: '7b8d1ac8-9a1d-4a73-913f-f7d5486ee090',
+      kind: 'invalid',
+      scope: 'project',
+      namespace: 'default',
+      content: 'Invalid memory',
+      importance: 0.5,
+      confidence: 1,
+      tags: [],
+      metadata: {},
+      created_at: '2026-09-06T00:00:00.000Z',
+      updated_at: '2026-09-06T00:00:00.000Z',
+      expires_at: null,
+      removed_at: null,
+    }),
+  ];
+  await writeFile(source, `${lines.join('\n')}\n`);
+
+  const result = run('import', source, '--db', destination);
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /kind/);
+  await assert.rejects(access(destination));
+});
+
 test('CLI refuses to export over its source database or an alias', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-export-safety-'));
   const source = join(directory, 'memory.db');
@@ -99,6 +152,38 @@ test('CLI refuses to export over its source database or an alias', async () => {
     assert.equal(recalled.status, 0, recalled.stderr);
     assert.equal(JSON.parse(recalled.stdout).id, memory.id);
   }
+});
+
+test('CLI atomically replaces an existing export file', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-export-atomic-'));
+  const source = join(directory, 'memory.db');
+  const output = join(directory, 'memory.jsonl');
+  const snapshot = join(directory, 'previous.jsonl');
+  run('retain', 'Atomic export target', '--db', source);
+  await writeFile(output, 'previous export\n');
+  await link(output, snapshot);
+
+  const exported = run('export', '--db', source, '--out', output);
+
+  assert.equal(exported.status, 0, exported.stderr);
+  assert.equal(await readFile(snapshot, 'utf8'), 'previous export\n');
+  assert.deepEqual(JSON.parse((await readFile(output, 'utf8')).split('\n')[0]), { _format: 'nanomneme', _version: 1 });
+  assert.equal((await readdir(directory)).some((name) => name.startsWith('.memory.jsonl.')), false);
+});
+
+test('CLI removes temporary files when atomic export replacement fails', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-export-cleanup-'));
+  const source = join(directory, 'memory.db');
+  const output = join(directory, 'memory.jsonl');
+  run('retain', 'Failed export target', '--db', source);
+  await mkdir(output);
+  await writeFile(join(output, 'marker'), 'unchanged');
+
+  const exported = run('export', '--db', source, '--out', output);
+
+  assert.notEqual(exported.status, 0);
+  assert.equal(await readFile(join(output, 'marker'), 'utf8'), 'unchanged');
+  assert.equal((await readdir(directory)).some((name) => name.startsWith('.memory.jsonl.')), false);
 });
 
 test('CLI repairs FTS only with the explicit rebuild flag', async () => {

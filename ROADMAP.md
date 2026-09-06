@@ -18,6 +18,13 @@ when they preserve that model.
 - Project-first `retrieve --both` with combined pagination and duplicate-ID preservation.
 - Consistent selector validation without creating missing databases.
 
+## v0.0.5
+
+- Strict canonical import validation before destination creation.
+- Atomic file export with source-alias protection and failure cleanup.
+- Read-only core opening for CLI verification and export.
+- Documented transfer, restore, merge, and exact-backup workflows.
+
 ## Possible next steps
 
 - [x] Release hardening for v0.0.4.
@@ -28,15 +35,21 @@ when they preserve that model.
     or creating databases.
   - [x] Phase 4: correct npm package metadata and published file contents.
   - [x] Phase 5: run the final release audit and verification checkpoint.
-- [ ] User manual for developers and agents.
-  - [ ] Phase 0: define audiences, common tasks, and document structure.
-  - [ ] Phase 1: document installation, the core API, CLI commands, schema, and
+- [x] User manual for developers and agents.
+  - [x] Phase 0: define audiences, common tasks, and document structure.
+  - [x] Phase 1: document installation, the core API, CLI commands, schema, and
     developer examples.
-  - [ ] Phase 2: document deterministic agent commands, JSON output, store selection,
+  - [x] Phase 2: document deterministic agent commands, JSON output, store selection,
     and error handling.
-  - [ ] Phase 3: document backup, import/export, verification, repair, and recovery.
-  - [ ] Phase 4: validate examples and link the manual from the root README and package
+  - [x] Phase 3: document backup, import/export, verification, repair, and recovery.
+  - [x] Phase 4: validate examples and link the manual from the root README and package
     documentation.
+- [x] Final v0.0.5 sweep fixes.
+  - [x] Phase 1: make verification exact and safe for schema and timestamp-order drift.
+  - [x] Phase 2: project canonical fields explicitly from public reads and exports.
+  - [x] Phase 3: correct JSON-output and FTS-index documentation.
+  - [x] Phase 4: support `--` before positional content or queries.
+  - [x] Phase 5: run the final release audit and shipping checkpoint.
 - [ ] Source-specific converters for `opl-memory-md`, `openpi-memory`, and `openclaude-memory`,
   kept outside the core and added only when a real migration is needed.
 - [ ] Connectivity: thin harness adapters and optional MCP/stdio transport.
@@ -72,10 +85,17 @@ when they preserve that model.
   - [x] Phase 4: validate selectors even when both databases are missing; audit CLI
     help, README, changelog, and roadmap; run full tests, package dry-runs, and diff
     checks before closing the category.
-- [ ] Portability: richer backup/export/import workflows when ordinary SQLite copies and
-  canonical JSONL no longer suffice.
-  - [ ] Before schema version 2, add an explicit read-only open mode so `verify` and
-    `export` cannot apply migrations.
+- [x] Portability: safer canonical import/export and richer workflows when ordinary
+  SQLite copies and canonical JSONL no longer suffice.
+  - [x] Phase 0: validate complete import input before opening or creating the destination.
+  - [x] Phase 1: define and enforce strict canonical record fields, timestamp ordering,
+    and unknown-field handling.
+  - [x] Phase 2: write export files atomically without weakening source-alias protection.
+  - [x] Phase 3: add explicit read-only core opening for `verify`, `export`, and future
+    migrations.
+  - [x] Phase 4: document the existing backup, restore, transfer, and merge workflows;
+    defer new commands until online backup or an explicit conflict policy is required.
+  - [x] Phase 5: complete user documentation, changelog, roadmap, and release verification.
 
 ## Not on the required path
 

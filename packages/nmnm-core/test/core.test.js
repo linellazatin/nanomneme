@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp } from 'node:fs/promises';
+import { access, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -19,6 +19,40 @@ test('open refuses a missing database when creation is disabled', async () => {
   const path = join(directory, 'missing.db');
 
   assert.throws(() => open(path, { create: false }), /does not exist/);
+});
+
+test('open readOnly mode refuses a missing database without creating it', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-read-only-missing-'));
+  const path = join(directory, 'missing.db');
+  let store;
+
+  try {
+    assert.throws(() => { store = open(path, { readOnly: true }); }, /does not exist/);
+  } finally {
+    store?.close();
+  }
+  await assert.rejects(access(path));
+});
+
+test('open readOnly mode permits reads and rejects writes', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-read-only-'));
+  const path = join(directory, 'memory.db');
+  const writable = open(path);
+  const memory = writable.retain({ content: 'Read-only target' });
+  writable.close();
+  const readOnly = open(path, { readOnly: true });
+  t.after(() => readOnly.close());
+
+  assert.equal(readOnly.recall({ id: memory.id }).id, memory.id);
+  assert.throws(() => readOnly.retain({ content: 'Rejected write' }), /readonly/);
+});
+
+test('open validates the readOnly option before filesystem changes', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-read-only-option-'));
+  const path = join(directory, 'missing.db');
+
+  assert.throws(() => open(path, { readOnly: 'yes' }), /readOnly must be a boolean/);
+  await assert.rejects(access(path));
 });
 
 test('open rejects a database created by a newer schema', async () => {
@@ -88,6 +122,76 @@ test('verify requires an FTS5 virtual table rather than a same-named table', asy
   assert.equal(store.verify().issues.find(({ code }) => code === 'schema_fts').ids[0], 'memories_fts');
 });
 
+test('verify reports unexpected schema columns', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-verify-extra-column-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  t.after(() => store.close());
+  const db = new DatabaseSync(path);
+  t.after(() => db.close());
+  db.exec('ALTER TABLE memories ADD COLUMN extra TEXT');
+
+  assert.deepEqual(store.verify().issues, [
+    { code: 'schema_columns', count: 1, ids: ['memories'] },
+  ]);
+});
+
+test('public memory results omit unexpected database columns', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-canonical-results-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  t.after(() => store.close());
+  const memory = store.retain({ content: 'Canonical result target' });
+  const db = new DatabaseSync(path);
+  db.exec('ALTER TABLE memories ADD COLUMN extra TEXT');
+  db.prepare('UPDATE memories SET extra = ? WHERE id = ?').run('must not leak', memory.id);
+  db.close();
+  const fields = [
+    'confidence', 'content', 'created_at', 'expires_at', 'id', 'importance', 'kind',
+    'metadata', 'namespace', 'removed_at', 'scope', 'tags', 'updated_at',
+  ];
+
+  assert.deepEqual(Object.keys(store.recall({ id: memory.id })).sort(), fields);
+  assert.deepEqual(Object.keys(store.retrieve({}).items[0]).sort(), fields);
+});
+
+test('export remains importable with unexpected database columns', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-canonical-export-'));
+  const sourcePath = join(directory, 'source.db');
+  const source = open(sourcePath);
+  t.after(() => source.close());
+  const memory = source.retain({ content: 'Canonical export target' });
+  const db = new DatabaseSync(sourcePath);
+  db.exec('ALTER TABLE memories ADD COLUMN extra TEXT');
+  db.prepare('UPDATE memories SET extra = ? WHERE id = ?').run('must not export', memory.id);
+  db.close();
+  assert.equal(source.verify().ok, false);
+  const records = source.export();
+  const target = open(join(directory, 'target.db'));
+  t.after(() => target.close());
+
+  assert.equal(Object.hasOwn(records[0], 'extra'), false);
+  assert.deepEqual(target.import(records), { imported: 1 });
+  assert.equal(target.recall({ id: memory.id }).id, memory.id);
+});
+
+test('verify reports unusable table columns without throwing', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-verify-unusable-columns-'));
+  const path = join(directory, 'memory.db');
+  const initial = open(path);
+  initial.close();
+  const db = new DatabaseSync(path);
+  db.exec('DROP TABLE memories_fts; CREATE TABLE memories_fts (wrong TEXT) STRICT');
+  db.close();
+  const store = open(path);
+  t.after(() => store.close());
+
+  assert.deepEqual(store.verify().issues, [
+    { code: 'schema_columns', count: 1, ids: ['memories_fts'] },
+    { code: 'schema_fts', count: 1, ids: ['memories_fts'] },
+  ]);
+});
+
 test('export preserves canonical records, including expired and soft-removed memories', async (t) => {
   const store = await createStore(t);
   const active = store.retain({ content: 'Active export target', metadata: { source: 'test' }, tags: ['portable'] });
@@ -115,6 +219,48 @@ test('import round-trips records and rejects conflicts atomically', async (t) =>
     { ...records[0], id: '11111111-1111-4111-8111-111111111111' },
   ]), /already exists/);
   assert.equal(target.retrieve({}).total, 1);
+});
+
+test('import rejects fields outside the canonical record', async (t) => {
+  const source = await createStore(t);
+  const target = await createStore(t);
+  source.retain({ content: 'Unknown field target' });
+  const [record] = source.export();
+
+  assert.throws(() => target.import([{ ...record, score: 0 }]), /unknown field score/);
+  assert.equal(target.export().length, 0);
+});
+
+test('import rejects values that require canonical normalization', async (t) => {
+  const source = await createStore(t);
+  const target = await createStore(t);
+  source.retain({ content: 'Canonical import target', tags: ['alpha', 'beta'] });
+  const [record] = source.export();
+
+  for (const [field, value] of [
+    ['id', ` ${record.id}`],
+    ['content', ` ${record.content}`],
+    ['kind', ` ${record.kind}`],
+    ['scope', ` ${record.scope}`],
+    ['namespace', ` ${record.namespace}`],
+    ['tags', ['beta', 'alpha']],
+  ]) {
+    assert.throws(() => target.import([{ ...record, [field]: value }]), new RegExp(field));
+  }
+  assert.equal(target.export().length, 0);
+});
+
+test('import rejects updated_at earlier than created_at', async (t) => {
+  const source = await createStore(t);
+  const target = await createStore(t);
+  const memory = source.retain({ content: 'Timestamp order target' });
+
+  assert.throws(() => target.import([{
+    ...memory,
+    created_at: '2026-09-06T01:00:00.000Z',
+    updated_at: '2026-09-06T00:00:00.000Z',
+  }]), /updated_at must not precede created_at/);
+  assert.equal(target.export().length, 0);
 });
 
 test('rebuildFts repairs derived rows without changing canonical memories', async (t) => {
@@ -397,6 +543,20 @@ test('verify reports impossible stored timestamps', async (t) => {
   const db = new DatabaseSync(path);
   t.after(() => db.close());
   db.prepare('UPDATE memories SET created_at = ? WHERE id = ?').run('2026-02-31T00:00:00.000Z', memory.id);
+
+  assert.deepEqual(store.verify().issues, [{ code: 'memory_field', count: 1, ids: [memory.id] }]);
+});
+
+test('verify reports updated_at earlier than created_at', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-verify-date-order-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  t.after(() => store.close());
+  const memory = store.retain({ content: 'Corrupt timestamp order target' });
+  const db = new DatabaseSync(path);
+  t.after(() => db.close());
+  db.prepare('UPDATE memories SET created_at = ?, updated_at = ? WHERE id = ?')
+    .run('2026-09-06T01:00:00.000Z', '2026-09-06T00:00:00.000Z', memory.id);
 
   assert.deepEqual(store.verify().issues, [{ code: 'memory_field', count: 1, ids: [memory.id] }]);
 });

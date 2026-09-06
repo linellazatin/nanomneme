@@ -4,9 +4,9 @@
 It uses lexical FTS5/BM25 retrieval and structured filters. It does not use an LLM,
 embeddings, a vector store, a server, or background processing.
 
-> Version 0.0.4 adds deterministic importance tie-breaking, explicit project-plus-global
-> retrieval, stricter input validation, and publish-ready packages while keeping the core
-> single-store - basically hardening.
+> Version 0.0.5 hardens canonical import, atomic export, read-only maintenance, and
+> documented recovery workflows. Version 0.0.4 added deterministic retrieval and
+> multi-store CLI composition while keeping the core single-store - basically hardening.
 
 ## Architecture
 
@@ -26,6 +26,13 @@ project database or separate global database
 `nmnm-core` owns validation, schema creation, transactional writes, tag maintenance,
 and FTS synchronization. The CLI parses options, calls core operations, and formats
 results. No harness, protocol, or model dependency is in the core.
+
+## Documentation
+
+- [User Manual](docs/USER_MANUAL.md): installation, CLI and core API guidance,
+  deterministic agent automation, portability, and recovery.
+- Package READMEs: installation and package-specific entry points.
+- This README: product scope, architecture, and data contracts.
 
 ## Scope and database location
 
@@ -91,6 +98,8 @@ creating a database.
 
 Options are command-specific. Unsupported options, unknown commands, and invalid
 positional argument counts fail before the CLI opens or creates a database.
+Place `--` after options when retain content or a retrieve query begins with `--`; it ends
+option parsing but does not change FTS5 query syntax.
 
 The CLI uses `./.nanomneme/memory.db` by default. Use `--global` for the dedicated
 global database, `--db <path>` for another SQLite file, or `retrieve --both` to query
@@ -128,11 +137,15 @@ nmnm repair --rebuild-fts --json
 
 `verify`, `export`, `import`, and `repair` are maintenance/portability operations, not
 additional memory operations. `verify` is a report-only database diagnostic. It checks
-schema, SQLite integrity, field conventions, foreign keys, tags, and FTS consistency.
+exact schema columns, SQLite integrity, field conventions and timestamp ordering,
+foreign keys, tags, and FTS consistency. Unusable table shapes are reported instead of
+being queried.
 It never repairs a database. A defect report exits with status `1`; a missing database
-also fails rather than creating an empty SQLite file.
+also fails rather than creating an empty SQLite file. `verify` and `export` open existing
+databases read-only; `repair` remains writable because it rebuilds derived FTS rows.
 
-Use [`--json` with every command for stable machine-readable output](#json-responses):
+Use [`--json` with every structured-result command for stable machine-readable output](#json-responses).
+`export` instead writes canonical JSONL to stdout or to `--out <file>`:
 
 ```sh
 nmnm retrieve "SQLite" --namespace nanomneme --json
@@ -247,6 +260,8 @@ Use `--json` for valid machine-readable JSON.
 
 `retain` returns this object. `recall` returns this object or `null`. Each
 `retrieve.items` entry adds `store`; `score` also appears for a text query.
+Core reads and exports select these canonical fields explicitly, so unexpected database
+columns reported by `verify` never enter public records or canonical JSONL.
 
 ```jsonc
 {
@@ -354,18 +369,26 @@ object names.
 `export` writes canonical JSONL: a format header followed by one complete record per
 line. Active, expired, and soft-removed records are included; transient `score` is not.
 Use `--out <file>` for a file or omit it to write JSONL to stdout. `import <file>`
-validates the complete input before opening the destination and commits atomically;
-duplicate or existing IDs reject the whole import.
+parses and validates every record, including duplicate IDs, before opening the
+destination. Conflicts with IDs already in the destination are checked after it opens;
+any failure leaves destination records unchanged.
+
+Import records must contain exactly the fields shown in the memory object above, except
+for transient `score` and retrieval-only `store`. Strings must already be trimmed, tags
+must already be sorted and unique, and `updated_at` must not precede `created_at`.
 
 The export path must not be the source database or a symlink or hardlink to it. The
-CLI rejects these aliases before opening or writing the database.
+CLI rejects these aliases before opening or writing the database. File exports write a
+temporary file in the destination directory, then atomically replace the destination;
+a failed replacement leaves the previous file unchanged and removes the temporary file.
 
 ```sh
 nmnm export --out memory.jsonl
 nmnm import memory.jsonl --db another.db --json
 ```
 
-`repair --rebuild-fts` rebuilds only derived FTS rows for active memories, then runs
+`repair --rebuild-fts` rebuilds derived FTS rows for every non-removed memory, including
+expired rows, then runs
 verification. It never changes canonical records, tags, metadata, or schema and exits
 nonzero if verification still reports issues.
 
@@ -392,10 +415,25 @@ To back up a database, close all nanomneme processes and copy its SQLite file:
 cp .nanomneme/memory.db memory-backup.db
 ```
 
+Choose the smallest portability workflow that matches the task:
+
+| Need | Workflow | Safety boundary |
+|---|---|---|
+| Transfer or inspect records | `export` canonical JSONL | Portable and human-readable; excludes derived FTS rows. |
+| Restore into an empty store | `import <file> --db <new-path>` | Validates the whole input before creating the destination. |
+| Merge into an existing store | `import <file> --db <path>` | Any existing or duplicate ID rejects the entire import. |
+| Exact database backup | Close writers, then copy the SQLite file | Preserves canonical and derived database state together. |
+
+A dedicated backup command is deferred until online backup without stopping writers is
+required. Import overwrite/upsert policies are deferred until a concrete conflict policy
+is needed. Compression remains a caller concern, and source-specific converters remain
+outside the core.
+
 The database is ordinary SQLite and can be inspected with any SQLite tool. Direct
 writes are unsupported because they can desynchronize the FTS index and tags. Use
 `nmnm verify` to diagnose this drift; it reports defects but never repairs or changes
-stored data.
+stored data. Core callers can use `open(path, { readOnly: true })` to require an existing
+database, prevent writes, and refuse schemas that require migration.
 
 ## Namespace
 

@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 import { open } from 'nmnm-core';
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, platform } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 
 const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 const HELP = `Usage: nmnm <command> [arguments] [options]
@@ -18,8 +19,12 @@ Commands:
   repair               Rebuild derived data with --rebuild-fts.
 
 Common options: --db <path> --global --json --version, -v
+Use -- before content or a query that starts with --.
 Retain options: --id --kind note|decision|preference|fact|instruction --scope project|global --namespace <lowercase-slug> --tags <lowercase-slug,...> --importance 0..1 --confidence 0..1 --expires-at <UTC ISO> --metadata <JSON>
-Retrieve options: --both --kind note|decision|preference|fact|instruction --scope project|global --namespace <lowercase-slug> --tags <lowercase-slug,...> --expires active|expired|any --importance-gte <n> --importance-lte <n> --confidence-gte <n> --confidence-lte <n> --order-by <field> --limit 1..1000 --offset 0..1000`;
+Retrieve options: --both --kind note|decision|preference|fact|instruction --scope project|global --namespace <lowercase-slug> --tags <lowercase-slug,...> --expires active|expired|any --importance-gte <n> --importance-lte <n> --confidence-gte <n> --confidence-lte <n> --order-by <field> --limit 1..1000 --offset 0..1000
+Remove options: --purge
+Export options: --out <file>
+Repair options: --rebuild-fts`;
 
 const COMMON_OPTIONS = ['db', 'global', 'json', 'help'];
 const COMMAND_OPTIONS = {
@@ -37,10 +42,15 @@ const OPTION_NAMES = new Set(Object.values(COMMAND_OPTIONS).flat());
 function parse(args) {
   const options = {};
   const positionals = [];
+  let endOptions = false;
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
-    if (!argument.startsWith('--')) {
+    if (endOptions || !argument.startsWith('--')) {
       positionals.push(argument);
+      continue;
+    }
+    if (argument === '--') {
+      endOptions = true;
       continue;
     }
     const name = argument.slice(2);
@@ -185,6 +195,18 @@ function sameFile(left, right) {
   return leftStat.dev === rightStat.dev && leftStat.ino === rightStat.ino;
 }
 
+function writeFileAtomic(path, contents) {
+  const output = resolve(path);
+  const temporary = join(dirname(output), `.${basename(output)}.${randomUUID()}.tmp`);
+  try {
+    writeFileSync(temporary, contents, { encoding: 'utf8', flag: 'wx' });
+    renameSync(temporary, output);
+  } catch (error) {
+    rmSync(temporary, { force: true });
+    throw error;
+  }
+}
+
 function exportJsonl(records) {
   return [JSON.stringify({ _format: 'nanomneme', _version: 1 }), ...records.map((record) => JSON.stringify(record))].join('\n') + '\n';
 }
@@ -211,8 +233,13 @@ export function main(args = process.argv.slice(2)) {
   if (!command) return { help: true };
   validateCommand(command, positionals, options);
   const verification = command === 'verify' || command === 'repair';
-  const readonly = verification || command === 'export';
+  const readOnly = command === 'verify' || command === 'export';
+  const requiresExisting = verification || readOnly;
   const records = command === 'import' ? importJsonl(positionals[0]) : null;
+  if (records) {
+    const validationStore = open(':memory:');
+    try { validationStore.import(records); } finally { validationStore.close(); }
+  }
   if (command === 'retrieve' && options.both) {
     const result = { items: [], total: 0 };
     const input = retrieveInput(positionals, options);
@@ -240,9 +267,9 @@ export function main(args = process.argv.slice(2)) {
     }
     return { result, json: options.json, failed: false };
   }
-  const db = databasePath(options, { create: !readonly });
+  const db = databasePath(options, { create: !requiresExisting });
   if (command === 'export' && options.out && sameFile(db, options.out)) throw new TypeError('--out cannot reference the source database');
-  const store = open(db, { create: !readonly });
+  const store = open(db, { create: !requiresExisting, readOnly });
   try {
     let result;
     if (command === 'retain') result = store.retain(retainInput(positionals, options));
@@ -257,7 +284,7 @@ export function main(args = process.argv.slice(2)) {
       const recordsToExport = store.export();
       const text = exportJsonl(recordsToExport);
       if (options.out) {
-        writeFileSync(options.out, text, 'utf8');
+        writeFileAtomic(options.out, text);
         result = { exported: recordsToExport.length, path: options.out };
       } else {
         return { raw: text, json: false };

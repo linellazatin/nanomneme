@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.0.5 - 2026-09-06
+
+### Changed
+
+- Validate complete JSONL import input before opening or creating the destination database.
+- Reject import records with unknown fields, non-canonical values, or `updated_at`
+  earlier than `created_at`.
+- Write file exports through a same-directory temporary file and atomic replacement,
+  cleaning up the temporary file on failure.
+- Add core `open(path, { readOnly: true })`; CLI `verify` and `export` now prevent
+  database writes and migrations while `repair` remains writable.
+- List maintenance command options completely in CLI help.
+- Make verification detect unexpected columns and invalid timestamp ordering, and report
+  unusable table shapes without throwing.
+- Project canonical memory fields explicitly so schema additions cannot leak into public
+  reads or produce JSONL that nanomneme cannot import.
+- Accept `--` as the CLI end-of-options marker for positional content and queries that
+  begin with `--`.
+
+### Documentation
+
+- Establish the developer-and-agent user manual structure, audience boundaries, and
+  documentation ownership.
+- Add installation, complete CLI reference, core lifecycle/API, schema ownership, and
+  developer error-handling guidance to the user manual.
+- Document deterministic agent commands, machine-readable output contracts,
+  store-qualified identity, and exit/error handling.
+- Add task-based export, import, exact-backup, verification, repair, and recovery
+  procedures to the user manual.
+- Complete the user manual with troubleshooting, validated examples, and links from both
+  package READMEs.
+- Clarify that `export` emits JSONL rather than accepting `--json`, and that FTS repair
+  indexes non-removed expired records as well as ordinary active records.
+- Complete the final v0.0.5 sweep with full tests, package installation smoke checks,
+  dependency audit, documentation validation, and publication dry-runs.
+- Define the supported transfer, empty-store restore, conflict-safe merge, and exact
+  SQLite backup workflows; defer new backup and overwrite modes until proven necessary.
+- Complete the portability documentation and v0.0.5 release verification.
+
 ## 0.0.4 - 2026-09-06
 
 ### Added

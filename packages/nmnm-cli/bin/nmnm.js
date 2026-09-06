@@ -21,11 +21,18 @@ Common options: --db <path> --global --json --version, -v
 Retain options: --id --kind note|decision|preference|fact|instruction --scope project|global --namespace <lowercase-slug> --tags <lowercase-slug,...> --importance 0..1 --confidence 0..1 --expires-at <UTC ISO> --metadata <JSON>
 Retrieve options: --both --kind note|decision|preference|fact|instruction --scope project|global --namespace <lowercase-slug> --tags <lowercase-slug,...> --expires active|expired|any --importance-gte <n> --importance-lte <n> --confidence-gte <n> --confidence-lte <n> --order-by <field> --limit 1..1000 --offset 0..1000`;
 
-const OPTION_NAMES = new Set([
-  'db', 'json', 'id', 'kind', 'scope', 'namespace', 'tags', 'importance', 'confidence',
-  'expires-at', 'metadata', 'importance-gte', 'importance-lte', 'confidence-gte', 'confidence-lte',
-  'order-by', 'limit', 'offset', 'expires', 'global', 'both', 'purge', 'rebuild-fts', 'out', 'help',
-]);
+const COMMON_OPTIONS = ['db', 'global', 'json', 'help'];
+const COMMAND_OPTIONS = {
+  retain: [...COMMON_OPTIONS, 'id', 'kind', 'scope', 'namespace', 'tags', 'importance', 'confidence', 'expires-at', 'metadata'],
+  recall: COMMON_OPTIONS,
+  retrieve: [...COMMON_OPTIONS, 'both', 'kind', 'scope', 'namespace', 'tags', 'importance-gte', 'importance-lte', 'confidence-gte', 'confidence-lte', 'order-by', 'limit', 'offset', 'expires'],
+  remove: [...COMMON_OPTIONS, 'purge'],
+  verify: COMMON_OPTIONS,
+  export: [...COMMON_OPTIONS, 'out'],
+  import: COMMON_OPTIONS,
+  repair: [...COMMON_OPTIONS, 'rebuild-fts'],
+};
+const OPTION_NAMES = new Set(Object.values(COMMAND_OPTIONS).flat());
 
 function parse(args) {
   const options = {};
@@ -50,6 +57,27 @@ function parse(args) {
   return { options, positionals };
 }
 
+function validateCommand(command, positionals, options) {
+  if (!COMMAND_OPTIONS[command]) throw new TypeError(`unknown command: ${command}`);
+  if (options.purge && command !== 'remove') throw new TypeError('--purge is only valid with remove');
+  if (options['rebuild-fts'] && command !== 'repair') throw new TypeError('--rebuild-fts is only valid with repair');
+  if (options.out && command !== 'export') throw new TypeError('--out is only valid with export');
+  if (command === 'export' && options.json) throw new TypeError('--json is not valid with export');
+  if (options.both && command !== 'retrieve') throw new TypeError('--both is only valid with retrieve');
+  if (options.both && (options.global || options.db)) throw new TypeError('--both cannot be combined with --global or --db');
+  for (const name of Object.keys(options)) {
+    if (!COMMAND_OPTIONS[command].includes(name)) throw new TypeError(`--${name} is not valid with ${command}`);
+  }
+  if (command === 'retain' && positionals.length > 1) throw new TypeError('retain accepts one content argument');
+  if (command === 'retain' && !positionals.length && options.id === undefined) throw new TypeError('retain requires content unless --id is supplied');
+  if (command === 'retrieve' && positionals.length > 1) throw new TypeError('retrieve accepts one query argument');
+  if (command === 'recall' && positionals.length !== 1) throw new TypeError('recall requires an id');
+  if (command === 'remove' && positionals.length !== 1) throw new TypeError('remove requires an id');
+  if (command === 'import' && positionals.length !== 1) throw new TypeError('import requires one file');
+  if (['verify', 'export', 'repair'].includes(command) && positionals.length) throw new TypeError(`${command} does not accept arguments`);
+  if (command === 'repair' && !options['rebuild-fts']) throw new TypeError('--rebuild-fts is required for repair');
+}
+
 function number(value) {
   return value === undefined ? undefined : Number(value);
 }
@@ -68,7 +96,6 @@ function assign(target, key, value) {
 }
 
 function retainInput(positionals, options) {
-  if (positionals.length > 1) throw new TypeError('retain accepts one content argument');
   const input = {};
   assign(input, 'id', options.id);
   assign(input, 'content', positionals[0]);
@@ -83,7 +110,6 @@ function retainInput(positionals, options) {
 }
 
 function retrieveInput(positionals, options) {
-  if (positionals.length > 1) throw new TypeError('retrieve accepts one query argument');
   const input = {};
   assign(input, 'query', positionals[0]);
   for (const field of ['kind', 'scope', 'namespace']) assign(input, field, options[field]);
@@ -180,18 +206,13 @@ export function main(args = process.argv.slice(2)) {
   if (args.length === 1 && (args[0] === '--version' || args[0] === '-v')) return { version: VERSION };
   const { options, positionals } = parse(args);
   const command = positionals.shift();
-  if (options.help || !command) return { help: true };
-  if (options.purge && command !== 'remove') throw new TypeError('--purge is only valid with remove');
-  if (options['rebuild-fts'] && command !== 'repair') throw new TypeError('--rebuild-fts is only valid with repair');
-  if (options.out && command !== 'export') throw new TypeError('--out is only valid with export');
-  if (command === 'export' && options.json) throw new TypeError('--json is not valid with export');
-  if (options.both && command !== 'retrieve') throw new TypeError('--both is only valid with retrieve');
-  if (options.both && (options.global || options.db)) throw new TypeError('--both cannot be combined with --global or --db');
+  if (options.help) return { help: true };
+  if (!command && Object.keys(options).length) throw new TypeError('command is required');
+  if (!command) return { help: true };
+  validateCommand(command, positionals, options);
   const verification = command === 'verify' || command === 'repair';
   const readonly = verification || command === 'export';
-  const records = command === 'import'
-    ? (positionals.length === 1 ? importJsonl(positionals[0]) : (() => { throw new TypeError('import requires one file'); })())
-    : null;
+  const records = command === 'import' ? importJsonl(positionals[0]) : null;
   if (command === 'retrieve' && options.both) {
     const result = { items: [], total: 0 };
     const input = retrieveInput(positionals, options);
@@ -225,21 +246,14 @@ export function main(args = process.argv.slice(2)) {
   try {
     let result;
     if (command === 'retain') result = store.retain(retainInput(positionals, options));
-    else if (command === 'recall') {
-      if (positionals.length !== 1) throw new TypeError('recall requires an id');
-      result = store.recall({ id: positionals[0] });
-    } else if (command === 'retrieve') {
+    else if (command === 'recall') result = store.recall({ id: positionals[0] });
+    else if (command === 'retrieve') {
       const retrieved = store.retrieve(retrieveInput(positionals, options));
       result = { ...retrieved, items: retrieved.items.map((memory) => ({ store: databaseStore(options), ...memory })) };
     }
-    else if (command === 'remove') {
-      if (positionals.length !== 1) throw new TypeError('remove requires an id');
-      result = store.remove({ id: positionals[0], mode: options.purge ? 'purge' : 'soft' });
-    } else if (command === 'verify') {
-      if (positionals.length) throw new TypeError('verify does not accept arguments');
-      result = store.verify();
-    } else if (command === 'export') {
-      if (positionals.length) throw new TypeError('export does not accept arguments');
+    else if (command === 'remove') result = store.remove({ id: positionals[0], mode: options.purge ? 'purge' : 'soft' });
+    else if (command === 'verify') result = store.verify();
+    else if (command === 'export') {
       const recordsToExport = store.export();
       const text = exportJsonl(recordsToExport);
       if (options.out) {
@@ -251,10 +265,8 @@ export function main(args = process.argv.slice(2)) {
     } else if (command === 'import') {
       result = store.import(records);
     } else if (command === 'repair') {
-      if (!options['rebuild-fts']) throw new TypeError('--rebuild-fts is required for repair');
-      if (positionals.length) throw new TypeError('repair does not accept arguments');
       result = { ...store.rebuildFts(), verification: store.verify() };
-    } else throw new TypeError(`unknown command: ${command}`);
+    }
     return { result, json: options.json, failed: verification && !(result.verification ?? result).ok };
   } finally {
     store.close();

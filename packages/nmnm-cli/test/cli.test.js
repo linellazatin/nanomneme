@@ -21,6 +21,44 @@ test('CLI reports its package version without opening a database', async () => {
   await assert.rejects(access(join(directory, '.nanomneme', 'memory.db')));
 });
 
+test('CLI rejects options unsupported by each command without creating a database', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-options-'));
+  const id = '00000000-0000-4000-8000-000000000000';
+
+  for (const [args, message] of [
+    [['retain', 'Memory', '--limit', '1'], /--limit is not valid with retain/],
+    [['recall', id, '--tags', 'test'], /--tags is not valid with recall/],
+    [['retrieve', '--metadata', '{}'], /--metadata is not valid with retrieve/],
+    [['remove', id, '--kind', 'note'], /--kind is not valid with remove/],
+    [['verify', '--limit', '1'], /--limit is not valid with verify/],
+    [['export', '--limit', '1'], /--limit is not valid with export/],
+    [['import', 'missing.jsonl', '--limit', '1'], /--limit is not valid with import/],
+    [['repair', '--limit', '1'], /--limit is not valid with repair/],
+  ]) {
+    const result = runIn(directory, ...args);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, message);
+  }
+  await assert.rejects(access(join(directory, '.nanomneme', 'memory.db')));
+});
+
+test('CLI validates commands and positional arguments before creating a database', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-command-'));
+
+  for (const [args, message] of [
+    [['--limit', '1'], /command is required/],
+    [['unknown'], /unknown command: unknown/],
+    [['recall'], /recall requires an id/],
+    [['retrieve', 'one', 'two'], /retrieve accepts one query argument/],
+    [['verify', 'unexpected'], /verify does not accept arguments/],
+  ]) {
+    const result = runIn(directory, ...args);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, message);
+  }
+  await assert.rejects(access(join(directory, '.nanomneme', 'memory.db')));
+});
+
 test('CLI exports canonical JSONL and imports it atomically', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-portable-cli-'));
   const source = join(directory, 'source.db');

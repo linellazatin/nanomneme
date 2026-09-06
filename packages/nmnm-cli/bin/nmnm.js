@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { open } from 'nmnm-core';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, platform } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
@@ -149,6 +149,16 @@ function databaseStore(options) {
   return options.db ? 'custom' : options.global ? 'global' : 'project';
 }
 
+function sameFile(left, right) {
+  const leftPath = resolve(left);
+  const rightPath = resolve(right);
+  if (leftPath === rightPath) return true;
+  if (!existsSync(leftPath) || !existsSync(rightPath)) return false;
+  const leftStat = statSync(leftPath);
+  const rightStat = statSync(rightPath);
+  return leftStat.dev === rightStat.dev && leftStat.ino === rightStat.ino;
+}
+
 function exportJsonl(records) {
   return [JSON.stringify({ _format: 'nanomneme', _version: 1 }), ...records.map((record) => JSON.stringify(record))].join('\n') + '\n';
 }
@@ -210,6 +220,7 @@ export function main(args = process.argv.slice(2)) {
     return { result, json: options.json, failed: false };
   }
   const db = databasePath(options, { create: !readonly });
+  if (command === 'export' && options.out && sameFile(db, options.out)) throw new TypeError('--out cannot reference the source database');
   const store = open(db, { create: !readonly });
   try {
     let result;

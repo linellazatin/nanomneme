@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { access, mkdtemp, writeFile } from 'node:fs/promises';
+import { access, link, mkdtemp, symlink, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -42,6 +42,25 @@ test('CLI exports canonical JSONL and imports it atomically', async () => {
   assert.deepEqual(JSON.parse(imported.stdout), { imported: 2 });
   assert.equal(JSON.parse(run('recall', first.id, '--db', target, '--json').stdout).id, first.id);
   assert.equal(JSON.parse(run('recall', removed.id, '--db', target, '--json').stdout), null);
+});
+
+test('CLI refuses to export over its source database or an alias', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-export-safety-'));
+  const source = join(directory, 'memory.db');
+  const hardlink = join(directory, 'memory-hardlink.db');
+  const symlinkPath = join(directory, 'memory-symlink.db');
+  const memory = JSON.parse(run('retain', 'Export safety', '--db', source, '--json').stdout);
+  await link(source, hardlink);
+  await symlink(source, symlinkPath);
+
+  for (const output of [source, hardlink, symlinkPath]) {
+    const exported = run('export', '--db', source, '--out', output);
+    assert.notEqual(exported.status, 0);
+    assert.match(exported.stderr, /--out cannot reference the source database/);
+    const recalled = run('recall', memory.id, '--db', source, '--json');
+    assert.equal(recalled.status, 0, recalled.stderr);
+    assert.equal(JSON.parse(recalled.stdout).id, memory.id);
+  }
 });
 
 test('CLI repairs FTS only with the explicit rebuild flag', async () => {

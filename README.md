@@ -1,8 +1,65 @@
-# nanomneme
+# nanomneme (nmnm)
 
-nanomneme is a small, deterministic SQLite memory store for people and coding agents.
-It uses lexical FTS5/BM25 retrieval and structured filters. It has no required LLM,
-embedding, vector database, server, or background worker.
+nanomneme began with a simple question: how can coding agents remember useful things across sessions without turning memory into another opaque service?
+
+The inspiration came from systems such as [`openpi-memory`](https://github.com/linellazatin/openpi-memory) and [`openclaude-memory`](https://github.com/linellazatin/openclaude-memory), which demonstrated that persistent agent memory could be built from ordinary, inspectable Markdown files. Their central insight was practical: agents become more useful when important context survives the current conversation and can be reintroduced when needed.
+
+nanomneme carries that idea forward into a small, deterministic SQLite core. Instead of making each harness own its memory format, nanomneme provides one shared memory system that `Pi`, `OpenCode` (soon), and future adapters can use consistently.
+
+## What the name means
+
+`Mneme` comes from the Greek word for `memory or remembrance`. It also evokes `Mnemosyne`, the personification of memory in Greek mythology.
+
+The `nano` prefix describes the project’s character: small, local, focused, and lightweight. `nanomneme` is not trying to become a memory platform, cloud service, or artificial brain. It is a compact memory primitive that can sit underneath developer tools and agents.
+
+## Our philosophy
+
+`nanomneme` is built around a few principles:
+
+- Memory should persist beyond a session, but remain owned and inspectable by the user.
+- The core should work locally without an LLM, embeddings, vector databases, servers, or required network services.
+- One shared core should support many harnesses through thin adapters.
+- Retrieval should be deterministic, explainable, and bounded by the available context budget.
+- Automatic injection should provide a compact memory index, not dump every full record into the prompt.
+- Project and global memories should remain explicit and distinguishable.
+- Pins belong to the adapter that uses them, while memories remain reusable across harnesses.
+- Removal should be reversible by default, and data should remain portable through canonical JSONL.
+- A memory system should help agents remember without pretending to be human memory.
+
+At its heart, `nanomneme` is a durable, local record of what matters: `small enough to understand, strong enough to persist, and open enough to serve whatever harness comes next`.
+
+## Features
+
+### Core memory handler
+
+- **Lightweight by design:** no required LLM calls, embeddings, vector database, daemon, ORM, or network service; memory operations stay local and deterministic.
+- **User-owned and inspectable:** SQLite is the source of truth, with readable JSONL portability and explicit project/global boundaries.
+- **Harness-agnostic foundation:** one shared memory contract keeps records reusable across Pi, OpenCode (soon), and future thin adapters.
+- **4Rs lifecycle:** retain, recall, retrieve, and remove memories; soft removal is reversible and purge is explicit.
+- **Local SQLite storage:** transactional canonical records with derived tags and FTS5 indexes.
+- **Canonical validation:** UUID v4 IDs, UTC timestamps, supported kinds and scopes, kebab-case namespaces and tags, and JSON metadata.
+- **Deterministic retrieval:** lexical FTS5/BM25 search, structured filters, expiry handling, pagination, and stable relevance, importance, recency, and ID ordering.
+- **Multi-store selection:** project, global, or custom databases; `retrieve --both` returns project-first results with store provenance and preserves duplicate IDs.
+- **Portable data:** canonical JSONL export/import with validation, conflict safety, atomic file replacement, and exact closed SQLite backups.
+- **Integrity tools:** report-only verification, schema lifecycle checks, read-only access, and explicit FTS rebuild repair.
+
+### CLI
+
+- **Complete operator surface:** `retain`, `recall`, `retrieve`, `remove`, `verify`, `export`, `import`, and `repair`.
+- **Human and agent output:** readable terminal messages or structured JSON, with JSONL reserved for exports.
+- **Safe targeting:** project defaults, standard global storage, explicit `--db` paths, `--both` retrieval, and validated command-specific options.
+
+### Adapters
+
+#### Pi coding agent
+
+- **Native memory tools:** model-invoked retain, recall, retrieve, and remove operations over `nmnm-core`.
+- **Project and global memory:** explicit store selection with canonical records and no custom database-path parsing.
+- **Bounded automatic context:** a hidden first-prompt memory index with configurable character budget, pinned entries first, recent active fallback, store labels, and unresolved-pin reporting.
+- **Adapter-owned configuration:** optional JSONC settings and separate JSON pin files, with project and global locations.
+- **Direct user controls:** `/memory refresh`, `status`, `list`, `remove`, `pin`, and `unpin` without model involvement.
+- **Readable list UX:** project-first combined listing, pagination, `[project]` and `[global]` labels, exact-store `*` pin markers, and 60-character previews.
+- **Safety boundaries:** validated pin targets, ambiguity-safe removal, soft-only slash removal, non-creating native reads, and durable unresolved pins.
 
 ## Architecture
 

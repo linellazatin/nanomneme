@@ -150,7 +150,6 @@ skipped and Pi reports that the memory index is unavailable; correct the file an
 
 ## Boundaries
 
-This adapter has no Markdown memory storage, consolidation, compaction handoffs, browser,
-or OpenCode integration. Those capabilities are not implied by configuration or pins.
+This adapter has no Markdown memory storage, consolidation, compaction handoffs, or browser (yet). Those capabilities are not (yet) implied by configuration or pins.
 See the [Core and CLI Manual](CORE_CLI_MANUAL.md) for the core and CLI, and the
 [adapter quick start](../adapters/pi/README.md) for the package-local entry point.

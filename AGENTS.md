@@ -9,7 +9,7 @@ This Node.js ESM workspace has two packages:
 - Package tests live in `packages/*/test/*.test.js`.
 - Each package keeps its own `README.md` and `LICENSE`; publish only runtime files.
 - Root documentation is `README.md`, `CHANGELOG.md`, `ROADMAP.md`, and
-  `docs/USER_MANUAL.md`.
+  `docs/CORE_CLI_MANUAL.md`.
 
 Keep core independent of CLI parsing, MCP, HTTP, embeddings, and LLM providers. Its
 contract is `open(path, { create, readOnly })`, the 4Rs, portability, verification, FTS

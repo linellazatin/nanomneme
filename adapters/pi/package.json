@@ -1,0 +1,22 @@
+{
+  "name": "nmnm-pi",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "pi": {
+    "extensions": [
+      "./extensions/index.js"
+    ]
+  },
+  "dependencies": {
+    "jsonc-parser": "3.3.1",
+    "nmnm-core": "0.0.5"
+  },
+  "peerDependencies": {
+    "typebox": "*"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "license": "MIT"
+}

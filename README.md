@@ -1,470 +1,87 @@
 # nanomneme
 
-`nanomneme` is a small, deterministic SQLite memory store for people and agents.
-It uses lexical FTS5/BM25 retrieval and structured filters. It does not use an LLM,
-embeddings, a vector store, a server, or background processing.
-
-> Version 0.0.5 hardens canonical import, atomic export, read-only maintenance, and
-> documented recovery workflows. Version 0.0.4 added deterministic retrieval and
-> multi-store CLI composition while keeping the core single-store - basically hardening.
+nanomneme is a small, deterministic SQLite memory store for people and coding agents.
+It uses lexical FTS5/BM25 retrieval and structured filters. It has no required LLM,
+embedding, vector database, server, or background worker.
 
 ## Architecture
 
 ```text
-nmnm CLI
-   |
-   v
-nmnm-core: 4Rs + verify, export/import, and FTS repair
-   |
-   v
+Pi adapter or nmnm CLI
+          |
+          v
+       nmnm-core
+          |
+          v
 node:sqlite + SQLite FTS5
-   |
-   v
-project database or separate global database
 ```
 
-`nmnm-core` owns validation, schema creation, transactional writes, tag maintenance,
-and FTS synchronization. The CLI parses options, calls core operations, and formats
-results. No harness, protocol, or model dependency is in the core.
+`nmnm-core` owns the schema, validation, transactional writes, tags, FTS synchronization,
+portability, verification, and repair. The CLI is the operator interface. Harness adapters
+are thin core clients: they never write SQLite directly or parse CLI output.
 
-## Documentation
+## Packages
 
-- [User Manual](docs/USER_MANUAL.md): installation, CLI and core API guidance,
-  deterministic agent automation, portability, and recovery.
-- Package READMEs: installation and package-specific entry points.
-- This README: product scope, architecture, and data contracts.
+| Component | Role |
+|---|---|
+| `packages/nmnm-core` | Publishable Node.js ESM storage API. |
+| `packages/nmnm-cli` | Publishable `nmnm` CLI. |
+| `adapters/pi` | Private Git-first Pi package for v0.1.0. |
 
-## Scope and database location
+Use Node.js 22.13+ with built-in `node:sqlite` and FTS5. Public npm publication of the
+Pi adapter is deferred; OpenCode is not included in this release.
 
-`scope` labels a memory. Database selection determines which SQLite file receives a
-command. Project and global databases use the same schema and remain separate files.
-
-| Use | Scope value | Database path |
-|---|---|---|
-| Project memory | `project` (default) | `./.nanomneme/memory.db` (default) |
-| Shared personal memory | `global` (default with `--global`) | `~/.local/share/nanomneme/memory.db` |
-
-The default project layout is:
-
-```text
-my-project/
-├── .nanomneme/
-│   └── memory.db
-└── ...
-```
-
-On Linux and macOS, `--global` selects the global path and gives new retained records
-`scope=global`. `scope` accepts only `project` or `global`; an explicit `--scope`
-overrides that default but does not select a different database.
-
-```sh
-nmnm retain "Prefer concise operator docs" \
-  --global
-nmnm retrieve "operator docs" --global
-nmnm retrieve "operator docs" --both
-```
-
-`--global` and `--db` cannot be combined. On other platforms, use `--db` explicitly.
-For retrieval only, `--both` reads the default project database followed by the
-standard global database. It cannot be combined with `--global` or `--db`. A missing
-database contributes no results and is not created.
-
-## Requirements
-
-- Node.js 22.13 or later
-- SQLite FTS5 support in Node's built-in `node:sqlite` runtime
-
-`node:sqlite` may print Node's experimental-feature warning. It does not require an
-experimental runtime flag on the supported Node versions.
-
-## Install and use
-
-From this workspace:
+## Quick start
 
 ```sh
 npm install
 node packages/nmnm-cli/bin/nmnm.js retain "Use SQLite for storage" \
   --kind decision --tags architecture,storage
-nmnm --version
+node packages/nmnm-cli/bin/nmnm.js retrieve "SQLite"
 ```
 
-`nmnm-core` and `nmnm-cli` are independently publishable packages. Each package
-tarball contains only its runtime entrypoint, manifest, package README, and MIT license;
-workspace tests and root documentation are not published with either package. Publish
-`nmnm-core` before `nmnm-cli`, which pins the matching core version.
+The CLI defaults to `./.nanomneme/memory.db`. `--global` uses
+`~/.local/share/nanomneme/memory.db` on Linux and macOS. `retrieve --both` composes
+project results before global results; `(store, id)` identifies a retrieval item.
 
-`nmnm --version` (or `nmnm -v`) prints the installed CLI version without opening or
-creating a database.
+Try the Pi adapter directly from a checkout:
 
-Options are command-specific. Unsupported options, unknown commands, and invalid
-positional argument counts fail before the CLI opens or creates a database.
-Place `--` after options when retain content or a retrieve query begins with `--`; it ends
-option parsing but does not change FTS5 query syntax.
+```sh
+pi -e ./adapters/pi/extensions/index.js
+```
 
-The CLI uses `./.nanomneme/memory.db` by default. Use `--global` for the dedicated
-global database, `--db <path>` for another SQLite file, or `retrieve --both` to query
-the project and global databases in that order.
+Pi settings and pins remain adapter-owned files outside SQLite. The adapter creates no
+configuration on first load: `nmnm.jsonc` is optional and user-authored, while
+`nmnm-pi.json` appears only after a pin change. See the Pi manual for the full lifecycle.
+Its direct user controls include project-first global `/memory list`, with pin markers and
+compact previews, ambiguity-safe reversible `/memory remove`, and store-validated `/memory pin`.
+Only Pi `retain_memory` creates a missing database; native reads and removal leave missing
+stores absent.
 
-## The 4Rs
+## Documentation
 
-| Operation | What it does |
+| Document | Owns |
 |---|---|
-| `retain` | Creates a memory, or explicitly patches/restores one by `id`. It never deduplicates by content. |
-| `recall` | Resolves one known active, unexpired memory by `id`; returns no result when absent. |
-| `retrieve` | Discovers active memories with FTS5/BM25 text search, filters, ordering, and pagination. It can inspect expired records when requested. |
-| `remove` | Soft-deletes by default. `--purge` permanently deletes the memory, its tags, and its FTS entry. |
+| [Core and CLI Manual](docs/CORE_CLI_MANUAL.md) | Core API, CLI, data contract, agent use, portability, and recovery. |
+| [Pi Adapter Manual](docs/PI_ADAPTER_MANUAL.md) | Pi installation, tools, pins, configuration, and automatic index behavior. |
+| [Pi quick start](adapters/pi/README.md) | Package-local Pi entry point. |
+| [Core README](packages/nmnm-core/README.md) | Core package installation and API discovery. |
+| [CLI README](packages/nmnm-cli/README.md) | CLI package installation and command discovery. |
+| [Roadmap](ROADMAP.md) | Phased delivery and deferred work. |
+| [Changelog](CHANGELOG.md) | Released and unreleased changes. |
+
+`nmnm --help` is authoritative for CLI flags. Runtime code and tests are authoritative
+when documentation disagrees with behavior.
+
+## Development
 
 ```sh
-# Retain or explicitly patch a memory.
-nmnm retain "Prefer concise documentation" --kind preference --tags docs,style
-nmnm retain "Prefer short operator docs" --id <memory-id>
-nmnm retain "Prefers dark interfaces" --global
-
-# Direct lookup, lexical retrieval, and removal.
-nmnm recall <memory-id>
-nmnm retrieve "documentation" --kind preference --tags docs
-nmnm retrieve --expires expired
-nmnm remove <memory-id>
-nmnm retain "Updated documentation preference" --id <memory-id>
-nmnm remove <memory-id> --purge
-nmnm retrieve "interfaces" --global
-nmnm retrieve "interfaces" --both
-nmnm verify --json
-nmnm export --out memory.jsonl
-nmnm import memory.jsonl --db restored.db --json
-nmnm repair --rebuild-fts --json
+npm test
+pi -e ./adapters/pi/extensions/index.js --help
+npm pack --dry-run --workspace nmnm-core --workspace nmnm-cli
 ```
 
-`verify`, `export`, `import`, and `repair` are maintenance/portability operations, not
-additional memory operations. `verify` is a report-only database diagnostic. It checks
-exact schema columns, SQLite integrity, field conventions and timestamp ordering,
-foreign keys, tags, and FTS consistency. Unusable table shapes are reported instead of
-being queried.
-It never repairs a database. A defect report exits with status `1`; a missing database
-also fails rather than creating an empty SQLite file. `verify` and `export` open existing
-databases read-only; `repair` remains writable because it rebuilds derived FTS rows.
-
-Use [`--json` with every structured-result command for stable machine-readable output](#json-responses).
-`export` instead writes canonical JSONL to stdout or to `--out <file>`:
-
-```sh
-nmnm retrieve "SQLite" --namespace nanomneme --json
-```
-
-Without `--json`, `retain` and `recall` print the complete stored record: identity,
-content, classification, scores, tags, expiry, timestamps, and metadata. `retrieve`
-stays compact for scanning and begins each row with its `project`, `global`, or
-`custom` store. Use `recall <id>` to inspect one result. `remove` prints the selected
-mode and its removal or purge timestamp.
-
-`retrieve` combines every supplied filter with AND. When multiple tags are supplied,
-each returned memory has every requested tag. Active memories are returned by default;
-use `--expires expired` or `--expires any` to inspect expiry state. Text queries use
-FTS5 syntax: space-separated terms are conjunctive, while `OR` matches alternatives.
-They rank by BM25; equal scores favor higher importance, then ID. Without a query,
-results are ordered by most recently
-updated memory. `--expires` accepts `active`, `expired`, or `any`; `--order-by` accepts
-`id`, `created_at`, `updated_at`, `importance`, `confidence`, or `relevance` with a query.
-
-## Database schema
-
-The database contains four tables. `memories` is the source of truth; the other three
-serve tags, full-text retrieval, and schema metadata.
-
-### `memories`
-
-| Column | Type | Default | Description and allowed values |
-|---|---|---|---|
-| `id` | `TEXT` | Core-generated | Lowercase UUID v4 generated by the core. Invalid IDs fail; a valid unknown ID returns no result. |
-| `content` | `TEXT` | None, required | Any non-empty, trimmed string. |
-| `kind` | `TEXT` | `note` | Exactly one of `note`, `decision`, `preference`, `fact`, or `instruction`. |
-| `scope` | `TEXT` | `project` | Exactly `project` or `global`. `retain --global` defaults new records to `global`; this label does not determine the database path. |
-| `namespace` | `TEXT` | `default` | Lowercase kebab-case domain/owner slug, such as `nanomneme` or `user`; consecutive or trailing hyphens are invalid. It partitions one database; use `default` otherwise. |
-| `importance` | `REAL` | `0.5` | Finite number from `0` through `1`, inclusive. |
-| `confidence` | `REAL` | `1.0` | Finite number from `0` through `1`, inclusive. |
-| `created_at` | `TEXT` | Core-generated | Valid UTC ISO-8601 timestamp set when the record is created. |
-| `updated_at` | `TEXT` | Core-generated | Valid UTC ISO-8601 timestamp set on create, patch, soft removal, or restoration. |
-| `expires_at` | `TEXT` | `NULL` | `NULL` or a valid UTC timestamp in exact `YYYY-MM-DDTHH:mm:ss.sssZ` form. Expired records are excluded from normal reads. |
-| `removed_at` | `TEXT` | `NULL` | `NULL` when active or restored; a valid core-generated UTC ISO-8601 timestamp after soft removal. |
-| `metadata` | `TEXT` | `{}` | JSON object stored as inspectable text. Values may be strings, finite numbers, booleans, `null`, arrays, or plain objects; unsupported instances and values JSON would omit or coerce are rejected. No reserved keys or retrieval semantics. |
-
-### `memory_tags`
-
-| Column | Type | Default | Description and allowed values |
-|---|---|---|---|
-| `memory_id` | `TEXT` | None, required | An existing `memories.id` UUID. It is maintained by the core. |
-| `tag` | `TEXT` | None, required | Lowercase kebab-case slug, e.g. `architecture` or `operator-docs`; consecutive or trailing hyphens are invalid. Tags are trimmed, deduplicated, and sorted. |
-
-The composite primary key is `(memory_id, tag)`.
-
-### `memories_fts`
-
-| Column | Type | Default | Description and allowed values |
-|---|---|---|---|
-| `rowid` | `INTEGER` | Core-synchronized | The internal SQLite rowid of the matching `memories` row. |
-| `content` | `TEXT` | Core-synchronized | The matching memory's non-empty content text, indexed by FTS5 for BM25 retrieval. |
-
-### `nmnm_meta`
-
-| Column | Type | Default | Description and allowed values |
-|---|---|---|---|
-| `key` | `TEXT` | `schema_version` | Core-owned metadata key. The current schema stores only `schema_version`. |
-| `value` | `TEXT` | `1` | Current schema version. |
-
-New databases start at `schema_version=1`. Future cores apply registered forward
-migrations transactionally. A database created by a newer core, or an existing
-unversioned database, is rejected without modification.
-
-## Record fields
-
-`retain` requires `content` for a new record. Its defaults are:
-
-```text
-kind=note  scope=project  namespace=default  importance=0.5  confidence=1.0
-```
-
-Sample `retain`:
-
-```bash
-> node packages/nmnm-cli/bin/nmnm.js retain "Always sample the samples before sampling"
-
-  ID: 0807d...
-  Content: Always sample the samples before sampling
-  Kind: note
-  Scope: project
-  Namespace: default
-  Tags:
-```
-```bash
-> node packages/nmnm-cli/bin/nmnm.js retain "Use nanomneme for any memory handling" --global \
-  --kind decision --tags architecture,storage
-
-  ID: 6e5cd...
-  Content: Use nanomneme for any memory handling
-  Kind: decision
-  Scope: global
-  Namespace: default
-  Tags: architecture, storage
-```
-
-Optional fields are `kind`, `scope`, `namespace`, `tags`, `metadata` (a JSON object),
-`expires_at`, `importance`, and `confidence`. Updates require the target `id`; content
-similarity never modifies an existing record. `retain --global` changes the default
-new-record scope to `global`; it does not alter the scope of an `--id` patch.
-
-## JSON responses
-
-Use `--json` for valid machine-readable JSON.
-
-### Memory object
-
-`retain` returns this object. `recall` returns this object or `null`. Each
-`retrieve.items` entry adds `store`; `score` also appears for a text query.
-Core reads and exports select these canonical fields explicitly, so unexpected database
-columns reported by `verify` never enter public records or canonical JSONL.
-
-```jsonc
-{
-  "id": "0807d73a-33ff-4583-86e7-c6555594dc8e", // generated UUID v4
-  "content": "Always sample the samples before sampling", // memory text
-  "kind": "note", // note | decision | preference | fact | instruction
-  "scope": "project", // project | global
-  "namespace": "default", // logical partition in this database
-  "importance": 0.5, // caller priority, 0..1
-  "confidence": 1, // caller certainty, 0..1
-  "created_at": "2026-08-25T10:39:24.997Z", // creation time
-  "updated_at": "2026-08-25T10:39:24.997Z", // latest write time
-  "expires_at": null, // UTC expiry timestamp, or null
-  "removed_at": null, // soft-removal timestamp, or null
-  "metadata": {}, // caller JSON object
-  "tags": [], // normalized tag slugs
-  "score": -9.243697478991598e-7 // FTS5 relevance, text retrieve only
-}
-```
-
-`score` is not stored memory data and is unrelated to `importance` or `confidence`.
-It is SQLite FTS5's BM25 relevance value. nanomneme orders it ascending, so a lower
-(more negative) value ranks first; equal scores favor higher importance, then ID. See [SQLite FTS5 BM25](https://www.sqlite.org/fts5.html#the_bm25_function).
-
-The core retrieval corpus covers exact and `OR` queries, filters, expiry, recency,
-explicit ordering, and deterministic ties. `confidence` can filter results but does
-not affect relevance ranking.
-
-### `retain --json`
-
-Returns the memory object above after creation, explicit patching, or restoration.
-`score` is omitted.
-
-### `recall <id> --json`
-
-Returns the memory object above for one active, unexpired ID; otherwise returns `null`:
-
-### `retrieve [query] --json`
-
-```jsonc
-{
-  "total": 1, // all matches before limit and offset
-  "items": [
-    { "store": "project" /* plus the memory object; score appears with a query */ }
-  ]
-}
-```
-
-`store` identifies the selected database: `project` for the default database,
-`global` with `--global`, and `custom` with `--db`. It is retrieval provenance, not a
-canonical memory field, so `retain`, `recall`, and exports do not add it.
-
-`retrieve --both` queries the project and global databases independently and appends
-global items after project items; BM25 scores are not compared across databases.
-Missing databases are treated as empty without being created. `total` is the sum of
-all matches, then `--offset` and `--limit` apply once to the combined project-first
-sequence. Selectors are validated even when both databases are missing. Matching IDs
-from both stores remain separate items identified by `store`.
-
-### `remove <id> --json`
-
-Soft removal is the default. A missing active record returns `null`.
-
-```jsonc
-{
-  "id": "0807d73a-33ff-4583-86e7-c6555594dc8e",
-  "mode": "soft", // soft | purge
-  "removed_at": "2026-08-25T10:40:00.000Z"
-} // restorable
-
-{
-  "id": "0807d73a-33ff-4583-86e7-c6555594dc8e",
-  "mode": "purge", // soft | purge
-  "purged_at": "2026-08-25T10:41:00.000Z"
-} // --purge; irreversible
-```
-
-### `verify --json`
-
-Verification always returns a report. `issues` is empty when `ok` is `true`; otherwise
-each group identifies the failed check, its count, and affected memory IDs or schema
-object names.
-
-```jsonc
-{
-  "ok": false,
-  "schema_version": 1,
-  "issues": [
-    {
-      "code": "fts_missing", // sqlite_integrity | foreign_key | schema_* | memory_field | tag_field | fts_*
-      "count": 1,
-      "ids": ["0807d73a-33ff-4583-86e7-c6555594dc8e"]
-    }
-  ]
-}
-```
-
-## Runtime references
-
-- [Node.js 22 `node:sqlite` documentation](https://nodejs.org/download/release/v22.23.2/docs/api/sqlite.html)
-- [SQLite FTS5 and BM25 documentation](https://www.sqlite.org/fts5.html#the_bm25_function)
-
-## Portability and repair
-
-`export` writes canonical JSONL: a format header followed by one complete record per
-line. Active, expired, and soft-removed records are included; transient `score` is not.
-Use `--out <file>` for a file or omit it to write JSONL to stdout. `import <file>`
-parses and validates every record, including duplicate IDs, before opening the
-destination. Conflicts with IDs already in the destination are checked after it opens;
-any failure leaves destination records unchanged.
-
-Import records must contain exactly the fields shown in the memory object above, except
-for transient `score` and retrieval-only `store`. Strings must already be trimmed, tags
-must already be sorted and unique, and `updated_at` must not precede `created_at`.
-
-The export path must not be the source database or a symlink or hardlink to it. The
-CLI rejects these aliases before opening or writing the database. File exports write a
-temporary file in the destination directory, then atomically replace the destination;
-a failed replacement leaves the previous file unchanged and removes the temporary file.
-
-```sh
-nmnm export --out memory.jsonl
-nmnm import memory.jsonl --db another.db --json
-```
-
-`repair --rebuild-fts` rebuilds derived FTS rows for every non-removed memory, including
-expired rows, then runs
-verification. It never changes canonical records, tags, metadata, or schema and exits
-nonzero if verification still reports issues.
-
-## Operations and recovery
-
-`remove` is a soft delete by default. It removes the record from ordinary recall and
-retrieve operations, but retains the row, tags, and ID. Restore it with `retain --id`:
-
-```sh
-nmnm remove <memory-id>
-nmnm retain "Restored or updated content" --id <memory-id>
-```
-
-Use `--purge` only when permanent deletion is intended. It deletes the memory row,
-its tags, and its full-text entry; the ID cannot be restored.
-
-```sh
-nmnm remove <memory-id> --purge
-```
-
-To back up a database, close all nanomneme processes and copy its SQLite file:
-
-```sh
-cp .nanomneme/memory.db memory-backup.db
-```
-
-Choose the smallest portability workflow that matches the task:
-
-| Need | Workflow | Safety boundary |
-|---|---|---|
-| Transfer or inspect records | `export` canonical JSONL | Portable and human-readable; excludes derived FTS rows. |
-| Restore into an empty store | `import <file> --db <new-path>` | Validates the whole input before creating the destination. |
-| Merge into an existing store | `import <file> --db <path>` | Any existing or duplicate ID rejects the entire import. |
-| Exact database backup | Close writers, then copy the SQLite file | Preserves canonical and derived database state together. |
-
-A dedicated backup command is deferred until online backup without stopping writers is
-required. Import overwrite/upsert policies are deferred until a concrete conflict policy
-is needed. Compression remains a caller concern, and source-specific converters remain
-outside the core.
-
-The database is ordinary SQLite and can be inspected with any SQLite tool. Direct
-writes are unsupported because they can desynchronize the FTS index and tags. Use
-`nmnm verify` to diagnose this drift; it reports defects but never repairs or changes
-stored data. Core callers can use `open(path, { readOnly: true })` to require an existing
-database, prevent writes, and refuse schemas that require migration.
-
-## Namespace
-
-`namespace` partitions memories within one SQLite database and is an AND-filter, not
-an access-control boundary. It neither chooses a database path nor merges project and
-global records. Use `default` unless one database intentionally serves multiple domains.
-
-## Example entries
-
-The following illustrates how one project and one global record look in the database.
-Timestamps and UUIDs are shortened only for display.
-
-```text
-memories
-────────────────────────────────────────────────────────────────────────────────────────
-id        scope    namespace  kind        content
-01HQ…A31  project  nanomneme  decision    SQLite is the embedded storage engine.
-01HQ…B92  global   user       preference  Prefer concise operator documentation.
-
-id        importance  confidence  expires_at  removed_at  metadata
-01HQ…A31  0.90        1.00        NULL        NULL        {"source":"architecture"}
-01HQ…B92  0.70        1.00        NULL        NULL        {"source":"user"}
-
-memory_tags
-────────────────────────────
-memory_id  tag
-01HQ…A31   architecture
-01HQ…A31   storage
-01HQ…B92   docs
-01HQ…B92   preference
-```
-
-The project record would normally live in `./.nanomneme/memory.db`; the global record
-would live in `~/.local/share/nanomneme/memory.db`. Both use the same schema.
+Run `npm test` before submitting changes. Do not commit `.nanomneme/`, personal global
+databases, or Pi settings and pin files containing local data. Use canonical JSONL for transfer and
+closed SQLite copies for exact backups. See the manuals for validation, recovery, and
+adapter-specific safety boundaries.

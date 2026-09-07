@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.1.0 - Thin harness adapter for Pi coding agent (pi.dev)
+
+### Added
+
+- Add the Git-first `adapters/pi` package and root manifest; core and CLI behavior remain
+  unchanged.
+- Add Pi-native retain, recall, retrieve, and remove tools over `nmnm-core`, with
+  project/global selection and canonical JSON results.
+- Add project/global JSONC settings `nmnm.jsonc` and JSON pins `nmnm-pi.json`, bounded first-prompt index injection,
+  recent-memory fallback, and `/memory` refresh, pin, unpin, and status controls. Reads
+  never create stores.
+  - Make `/memory list` project-first across both stores with store labels; require an explicit store when unqualified `/memory remove <id>` matches both.
+  - Mark exact store pins with `*` in `/memory list` and truncate previews to 60 characters.
+  - Validate the selected store before `/memory pin` writes; direct global-only IDs to the
+  explicit global command.
+  - Keep missing Pi stores absent for native recall, retrieve, and remove operations.
+  - Keep slash removal soft-only; matching pins remain durable and become unresolved until explicitly unpinned.
+- Add model-free paginated listing and reversible soft removal.
+
+### Changed
+
+- Stabilize recency-order regression coverage with explicit timestamps instead of timing.
+- Rename the pin diagnostic from `stale` to `unresolved`.
+- Pin the matching `nmnm-core` dependency and declare the TypeBox peer dependency; avoid
+  the unsupported `workspace:` protocol.
+
+### Documentation
+
+- Add the Pi adapter manual and package quick start; make the root README the v0.1.0
+  project index linked to the main and Pi manuals.
+- Document Pi first-load behavior, settings/pin/SQLite file ownership, and the complete
+  v0.1.0 JSONC template.
+- Rename the core and CLI guide to `CORE_CLI_MANUAL.md`; use compact command, flag, and
+  behavior tables in both user-facing manuals.
+
 ## 0.0.5 - 2026-09-06
 
 ### Changed

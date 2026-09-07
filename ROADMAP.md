@@ -97,6 +97,52 @@ when they preserve that model.
     defer new commands until online backup or an explicit conflict policy is required.
   - [x] Phase 5: complete user documentation, changelog, roadmap, and release verification.
 
+## v0.1.0
+
+- [x] Connectivity: Git-first Pi adapter. Keep `nmnm-core` and `nmnm-cli` behavior
+  unchanged; Pi is a thin interface over the core. OpenCode remains deferred until its
+  own compatibility probe and plan.
+  - [x] Phase 0: confirm Pi local-path and Git-package installation, establish the
+    Git-first release route, and record that current OpenCode supports local and npm
+    plugins but is not in this release.
+  - [x] Phase 1: add `adapters/pi` with the minimal Pi manifest and extension entrypoint;
+    import `nmnm-core` directly rather than shelling out to the CLI; prove local loading
+    and Git-package layout with a Pi smoke check.
+  - [x] Phase 2: add native `retain_memory`, `recall_memory`, `retrieve_memory`, and
+    `remove_memory` tools that preserve core validation and project/global selection;
+    test them against isolated SQLite stores.
+  - [x] Phase 3: add Pi-only global and project configuration, adapter-owned pins,
+    bounded compact memory-index injection on the first prompt, recent-memory fallback,
+    and `/memory refresh`, `pin`, `unpin`, and `status`. Exclude Markdown storage,
+    consolidation, compaction handoffs, and a browser.
+  - [x] Phase 4: add `docs/PI_ADAPTER_MANUAL.md` and an adapter quick-start README;
+    rework the root README as a concise project reference and documentation index rather
+    than a duplicate manual; update changelog and roadmap; validate documentation and
+    clean local/Git installation.
+  - [x] Phase 5: run the v0.1.0 release checkpoint: full tests, Pi smoke tests,
+    package/layout and documentation checks, dependency audit, and diff checks. npm
+    publication remains deferred until Pi and OpenCode adapters are ready.
+  - [x] Follow-up: split adapter settings from pins. JSONC `nmnm.jsonc` lives in the
+    project `.nanomneme` directory or Pi agent directory; JSON `nmnm-pi.json` lives in
+    the project `.nanomneme` directory or nanomneme global data directory. Maintain the
+    complete current JSONC template in the Pi user manual. Do not automatically migrate
+    the unreleased combined configuration layout.
+  - [x] Follow-up: add direct, model-free user controls for bounded project/global memory
+    listing and soft removal. Default listing is project-first then global with combined
+    pagination, store labels, pin markers, and compact previews; unqualified removal
+    resolves one match or refuses ambiguity. Retain core store boundaries and do not expose
+    irreversible purge through the slash command.
+  - [x] Follow-up: validate `/memory pin` against its selected store before writing. The
+    unscoped project default rejects global-only IDs with an explicit global command hint;
+    unpin may still remove unresolved references.
+  - [x] Follow-up: make user-facing command and flag references table-first, and rename
+    the core and CLI guide to `CORE_CLI_MANUAL.md`.
+  - [x] Follow-up: replace timing-dependent recency test setup with explicit timestamps.
+  - [x] Follow-up: keep missing stores absent for Pi native recall, retrieve, and remove.
+  - [ ] Deferred: decide whether a Pi pin may override an expired memory's core lifecycle.
+    Current pins are durable adapter references until explicit unpin; unreadable targets
+    are skipped and reported as unresolved.
+
 ## Not on the required path
 
 - LLM calls, embeddings, vector databases, and automatic consolidation.

@@ -346,7 +346,10 @@ test('retrieve combines FTS, field filters, and all requested tags', async (t) =
 });
 
 test('retrieve baseline preserves deterministic relevance and explicit ordering', async (t) => {
-  const store = await createStore(t);
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  t.after(() => store.close());
   const exact = store.retain({
     content: 'SQLite memory retrieval',
     kind: 'decision',
@@ -380,8 +383,11 @@ test('retrieve baseline preserves deterministic relevance and explicit ordering'
   const firstTie = store.retain({ content: 'First tie', namespace: 'ties', importance: 0.5 });
   const secondTie = store.retain({ content: 'Second tie', namespace: 'ties', importance: 0.5 });
   const older = store.retain({ content: 'Older listing', namespace: 'recency' });
-  await new Promise((resolve) => setTimeout(resolve, 1));
   const newer = store.retain({ content: 'Newer listing', namespace: 'recency' });
+  const db = new DatabaseSync(path);
+  db.prepare('UPDATE memories SET created_at = ?, updated_at = ? WHERE id = ?').run('2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', older.id);
+  db.prepare('UPDATE memories SET created_at = ?, updated_at = ? WHERE id = ?').run('2026-01-01T00:00:01.000Z', '2026-01-01T00:00:01.000Z', newer.id);
+  db.close();
   store.remove({ id: removed.id });
 
   assert.deepEqual(store.retrieve({ query: 'SQLite memory retrieval', namespace: 'retrieval' }).items.map(({ id }) => id), [exact.id]);

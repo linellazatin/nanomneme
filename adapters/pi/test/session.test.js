@@ -49,6 +49,38 @@ test('injects a compact index once and refresh makes it pending again', async ()
   }
 });
 
+test('validates configuration at session start and retries injection after it is repaired', async () => {
+  const project = temporaryDirectory('nmnm-pi-session-config-project-');
+  const home = temporaryDirectory('nmnm-pi-session-config-home-');
+  try {
+    const handlers = new Map();
+    const notices = [];
+    const agentDir = join(home, 'pi-agent');
+    runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Recovered configuration memory' } });
+    mkdirSync(join(project, '.nanomneme'), { recursive: true });
+    mkdirSync(agentDir, { recursive: true });
+    const configPath = settingsPath({ cwd: project, agentDir, store: 'project' });
+    writeFileSync(configPath, '{ invalid jsonc');
+    registerPiMemory({
+      on: (event, handler) => handlers.set(event, handler),
+      registerCommand: () => {},
+    }, { home, agentDir, platform: 'darwin' });
+    const ctx = { cwd: project, ui: { notify: (message) => notices.push(message) } };
+
+    await handlers.get('session_start')({}, ctx);
+    const failed = await handlers.get('before_agent_start')({ systemPrompt: 'Base prompt' }, ctx);
+    writeFileSync(configPath, '{ "injection_budget": 2000 }\n');
+    const recovered = await handlers.get('before_agent_start')({ systemPrompt: 'Base prompt' }, ctx);
+
+    assert.match(notices[0], /configuration unavailable/);
+    assert.equal(failed, undefined);
+    assert.match(recovered.systemPrompt, /Recovered configuration memory/);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test('injects enabled autoretention rules without a persistent message', async () => {
   const project = temporaryDirectory('nmnm-pi-autoretention-project-');
   const home = temporaryDirectory('nmnm-pi-autoretention-home-');

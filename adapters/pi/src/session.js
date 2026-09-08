@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { buildMemoryIndex, pin, piAgentDir, pinsPath, readPins, unpin, writePins } from './context.js';
+import { buildMemoryIndex, pin, piAgentDir, pinsPath, readPins, readSettings, settingsPath, unpin, writePins } from './context.js';
 import { databasePath, runMemory } from './store.js';
 
 const DEFAULT_LIST_LIMIT = 20;
@@ -78,6 +78,13 @@ function notify(ctx, message) {
   ctx.ui.notify(message, 'info');
 }
 
+function validateConfiguration({ cwd, home, agentDir }) {
+  for (const store of ['project', 'global']) {
+    readSettings(settingsPath({ cwd, home, agentDir, store }));
+    readPins(pinsPath({ cwd, home, store }));
+  }
+}
+
 export function registerPiMemory(pi, options = {}) {
   let pending = true;
   const refresh = () => { pending = true; };
@@ -85,16 +92,24 @@ export function registerPiMemory(pi, options = {}) {
   const memoryOptions = { ...options, agentDir };
   const index = (cwd) => buildMemoryIndex({ cwd, ...memoryOptions });
 
-  pi.on('session_start', refresh);
+  pi.on('session_start', (_event, ctx) => {
+    refresh();
+    if (!ctx) return;
+    try {
+      validateConfiguration({ cwd: ctx.cwd, ...memoryOptions });
+    } catch (error) {
+      notify(ctx, `Nanomneme configuration unavailable: ${error.message}`);
+    }
+  });
   pi.on('session_compact', refresh);
   pi.on('before_agent_start', (event, ctx) => {
     if (!pending) return undefined;
-    pending = false;
     try {
       const memoryIndex = index(ctx.cwd);
       const content = [memoryIndex.total ? memoryIndex.content : undefined, memoryIndex.autoretention]
         .filter(Boolean)
         .join('\n\n');
+      pending = false;
       if (!content) return undefined;
       return { systemPrompt: `${event.systemPrompt}\n\n${content}` };
     } catch (error) {

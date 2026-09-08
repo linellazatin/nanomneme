@@ -94,6 +94,67 @@ test('buildMemoryIndex merges enabled autoretention rules and validates their se
   }
 });
 
+test('buildMemoryIndex bounds autoretention guidance and index content together', () => {
+  const project = temporaryDirectory('nmnm-pi-autoretention-budget-project-');
+  const home = temporaryDirectory('nmnm-pi-autoretention-budget-home-');
+  try {
+    const agentDir = join(home, 'pi-agent');
+    mkdirSync(join(project, '.nanomneme'), { recursive: true });
+    mkdirSync(agentDir, { recursive: true });
+    runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Bounded index memory' } });
+    writeFileSync(settingsPath({ cwd: project, agentDir, store: 'project' }), JSON.stringify({
+      injection_budget: 300,
+      autoretention: { enabled: true, always_persist: ['Keep project decisions.'] },
+    }));
+
+    const index = buildMemoryIndex({ cwd: project, home, agentDir, platform: 'darwin' });
+    const injected = [index.total ? index.content : undefined, index.autoretention].filter(Boolean).join('\n\n');
+
+    assert.ok(injected.length <= index.budget);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('buildMemoryIndex rejects autoretention guidance that exceeds its total budget', () => {
+  const project = temporaryDirectory('nmnm-pi-autoretention-oversize-project-');
+  const home = temporaryDirectory('nmnm-pi-autoretention-oversize-home-');
+  try {
+    const agentDir = join(home, 'pi-agent');
+    mkdirSync(join(project, '.nanomneme'), { recursive: true });
+    mkdirSync(agentDir, { recursive: true });
+    writeFileSync(settingsPath({ cwd: project, agentDir, store: 'project' }), JSON.stringify({
+      injection_budget: 20,
+      autoretention: { enabled: true, never_persist: ['Never retain secrets.'] },
+    }));
+
+    assert.throws(
+      () => buildMemoryIndex({ cwd: project, home, agentDir, platform: 'darwin' }),
+      /autoretention guidance exceeds the injection budget/,
+    );
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('buildMemoryIndex omits enabled autoretention without rules', () => {
+  const project = temporaryDirectory('nmnm-pi-autoretention-empty-project-');
+  const home = temporaryDirectory('nmnm-pi-autoretention-empty-home-');
+  try {
+    const agentDir = join(home, 'pi-agent');
+    mkdirSync(join(project, '.nanomneme'), { recursive: true });
+    mkdirSync(agentDir, { recursive: true });
+    writeFileSync(settingsPath({ cwd: project, agentDir, store: 'project' }), '{ "autoretention": { "enabled": true } }\n');
+
+    assert.equal(buildMemoryIndex({ cwd: project, home, agentDir, platform: 'darwin' }).autoretention, undefined);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test('pins deduplicate and unpin removes only the requested ID', () => {
   const pinned = pin(pin([], 'one'), 'one');
   assert.deepEqual(pinned, ['one']);

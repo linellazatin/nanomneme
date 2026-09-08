@@ -116,6 +116,7 @@ function autoretentionContent(project, global) {
     ['Ask the user before retaining:', rules('always_ask')],
     ['Automatically retain when applicable:', rules('always_persist')],
   ].filter(([, values]) => values.length);
+  if (!sections.length) return undefined;
   return [
     '## Nanomneme autoretention',
     'Autoretention is enabled. Use retain_memory only when retaining a memory. Never automatically retain rules take precedence over all other rules.',
@@ -160,17 +161,22 @@ export function buildMemoryIndex({ cwd, home, agentDir, platform, budget } = {})
     }
   }
 
+  const autoretention = autoretentionContent(projectSettings, globalSettings);
+  if (autoretention && autoretention.length > limit) {
+    throw new TypeError('Pi memory autoretention guidance exceeds the injection budget');
+  }
+  const indexBudget = Math.max(0, limit - (autoretention ? autoretention.length + 2 : 0));
   let content = 'Nanomneme memory index:\n';
   let total = 0;
   for (const record of records) {
     const next = `${line(record.store, record.memory)}\n`;
-    if (content.length + next.length > limit) break;
+    if (content.length + next.length > indexBudget) break;
     content += next;
     total += 1;
   }
   return {
-    content: content.slice(0, limit),
-    autoretention: autoretentionContent(projectSettings, globalSettings),
+    content: content.slice(0, indexBudget),
+    autoretention,
     unresolved,
     total,
     budget: limit,

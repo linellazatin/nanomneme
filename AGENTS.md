@@ -1,56 +1,47 @@
-# Repository Guidelines
+# Nanomneme Repository Guide
 
-## Project Structure & Module Organization
+## What this is
 
-This Node.js ESM workspace has two packages:
+Nanomneme is a local, deterministic memory system for coding agents. It stores canonical memory records in SQLite and exposes the same lifecycle through a reusable core, a CLI, and thin harness adapters. It requires no LLM, embeddings, server, or network service. Node.js 22.13+ is required because the project uses ESM and built-in `node:sqlite` with SQLite FTS5.
 
-- `packages/nmnm-core/src/index.js` contains the SQLite schema, 4Rs, portability APIs, and FTS repair.
-- `packages/nmnm-cli/bin/nmnm.js` implements the `nmnm` command-line interface.
-- Package tests live in `packages/*/test/*.test.js`.
-- Each package keeps its own `README.md` and `LICENSE`; publish only runtime files.
-- Root documentation is `README.md`, `CHANGELOG.md`, `ROADMAP.md`, and
-  `docs/CORE_CLI_MANUAL.md`.
+## Commands
 
-Keep core independent of CLI parsing, MCP, HTTP, embeddings, and LLM providers. Its
-contract is `open(path, { create, readOnly })`, the 4Rs, portability, verification, FTS
-repair, and `close`. `memories` rows are canonical; tags and FTS rows are derived.
+```sh
+npm install
+npm test
+node packages/nmnm-cli/bin/nmnm.js --help
+node packages/nmnm-cli/bin/nmnm.js export --out memory.jsonl
+npm pack --dry-run --workspace nmnm-core --workspace nmnm-cli
+pi -e ./adapters/pi/extensions/index.js
+```
 
-## Build, Test, and Development Commands
+`npm test` runs Node's built-in test runner across all package and Pi-adapter tests. There are no configured build, lint, or typecheck scripts.
 
-- `npm install`: install and link workspaces.
-- `npm test`: run all tests with Node's built-in test runner.
-- `node packages/nmnm-cli/bin/nmnm.js --help`: run the CLI from the checkout.
-- `node packages/nmnm-cli/bin/nmnm.js export --out memory.jsonl`: export JSONL.
-- `npm pack --dry-run --workspace nmnm-core --workspace nmnm-cli`: inspect publishable package contents.
-- `npm publish --dry-run --workspace nmnm-core --workspace nmnm-cli`: validate publication metadata without publishing.
+## Architecture
 
-Use Node.js 22.13+ and built-in `node:sqlite`. Publish `nmnm-core` before `nmnm-cli`;
-the CLI pins the matching core version.
+- `packages/nmnm-core/src/index.js` owns the SQLite schema, validation, retain/recall/retrieve/remove lifecycle, JSONL portability, verification, and FTS repair.
+- `packages/nmnm-cli/bin/nmnm.js` is the `nmnm` command-line interface.
+- `adapters/pi/` is a private Pi extension package. Its source handles adapter configuration, pins, session context, and tool registration; `extensions/index.js` is the Pi entry point.
+- Tests live beside each component in `packages/*/test/` and `adapters/pi/test/`.
 
-## Coding Style & Naming Conventions
+Keep the core independent of CLI parsing, Pi-specific behavior, HTTP, MCP, embeddings, and LLM providers. Adapters must use the core API, never write SQLite directly or parse CLI output.
 
-Use ESM, two-space indentation, single quotes, semicolons, and camelCase JavaScript names.
-Preserve public snake-case wire names such as `created_at` and flags such as `--order-by`.
-No formatter or linter is configured. Keep diffs focused and functions small. Use `soft`
-for reversible removal and `purge` for irreversible removal.
+## Configuration and installation
 
-## Testing Guidelines
+The root workspace contains `packages/*` and `adapters/*`. The core and CLI are publishable packages; the Pi adapter is private and depends on the matching `nmnm-core` version. Publish core before CLI.
 
-Use `node:test` with `node:assert/strict`. Name tests after observable behavior. Put
-storage tests in core and parsing/output tests in CLI. Use temporary databases and
-isolated home directories for global tests. Run `npm test` before submission.
+The CLI defaults to `./.nanomneme/memory.db`; `--global` selects the user global database. Pi configuration and pins are adapter-owned files outside SQLite. Pi must not create missing databases for reads or removal: only the retain path creates a missing store.
 
-## Commit & Pull Request Guidelines
+## Testing and operational quirks
 
-Use concise Conventional Commit-style subjects and focused commits. Pull requests should
-explain user-visible behavior, list verification, link issues when available, and update
-documentation and the changelog for public changes.
+Use `node:test` and `node:assert/strict`, with temporary databases and isolated home directories for global-store tests. `memories` rows are canonical; tags and FTS rows are derived. Prefer CLI mutations because direct SQLite changes can desynchronize derived data.
 
-## Data and Safety
+Removal is soft and reversible by default; `purge` is irreversible. Validate canonical imports before opening a new destination. JSONL is the transfer/restore format, while exact backups require a closed SQLite copy. Exports must not alias their source and must use same-directory atomic replacement. Do not commit `.nanomneme/`, personal global databases, or local Pi settings/pin files.
 
-Do not commit `.nanomneme/` or personal global databases. Prefer CLI mutations because
-direct SQLite writes can desynchronize tags and FTS. Validate canonical imports before
-opening new destinations. Export files must not alias their source and must use
-same-directory atomic replacement. Use JSONL for transfer/restore and closed SQLite
-copies for exact backups. Require a concrete workflow and conflict policy before adding
-overwrite, backup, compression, or converter behavior.
+## Key files
+
+- `README.md`: project overview and quick start.
+- `docs/CORE_CLI_MANUAL.md`: core, CLI, data contract, and recovery details.
+- `docs/PI_ADAPTER_MANUAL.md`: Pi installation, configuration, pins, and automatic context behavior.
+- `ROADMAP.md` and `CHANGELOG.md`: planned and released behavior.
+<!-- opl-init:fp e8efaef66e75dcb0 -->

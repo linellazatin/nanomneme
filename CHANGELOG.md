@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.1.1 - Unreleased
+
+### Added
+
+- Add opt-in `autoretention` rules in project and global JSONC settings. Enabled guidance uses the
+  active model and `retain_memory`; global and project rules combine, while `never_persist` takes
+  precedence.
+- Validate settings and pins read-only at Pi session start. Configuration failures do not block Pi
+  startup, and corrected files retry automatically on the next prompt.
+- Rebuild and transiently inject the current index after successful Pi compaction or successful
+  model/slash memory mutations; read and no-op removal paths do not trigger reinjection.
+
+### Changed
+
+- Inject bounded Nanomneme context through Pi's system prompt rather than a persistent custom
+  session message. `/memory refresh` continues to request one next-prompt injection.
+- Apply `injection_budget` to all transient Nanomneme context. Complete autoretention rules take
+  priority over index rows and are never partially injected.
+
 ## 0.1.0 - Thin harness adapter for Pi coding agent (pi.dev)
 
 ### Added

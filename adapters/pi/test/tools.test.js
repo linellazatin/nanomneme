@@ -11,9 +11,9 @@ function temporaryDirectory(name) {
   return mkdtempSync(join(tmpdir(), name));
 }
 
-function registeredTools() {
+function registeredTools(options) {
   const tools = [];
-  registerPiTools({ registerTool: (tool) => tools.push(tool) }, Type);
+  registerPiTools({ registerTool: (tool) => tools.push(tool) }, Type, options);
   return new Map(tools.map((tool) => [tool.name, tool]));
 }
 
@@ -38,6 +38,24 @@ test('Pi tools retain, recall, retrieve, and purge through the core', async () =
     assert.equal(recalled.content, 'Stored from Pi');
     assert.equal(retrieved.items[0].id, retained.id);
     assert.equal(removed.mode, 'purge');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('Pi mutation tools notify the adapter, while reads do not', async () => {
+  const cwd = temporaryDirectory('nmnm-pi-tools-mutations-');
+  try {
+    let mutations = 0;
+    const tools = registeredTools({ onMutation: () => { mutations += 1; } });
+    const retained = await execute(tools.get('retain_memory'), { content: 'Refresh after mutation' }, cwd);
+    await execute(tools.get('recall_memory'), { id: retained.id }, cwd);
+    await execute(tools.get('retrieve_memory'), {}, cwd);
+    assert.equal(mutations, 1);
+    await execute(tools.get('remove_memory'), { id: retained.id }, cwd);
+    assert.equal(mutations, 2);
+    await execute(tools.get('remove_memory'), { id: '00000000-0000-4000-8000-000000000001' }, cwd);
+    assert.equal(mutations, 2);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

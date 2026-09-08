@@ -41,6 +41,120 @@ test('keeps JSONC settings and JSON pins in their requested project and global l
   }
 });
 
+test('buildMemoryIndex merges enabled autoretention rules and validates their settings', () => {
+  const project = temporaryDirectory('nmnm-pi-autoretention-project-');
+  const home = temporaryDirectory('nmnm-pi-autoretention-home-');
+  try {
+    const agentDir = join(home, 'pi-agent');
+    mkdirSync(join(project, '.nanomneme'), { recursive: true });
+    mkdirSync(agentDir, { recursive: true });
+    writeFileSync(settingsPath({ cwd: project, agentDir, store: 'global' }), JSON.stringify({
+      autoretention: {
+        enabled: true,
+        always_persist: ['Global durable fact', 'Shared fact'],
+        never_persist: ['Global secret'],
+        always_ask: ['Global preference'],
+      },
+    }));
+    writeFileSync(settingsPath({ cwd: project, agentDir, store: 'project' }), JSON.stringify({
+      autoretention: {
+        enabled: true,
+        always_persist: ['Shared fact', 'Project durable fact'],
+        never_persist: ['Project secret'],
+        always_ask: ['Project preference'],
+      },
+    }));
+
+    const enabled = buildMemoryIndex({ cwd: project, home, agentDir, platform: 'darwin' });
+    assert.match(enabled.autoretention, /Use retain_memory only when retaining a memory/);
+    assert.match(enabled.autoretention, /Never automatically retain:\n- Global secret\n- Project secret/);
+    assert.match(enabled.autoretention, /Ask the user before retaining:\n- Global preference\n- Project preference/);
+    assert.match(enabled.autoretention, /Automatically retain when applicable:\n- Global durable fact\n- Shared fact\n- Project durable fact/);
+
+    const projectPath = settingsPath({ cwd: project, agentDir, store: 'project' });
+    writeFileSync(projectPath, '{ "autoretention": { "enabled": false } }\n');
+    assert.equal(buildMemoryIndex({ cwd: project, home, agentDir, platform: 'darwin' }).autoretention, undefined);
+    writeFileSync(settingsPath({ cwd: project, agentDir, store: 'global' }), '{ "autoretention": { "always_persist": ["Global rule without opt-in"] } }\n');
+    writeFileSync(projectPath, '{ "autoretention": { "always_persist": ["Rule without opt-in"] } }\n');
+    assert.equal(buildMemoryIndex({ cwd: project, home, agentDir, platform: 'darwin' }).autoretention, undefined);
+    writeFileSync(settingsPath({ cwd: project, agentDir, store: 'global' }), '{ "autoretention": { "enabled": false } }\n');
+    writeFileSync(projectPath, '{ "autoretention": { "enabled": true, "always_persist": ["Project opt-in"] } }\n');
+    assert.match(buildMemoryIndex({ cwd: project, home, agentDir, platform: 'darwin' }).autoretention, /Project opt-in/);
+
+    const path = projectPath;
+    writeFileSync(path, '{ "autoretention": [] }\n');
+    assert.throws(() => readSettings(path), /autoretention must be an object/);
+    writeFileSync(path, '{ "autoretention": { "enabled": "true" } }\n');
+    assert.throws(() => readSettings(path), /autoretention enabled must be a boolean/);
+    writeFileSync(path, '{ "autoretention": { "always_persist": ["", 1] } }\n');
+    assert.throws(() => readSettings(path), /autoretention always_persist must be an array of non-empty strings/);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('buildMemoryIndex bounds autoretention guidance and index content together', () => {
+  const project = temporaryDirectory('nmnm-pi-autoretention-budget-project-');
+  const home = temporaryDirectory('nmnm-pi-autoretention-budget-home-');
+  try {
+    const agentDir = join(home, 'pi-agent');
+    mkdirSync(join(project, '.nanomneme'), { recursive: true });
+    mkdirSync(agentDir, { recursive: true });
+    runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Bounded index memory' } });
+    writeFileSync(settingsPath({ cwd: project, agentDir, store: 'project' }), JSON.stringify({
+      injection_budget: 300,
+      autoretention: { enabled: true, always_persist: ['Keep project decisions.'] },
+    }));
+
+    const index = buildMemoryIndex({ cwd: project, home, agentDir, platform: 'darwin' });
+    const injected = [index.total ? index.content : undefined, index.autoretention].filter(Boolean).join('\n\n');
+
+    assert.ok(injected.length <= index.budget);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('buildMemoryIndex rejects autoretention guidance that exceeds its total budget', () => {
+  const project = temporaryDirectory('nmnm-pi-autoretention-oversize-project-');
+  const home = temporaryDirectory('nmnm-pi-autoretention-oversize-home-');
+  try {
+    const agentDir = join(home, 'pi-agent');
+    mkdirSync(join(project, '.nanomneme'), { recursive: true });
+    mkdirSync(agentDir, { recursive: true });
+    writeFileSync(settingsPath({ cwd: project, agentDir, store: 'project' }), JSON.stringify({
+      injection_budget: 20,
+      autoretention: { enabled: true, never_persist: ['Never retain secrets.'] },
+    }));
+
+    assert.throws(
+      () => buildMemoryIndex({ cwd: project, home, agentDir, platform: 'darwin' }),
+      /autoretention guidance exceeds the injection budget/,
+    );
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('buildMemoryIndex omits enabled autoretention without rules', () => {
+  const project = temporaryDirectory('nmnm-pi-autoretention-empty-project-');
+  const home = temporaryDirectory('nmnm-pi-autoretention-empty-home-');
+  try {
+    const agentDir = join(home, 'pi-agent');
+    mkdirSync(join(project, '.nanomneme'), { recursive: true });
+    mkdirSync(agentDir, { recursive: true });
+    writeFileSync(settingsPath({ cwd: project, agentDir, store: 'project' }), '{ "autoretention": { "enabled": true } }\n');
+
+    assert.equal(buildMemoryIndex({ cwd: project, home, agentDir, platform: 'darwin' }).autoretention, undefined);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test('pins deduplicate and unpin removes only the requested ID', () => {
   const pinned = pin(pin([], 'one'), 'one');
   assert.deepEqual(pinned, ['one']);

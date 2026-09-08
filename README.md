@@ -55,7 +55,8 @@ At its heart, `nanomneme` is a durable, local record of what matters: `small eno
 
 - **Native memory tools:** model-invoked retain, recall, retrieve, and remove operations over `nmnm-core`.
 - **Project and global memory:** explicit store selection with canonical records and no custom database-path parsing.
-- **Bounded automatic context:** a hidden first-prompt memory index with configurable character budget, pinned entries first, recent active fallback, store labels, and unresolved-pin reporting.
+- **Bounded automatic context:** transient autoretention guidance and the first-prompt memory index share one configurable character budget; pinned entries come first, with recent active fallback, store labels, unresolved-pin reporting, and refresh after successful compaction or memory mutations.
+- **Opt-in autoretention:** project/global JSONC rules guide the active model's `retain_memory` calls without a nested model, worker, or direct adapter write.
 - **Adapter-owned configuration:** optional JSONC settings and separate JSON pin files, with project and global locations.
 - **Direct user controls:** `/memory refresh`, `status`, `list`, `remove`, `pin`, and `unpin` without model involvement.
 - **Readable list UX:** project-first combined listing, pagination, `[project]` and `[global]` labels, exact-store `*` pin markers, and 60-character previews.
@@ -83,7 +84,7 @@ are thin core clients: they never write SQLite directly or parse CLI output.
 |---|---|
 | `packages/nmnm-core` | Publishable Node.js ESM storage API. |
 | `packages/nmnm-cli` | Publishable `nmnm` CLI. |
-| `adapters/pi` | Private Git-first Pi package for v0.1.0. |
+| `adapters/pi` | Private Git-first Pi package for v0.1.1. |
 
 Use Node.js 22.13+ with built-in `node:sqlite` and FTS5. Public npm publication of the
 Pi adapter is deferred; OpenCode is not included in this release.
@@ -109,7 +110,10 @@ pi -e ./adapters/pi/extensions/index.js
 
 Pi settings and pins remain adapter-owned files outside SQLite. The adapter creates no
 configuration on first load: `nmnm.jsonc` is optional and user-authored, while
-`nmnm-pi.json` appears only after a pin change. See the Pi manual for the full lifecycle.
+`nmnm-pi.json` appears only after a pin change. The bounded index is appended transiently to
+the first prompt and rebuilt after successful compaction or memory mutations; optional
+`autoretention` rules only guide the active model's `retain_memory` calls. See the Pi manual
+for the full lifecycle.
 Its direct user controls include project-first global `/memory list`, with pin markers and
 compact previews, ambiguity-safe reversible `/memory remove`, and store-validated `/memory pin`.
 Only Pi `retain_memory` creates a missing database; native reads and removal leave missing
@@ -120,10 +124,10 @@ stores absent.
 | Document | Owns |
 |---|---|
 | [Core and CLI Manual](docs/CORE_CLI_MANUAL.md) | Core API, CLI, data contract, agent use, portability, and recovery. |
-| [Pi Adapter Manual](docs/PI_ADAPTER_MANUAL.md) | Pi installation, tools, pins, configuration, and automatic index behavior. |
-| [Pi quick start](adapters/pi/README.md) | Package-local Pi entry point. |
 | [Core README](packages/nmnm-core/README.md) | Core package installation and API discovery. |
 | [CLI README](packages/nmnm-cli/README.md) | CLI package installation and command discovery. |
+| [Pi quick start](adapters/pi/README.md) | Package-local Pi entry point. |
+| [Pi Adapter Manual](docs/PI_ADAPTER_MANUAL.md) | Pi installation, tools, pins, configuration, and automatic index behavior. |
 | [Roadmap](ROADMAP.md) | Phased delivery and deferred work. |
 | [Changelog](CHANGELOG.md) | Released and unreleased changes. |
 

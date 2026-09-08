@@ -171,6 +171,21 @@ when they preserve that model.
     injection after configuration repair, and apply one character budget to complete autoretention
     guidance plus the memory index without partially emitting a rule.
 
+## v0.1.2
+
+- [x] Pi adapter reinjection hardening. Keep `nmnm-core` deterministic and SQLite-backed; lifecycle
+  observability and optional cadence stay adapter-only.
+  - [x] Phase 6: expose in-memory transient-context lifecycle metadata through `/memory status`:
+    pending state, periodic policy, prompt count, last successful injection aggregate, and latest
+    error. Do not write session telemetry, configuration, or SQLite data.
+  - [x] Phase 7: add disabled-by-default JSONC periodic reinjection. When explicitly enabled,
+    rebuild current bounded context every five eligible prompts in addition to existing first-prompt
+    and dirty triggers; do not add timers, workers, handoffs, consolidation, auto-resume, or direct
+    automatic writes.
+  - [x] Phase 8: update root/private adapter metadata to 0.1.2; document the periodic policy and
+    status output in README and manuals; replace planned changelog notes with user-facing release
+    entries; then repeat adapter, full-suite, package, Pi smoke, and diff checks.
+
 ## Not on the required path
 
 - Nested LLM calls, embeddings, vector databases, and automatic consolidation.

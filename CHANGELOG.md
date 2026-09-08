@@ -1,6 +1,16 @@
 # Changelog
 
-## 0.1.1 - Unreleased
+## 0.1.2 - Pi adapter observability + reinjection enhancement
+
+### Added
+
+- Add `/memory status` lifecycle metadata for context: pending state, the current periodic policy, prompt count, aggregate details for the last injection, and the latest error; remains read-only and never exposes injected memory content.
+
+- Add disabled-by-default periodic reinjection for long Pi sessions. 
+  - Project/global JSONC settings select a positive prompt interval, defaulting to five when enabled
+  - cadence reuses the bounded context and creates no automatic writes, workers, timers, or handoffs
+
+## 0.1.1 - Pi adapter autoretention introduction
 
 ### Added
 

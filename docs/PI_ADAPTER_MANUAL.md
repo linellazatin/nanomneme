@@ -1,6 +1,6 @@
 # Pi Adapter Manual
 
-`nmnm-pi` is the Pi harness adapter for nanomneme 0.1.1. It calls `nmnm-core`
+`nmnm-pi` is the Pi harness adapter for nanomneme 0.1.2. It calls `nmnm-core`
 directly, keeps SQLite as the storage authority, and does not invoke or parse the CLI.
 
 ## Install
@@ -74,7 +74,7 @@ comments or trailing commas.
 
 ### Complete settings template
 
-This is the complete supported `nmnm.jsonc` shape for v0.1.1. Copy it to either settings
+This is the complete supported `nmnm.jsonc` shape for v0.1.2. Copy it to either settings
 location above, then adjust the budget or opt in to autoretention. This template is the
 maintained place to add future adapter parameters.
 
@@ -82,6 +82,12 @@ maintained place to add future adapter parameters.
 {
   // Total character limit for transient autoretention guidance and the memory index.
   "injection_budget": 2000,
+
+  // Disabled unless explicitly true. Rebuild current bounded context every five user prompts.
+  "reinjection": {
+    "enabled": false,
+    "every_n_prompts": 5,
+  },
 
   // Disabled unless explicitly true. Rules guide the active model's retain_memory calls.
   "autoretention": {
@@ -125,27 +131,38 @@ budget is raised. `autoretention` is inactive unless its effective `enabled` val
 (project overrides global). Rule arrays from both scopes combine with global entries first;
 `never_persist` takes precedence, `always_ask` requires user confirmation, and `always_persist`
 guides the active model when applicable. The adapter never writes memory directly for
-autoretention: the active model decides whether to call `retain_memory`. A project pin and a
-global pin use the same ID format but remain distinct `(store, id)` references. The unreleased
-combined `nmnm-memory.json` layout is not migrated automatically.
+autoretention: the active model decides whether to call `retain_memory`.
+
+`reinjection` is disabled unless its effective `enabled` value is `true` (project overrides global).
+When enabled, `every_n_prompts` is a positive safe integer that resolves project, then global,
+then `5`. After a successful context build, each eligible user prompt increments a session-local
+counter; the configured prompt queues a transient `cadence` rebuild in that same prompt. A
+successful build resets the counter, while a failed build leaves it pending. Slash commands do not
+count. The adapter caches the effective policy after a successful build, so ordinary prompts do not
+reread settings or stores; change settings with `/memory refresh` or reload the session. Cadence
+uses the existing total `injection_budget`, increases recurring provider input/cache activity, and
+creates no timer, worker, session record, memory, or SQLite write. A project pin and a global pin
+use the same ID format but remain distinct `(store, id)` references. The unreleased combined
+`nmnm-memory.json` layout is not migrated automatically.
 
 ### Normal file lifecycle
 
 On extension load and session start, the adapter registers its tools and hooks only. It
 does not create a settings file, a pin file, or a database. `nmnm.jsonc` is optional and
-user-authored: create it only to override the default index budget. If it is absent, the
-adapter uses the default. The adapter never rewrites it.
+user-authored: create it only to override the default index budget, opt into autoretention, or
+opt into periodic reinjection. If it is absent, the adapter uses the defaults. The adapter never
+rewrites it.
 
 | Event or action | Reads | Writes | What to expect |
 |---|---|---|---|
 | Extension load | Nothing | Nothing | No nanomneme files appear. |
 | Session start | Existing settings and pins | Nothing | Read-only validation reports malformed configuration without preventing Pi startup. |
-| First user prompt, or a queued refresh | Existing settings, pins, and SQLite stores | Nothing | A bounded index, and enabled autoretention rules, are appended transiently to the system prompt. Missing files and stores are empty. |
+| First user prompt, queued refresh, or enabled cadence | Existing settings, pins, and SQLite stores | Nothing | A bounded index, and enabled autoretention rules, are appended transiently to the system prompt. Cadence is disabled by default and counts user prompts only. Missing files and stores are empty. |
 | Successful Pi compaction | Nothing immediately | Nothing | The next user prompt rebuilds the transient index and enabled rules. Pi's own compaction summary preserves session continuity. |
 | `retain_memory` | Existing selected store when patching | Selected `memory.db` and core-derived rows | The core creates a missing selected database; a successful mutation queues next-prompt index rebuild; no Pi settings or pin file changes. |
 | `recall_memory` or `retrieve_memory` | Selected existing `memory.db` | Nothing | Missing stores return `null` or an empty page without creating a database. |
 | `remove_memory` | Selected existing `memory.db` | Selected `memory.db` and core-derived rows | Missing stores return `null`; successful removal queues next-prompt index rebuild; no Pi settings or pin file changes. |
-| `/memory status` | Existing settings, pins, and stores | Nothing | Pi shows pin counts, effective budget, and unresolved count. |
+| `/memory status` | Existing settings, pins, and stores | Nothing | Pi shows pin counts, effective budget, unresolved count, and transient injection lifecycle metadata; it never shows injected memory content. |
 | `/memory refresh` | Nothing immediately | Nothing | The next user prompt rebuilds the hidden index. |
 | `/memory list ...` | Both default stores, or the selected `memory.db` and pins | Nothing | Displays a bounded, paginated active-memory page without invoking the model. |
 | `/memory remove ...` | Both stores when unqualified, otherwise the selected `memory.db` | Selected `memory.db` and core-derived rows | Soft-removes one unambiguous entry and queues next-prompt index rebuild; a matching pin remains configured. |
@@ -154,7 +171,7 @@ adapter uses the default. The adapter never rewrites it.
 
 To create project settings manually before starting Pi or between prompts, create the
 directory, then copy the complete template above into `.nanomneme/nmnm.jsonc` and adjust
-`injection_budget` if needed:
+`injection_budget`, autoretention, or reinjection if needed:
 
 ```sh
 mkdir -p .nanomneme
@@ -170,7 +187,7 @@ not required.
 | Command | Input example | Description | Notes |
 |---|---|---|---|
 | `/memory refresh` | None | Queue a hidden index rebuild. | The next user prompt performs the read-only rebuild. |
-| `/memory status` | None | Show pin counts, budget, and unresolved pins. | Does not write files or stores. |
+| `/memory status` | None | Show a compact transient-context status card. | Reports pending state, the current periodic policy, prompt count, last injection aggregate, and latest error without exposing injected content or writing files/stores. |
 | `/memory list [store] [limit] [offset]` | `/memory list global 50` | List active memories without the model. | Omit `store` for project-first, then global. `limit` is 1-100; `offset` is 0-1,000. |
 | `/memory remove [store] <id>` | `/memory remove global <memory-id>` | Soft-remove an active memory. | Unscoped IDs resolve one store or refuse ambiguity. Pins remain durable. |
 | `/memory pin [store] <id>` | `/memory pin global <memory-id>` | Pin an active memory for Pi index injection. | Omit `store` for project. Validation occurs before any pin-file write. |
@@ -187,6 +204,33 @@ not required.
 | Identity | UUID v4 collisions are unlikely, but explicit IDs and imports can duplicate IDs across stores; use `(store, id)`. |
 | Index refresh | `refresh`, successful compaction, successful model retain/remove, and successful slash `pin`, `unpin`, or removal make the index eligible for the next prompt; they do not alter other memory records. |
 | Unresolved pins | Removed, expired, missing, or unreadable targets stay configured until unpinned and are counted as unresolved. |
+
+### Pi token overhead
+
+`nmnm-pi` adds four model-visible tool definitions: `retain_memory`, `recall_memory`,
+`retrieve_memory`, and `remove_memory`. Their JSON schemas total `1,217 characters`
+(`retain_memory` 440, `recall_memory` 164, `retrieve_memory` 422, `remove_memory` 191).
+This is a schema-only reference, not a token or cost estimate: Pi adds tool names,
+descriptions, and provider request structure, while each provider uses its own tokenizer.
+
+The transient memory context is separately bounded. On the first prompt and each queued
+refresh, Pi appends at most `injection_budget + 2` characters to the system prompt: the
+configured context plus its two newline separator characters. With the default budget, that
+is at most 2,002 characters. Autoretention guidance and index rows share that limit. Ordinary
+prompts without a queued refresh append no memory context unless opt-in periodic `reinjection`
+queues a rebuild.
+
+```text
+first or queued-turn adapter overhead =
+  provider-tokenized memory tool definitions + provider-tokenized injected context (0 to injection_budget + 2 characters)
+```
+
+To measure exact overhead for a chosen model and provider, compare equivalent first-turn
+sessions with identical prompt, project context, and enabled non-nanomneme tools: run once
+with `nmnm-pi` enabled and once without it, then subtract the first assistant response's
+`usage.input` values in the Pi session JSONL. For later turns, report `usage.cacheRead` and
+`usage.cacheWrite` separately rather than treating cached input as fresh overhead. Session
+usage is provider-reported and is the authoritative token and cost measurement.
 
 ## Boundaries
 

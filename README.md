@@ -55,7 +55,7 @@ At its heart, `nanomneme` is a durable, local record of what matters: `small eno
 
 - **Native memory tools:** model-invoked retain, recall, retrieve, and remove operations over `nmnm-core`.
 - **Project and global memory:** explicit store selection with canonical records and no custom database-path parsing.
-- **Bounded automatic context:** a transient first-prompt memory index with configurable character budget, pinned entries first, recent active fallback, store labels, and unresolved-pin reporting; it refreshes after successful compaction or memory mutations.
+- **Bounded automatic context:** transient autoretention guidance and the first-prompt memory index share one configurable character budget; pinned entries come first, with recent active fallback, store labels, unresolved-pin reporting, and refresh after successful compaction or memory mutations.
 - **Opt-in autoretention:** project/global JSONC rules guide the active model's `retain_memory` calls without a nested model, worker, or direct adapter write.
 - **Adapter-owned configuration:** optional JSONC settings and separate JSON pin files, with project and global locations.
 - **Direct user controls:** `/memory refresh`, `status`, `list`, `remove`, `pin`, and `unpin` without model involvement.

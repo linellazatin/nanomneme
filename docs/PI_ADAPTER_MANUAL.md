@@ -46,10 +46,11 @@ or support custom database paths. Only `retain_memory` creates a missing store.
 
 ## Automatic memory index
 
-At the first user prompt in each Pi session, the adapter appends a bounded compact index to
-that prompt's system prompt. It lists project pins first, then global pins, then recent active
-records from each store. Rows contain `store`, ID, and a short content preview. It is not a
-transfer of complete records; use `recall_memory` or `retrieve_memory` for full content.
+At the first user prompt in each Pi session, the adapter appends bounded Nanomneme context to
+that prompt's system prompt. Enabled autoretention guidance takes priority, followed by a compact
+index that lists project pins first, then global pins, then recent active records from each store.
+Rows contain `store`, ID, and a short content preview. It is not a transfer of complete records;
+use `recall_memory` or `retrieve_memory` for full content.
 
 The index is transient, not a session message. It is rebuilt for the next user prompt after
 `/memory refresh`, successful Pi compaction, or a successful retain, remove, pin, or unpin
@@ -79,7 +80,7 @@ maintained place to add future adapter parameters.
 
 ```jsonc
 {
-  // Character limit for the transient automatic memory index.
+  // Total character limit for transient autoretention guidance and the memory index.
   "injection_budget": 2000,
 
   // Disabled unless explicitly true. Rules guide the active model's retain_memory calls.
@@ -116,15 +117,17 @@ Pin files are plain JSON arrays, written only by `/memory pin` and `/memory unpi
 ["<memory-id>"]
 ```
 
-`injection_budget` is a non-negative character limit. The project value overrides the
-global value; the default is 2,000. `autoretention` is inactive unless its effective
-`enabled` value is `true` (project overrides global). Rule arrays from both scopes combine
-with global entries first; `never_persist` takes precedence, `always_ask` requires user
-confirmation, and `always_persist` guides the active model when applicable. The adapter
-never writes memory directly for autoretention: the active model decides whether to call
-`retain_memory`. A project pin and a global pin use the same ID format but remain distinct
-`(store, id)` references. The unreleased combined `nmnm-memory.json` layout is not migrated
-automatically.
+`injection_budget` is a non-negative total character limit for all transient Nanomneme context.
+The project value overrides the global value; the default is 2,000. Complete autoretention
+guidance is included before index rows; individual rules are never truncated. If enabled guidance
+alone exceeds the budget, no Nanomneme context is injected until the rules are shortened or the
+budget is raised. `autoretention` is inactive unless its effective `enabled` value is `true`
+(project overrides global). Rule arrays from both scopes combine with global entries first;
+`never_persist` takes precedence, `always_ask` requires user confirmation, and `always_persist`
+guides the active model when applicable. The adapter never writes memory directly for
+autoretention: the active model decides whether to call `retain_memory`. A project pin and a
+global pin use the same ID format but remain distinct `(store, id)` references. The unreleased
+combined `nmnm-memory.json` layout is not migrated automatically.
 
 ### Normal file lifecycle
 
@@ -135,7 +138,8 @@ adapter uses the default. The adapter never rewrites it.
 
 | Event or action | Reads | Writes | What to expect |
 |---|---|---|---|
-| Extension load or session start | Nothing | Nothing | No nanomneme files appear. |
+| Extension load | Nothing | Nothing | No nanomneme files appear. |
+| Session start | Existing settings and pins | Nothing | Read-only validation reports malformed configuration without preventing Pi startup. |
 | First user prompt, or a queued refresh | Existing settings, pins, and SQLite stores | Nothing | A bounded index, and enabled autoretention rules, are appended transiently to the system prompt. Missing files and stores are empty. |
 | Successful Pi compaction | Nothing immediately | Nothing | The next user prompt rebuilds the transient index and enabled rules. Pi's own compaction summary preserves session continuity. |
 | `retain_memory` | Existing selected store when patching | Selected `memory.db` and core-derived rows | The core creates a missing selected database; a successful mutation queues next-prompt index rebuild; no Pi settings or pin file changes. |
@@ -156,9 +160,10 @@ directory, then copy the complete template above into `.nanomneme/nmnm.jsonc` an
 mkdir -p .nanomneme
 ```
 
-An invalid settings or pin file leaves the file unchanged. The first-prompt index is
-skipped and Pi reports that the memory index is unavailable; correct the file and use
-`/memory refresh` before the next prompt.
+An invalid settings or pin file leaves the file unchanged. Session start reports the
+configuration issue without preventing Pi startup. The next-prompt injection remains pending,
+so after correcting the file the following prompt retries automatically; `/memory refresh` is
+not required.
 
 ## Slash command reference
 

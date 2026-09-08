@@ -167,6 +167,9 @@ when they preserve that model.
     handoff, automatic consolidation, auto-resume, or canonical memory for transient session state.
   - [x] Phase 4: update the Pi manual, README, changelog, and complete JSONC template; run adapter
     tests, full tests, and Pi smoke checks before declaring the 0.1.1 feature update complete.
+  - [x] Phase 5: validate settings and pins read-only at session start, retry a failed next-prompt
+    injection after configuration repair, and apply one character budget to complete autoretention
+    guidance plus the memory index without partially emitting a rule.
 
 ## Not on the required path
 

@@ -33,7 +33,7 @@ export function registerPiTools(pi, Type, options = {}) {
     }),
     async execute(_id, params, _signal, _update, ctx) {
       const result = runMemory({ cwd: ctx.cwd, store: params.store, operation: 'retain', input: input(params, ['content', 'id', 'kind', 'scope', 'namespace', 'tags', 'importance', 'confidence', 'expires_at', 'metadata']) });
-      options.onMutation?.();
+      options.onMutation?.('retain');
       return response(result);
     },
   });
@@ -70,7 +70,7 @@ export function registerPiTools(pi, Type, options = {}) {
     async execute(_id, params, _signal, _update, ctx) {
       if (!hasStore(ctx, params.store)) return response(null);
       const result = runMemory({ cwd: ctx.cwd, store: params.store, operation: 'remove', input: { id: params.id, mode: params.purge ? 'purge' : 'soft' }, create: false });
-      if (result) options.onMutation?.();
+      if (result) options.onMutation?.('remove');
       return response(result);
     },
   });

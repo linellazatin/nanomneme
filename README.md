@@ -1,41 +1,30 @@
 # nanomneme (nmnm)
 
-nanomneme began with a simple question: how can coding agents remember useful things across sessions without turning memory into another opaque service?
-
-The inspiration came from systems such as [`openpi-memory`](https://github.com/linellazatin/openpi-memory) and [`openclaude-memory`](https://github.com/linellazatin/openclaude-memory), which demonstrated that persistent agent memory could be built from ordinary, inspectable Markdown files. Their central insight was practical: agents become more useful when important context survives the current conversation and can be reintroduced when needed.
-
-nanomneme carries that idea forward into a small, deterministic SQLite core. Instead of making each harness own its memory format, nanomneme provides one shared memory system that `Pi`, `OpenCode` (soon), and future adapters can use consistently.
+nanomneme is a small, deterministic SQLite core for coding-agent memory: useful context survives a session without becoming an opaque service. Inspired by [`openpi-memory`](https://github.com/linellazatin/openpi-memory) and [`openclaude-memory`](https://github.com/linellazatin/openclaude-memory), and their demonstration that memory can persist in inspectable files, it replaces per-harness memory formats with one shared system for `Pi`, `OpenCode` (soon), and future adapters.
 
 ## What the name means
 
-`Mneme` comes from the Greek word for `memory or remembrance`. It also evokes `Mnemosyne`, the personification of memory in Greek mythology.
-
-The `nano` prefix describes the project’s character: small, local, focused, and lightweight. `nanomneme` is not trying to become a memory platform, cloud service, or artificial brain. It is a compact memory primitive that can sit underneath developer tools and agents.
+`Mneme` is Greek for memory or remembrance and evokes Mnemosyne. `nano` reflects the project's small, local focus: nanomneme is a compact memory primitive for developer tools and agents, not a memory platform, cloud service, or artificial brain.
 
 ## Our philosophy
 
 `nanomneme` is built around a few principles:
 
-- Memory should persist beyond a session, but remain owned and inspectable by the user.
-- The core should work locally without an LLM, embeddings, vector databases, servers, or required network services.
-- One shared core should support many harnesses through thin adapters.
-- Retrieval should be deterministic, explainable, and bounded by the available context budget.
-- Automatic injection should provide a compact memory index, not dump every full record into the prompt.
-- Project and global memories should remain explicit and distinguishable.
-- Pins belong to the adapter that uses them, while memories remain reusable across harnesses.
-- Removal should be reversible by default, and data should remain portable through canonical JSONL.
-- A memory system should help agents remember without pretending to be human memory.
+- Memory persists beyond a session but remains user-owned and inspectable.
+- The core is local and works without an LLM, embeddings, vector databases, servers, or required network services.
+- Thin adapters share one core; retrieval is deterministic, explainable, and context-bounded.
+- Injection supplies a compact index rather than complete records; project and global memories remain distinct.
+- Pins are adapter-owned, memories are reusable across harnesses, removal is reversible by default, and JSONL keeps data portable.
 
-At its heart, `nanomneme` is a durable, local record of what matters: `small enough to understand, strong enough to persist, and open enough to serve whatever harness comes next`.
+Nanomneme helps agents remember without pretending to be human memory.
 
 ## Features
 
 ### Core memory handler
 
-- **Lightweight by design:** no required LLM calls, embeddings, vector database, daemon, ORM, or network service; memory operations stay local and deterministic.
-- **User-owned and inspectable:** SQLite is the source of truth, with readable JSONL portability and explicit project/global boundaries.
-- **Harness-agnostic foundation:** one shared memory contract keeps records reusable across Pi, OpenCode (soon), and future thin adapters.
-- **4Rs lifecycle:** retain, recall, retrieve, and remove memories; soft removal is reversible and purge is explicit.
+- **Local and user-owned:** no required LLM calls, embeddings, vector database, daemon, ORM, or network service; operations are local and deterministic, SQLite is the source of truth, and JSONL portability preserves explicit project/global boundaries.
+- **Harness-agnostic foundation:** one shared memory contract supports Pi, OpenCode (soon), and future thin adapters.
+- **4Rs lifecycle:** retain, recall, retrieve, and remove; soft removal is reversible and purge is explicit.
 - **Local SQLite storage:** transactional canonical records with derived tags and FTS5 indexes.
 - **Canonical validation:** UUID v4 IDs, UTC timestamps, supported kinds and scopes, kebab-case namespaces and tags, and JSON metadata.
 - **Deterministic retrieval:** lexical FTS5/BM25 search, structured filters, expiry handling, pagination, and stable relevance, importance, recency, and ID ordering.
@@ -58,7 +47,7 @@ At its heart, `nanomneme` is a durable, local record of what matters: `small eno
 - **Bounded automatic context:** transient autoretention guidance and the first-prompt memory index share one configurable character budget; pinned entries come first, with recent active fallback, store labels, unresolved-pin reporting, and refresh after successful compaction or memory mutations.
 - **Opt-in autoretention:** project/global JSONC rules guide the active model's `retain_memory` calls without a nested model, worker, or direct adapter write.
 - **Adapter-owned configuration:** optional JSONC settings and separate JSON pin files, with project and global locations.
-- **Direct user controls:** `/memory refresh`, `status`, `list`, `remove`, `pin`, and `unpin` without model involvement.
+- **Direct user controls:** `/memory refresh`, `status`, `list`, `remove`, `pin`, and `unpin` without model involvement; `status` reports transient injection lifecycle metadata without exposing memory content.
 - **Readable list UX:** project-first combined listing, pagination, `[project]` and `[global]` labels, exact-store `*` pin markers, and 60-character previews.
 - **Safety boundaries:** validated pin targets, ambiguity-safe removal, soft-only slash removal, non-creating native reads, and durable unresolved pins.
 
@@ -84,7 +73,7 @@ are thin core clients: they never write SQLite directly or parse CLI output.
 |---|---|
 | `packages/nmnm-core` | Publishable Node.js ESM storage API. |
 | `packages/nmnm-cli` | Publishable `nmnm` CLI. |
-| `adapters/pi` | Private Git-first Pi package for v0.1.1. |
+| `adapters/pi` | Private Git-first Pi package for v0.1.2. |
 
 Use Node.js 22.13+ with built-in `node:sqlite` and FTS5. Public npm publication of the
 Pi adapter is deferred; OpenCode is not included in this release.
@@ -108,16 +97,14 @@ Try the Pi adapter directly from a checkout:
 pi -e ./adapters/pi/extensions/index.js
 ```
 
-Pi settings and pins remain adapter-owned files outside SQLite. The adapter creates no
-configuration on first load: `nmnm.jsonc` is optional and user-authored, while
-`nmnm-pi.json` appears only after a pin change. The bounded index is appended transiently to
-the first prompt and rebuilt after successful compaction or memory mutations; optional
-`autoretention` rules only guide the active model's `retain_memory` calls. See the Pi manual
-for the full lifecycle.
-Its direct user controls include project-first global `/memory list`, with pin markers and
-compact previews, ambiguity-safe reversible `/memory remove`, and store-validated `/memory pin`.
-Only Pi `retain_memory` creates a missing database; native reads and removal leave missing
-stores absent.
+Pi settings and pins are adapter-owned files outside SQLite. First load creates neither:
+`nmnm.jsonc` is optional and user-authored, and `nmnm-pi.json` appears only after a pin change.
+The first prompt receives a bounded transient index, rebuilt after successful compaction or memory
+mutations. Optional `autoretention` only guides the active model's `retain_memory`; disabled-by-default
+`reinjection` can rebuild the same context every five user prompts. Direct controls provide a project-first
+`/memory list`, reversible ambiguity-safe `/memory remove`, and store-validated `/memory pin`. Only
+`retain_memory` creates a missing database; native reads and removal leave missing stores absent. See the
+Pi manual for the full lifecycle.
 
 ## Documentation
 

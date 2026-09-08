@@ -87,13 +87,21 @@ function validateConfiguration({ cwd, home, agentDir }) {
 
 export function registerPiMemory(pi, options = {}) {
   let pending = true;
-  const refresh = () => { pending = true; };
+  let pendingReason = 'session_start';
+  let promptCountSinceInjection = 0;
+  let periodicPolicy = { enabled: false, every_n_prompts: 5 };
+  let lastInjection;
+  let lastError;
+  const refresh = (reason) => {
+    pending = true;
+    pendingReason = reason ?? pendingReason;
+  };
   const agentDir = options.agentDir ?? piAgentDir({ home: options.home });
   const memoryOptions = { ...options, agentDir };
   const index = (cwd) => buildMemoryIndex({ cwd, ...memoryOptions });
 
   pi.on('session_start', (_event, ctx) => {
-    refresh();
+    refresh('session_start');
     if (!ctx) return;
     try {
       validateConfiguration({ cwd: ctx.cwd, ...memoryOptions });
@@ -101,18 +109,34 @@ export function registerPiMemory(pi, options = {}) {
       notify(ctx, `Nanomneme configuration unavailable: ${error.message}`);
     }
   });
-  pi.on('session_compact', refresh);
+  pi.on('session_compact', () => refresh('compact'));
   pi.on('before_agent_start', (event, ctx) => {
+    if (!pending && periodicPolicy.enabled) {
+      promptCountSinceInjection += 1;
+      if (promptCountSinceInjection >= periodicPolicy.every_n_prompts) refresh('cadence');
+    }
     if (!pending) return undefined;
     try {
       const memoryIndex = index(ctx.cwd);
+      periodicPolicy = memoryIndex.reinjection;
       const content = [memoryIndex.total ? memoryIndex.content : undefined, memoryIndex.autoretention]
         .filter(Boolean)
         .join('\n\n');
       pending = false;
+      promptCountSinceInjection = 0;
+      lastError = undefined;
       if (!content) return undefined;
+      lastInjection = {
+        reason: pendingReason,
+        injectedAt: new Date().toISOString(),
+        characterCount: content.length,
+        indexCount: memoryIndex.total,
+        unresolvedPins: memoryIndex.unresolved,
+        autoretentionEnabled: Boolean(memoryIndex.autoretention),
+      };
       return { systemPrompt: `${event.systemPrompt}\n\n${content}` };
     } catch (error) {
+      lastError = { message: error.message, occurredAt: new Date().toISOString() };
       notify(ctx, `Nanomneme memory index unavailable: ${error.message}`);
       return undefined;
     }
@@ -122,15 +146,38 @@ export function registerPiMemory(pi, options = {}) {
     handler: async (args, ctx) => {
       const [action, ...values] = commandInput(args);
       if (action === 'refresh' && values.length === 0) {
-        refresh();
+        refresh('refresh');
         notify(ctx, 'Nanomneme memory index will refresh on the next prompt.');
         return;
       }
       if (action === 'status' && values.length === 0) {
-        const projectPins = readPins(pinsPath({ cwd: ctx.cwd, home: options.home, store: 'project' }));
-        const globalPins = readPins(pinsPath({ cwd: ctx.cwd, home: options.home, store: 'global' }));
-        const memoryIndex = index(ctx.cwd);
-        notify(ctx, `Nanomneme: project pins ${projectPins.length}, global pins ${globalPins.length}, budget ${memoryIndex.budget}, unresolved ${memoryIndex.unresolved}.`);
+        let projectPins;
+        let globalPins;
+        let memoryIndex;
+        try {
+          projectPins = readPins(pinsPath({ cwd: ctx.cwd, home: options.home, store: 'project' }));
+          globalPins = readPins(pinsPath({ cwd: ctx.cwd, home: options.home, store: 'global' }));
+          memoryIndex = index(ctx.cwd);
+        } catch (error) {
+          lastError = { message: error.message, occurredAt: new Date().toISOString() };
+        }
+        const policy = memoryIndex?.reinjection ?? periodicPolicy;
+        const last = lastInjection
+          ? [
+            `Last       ${lastInjection.reason} at ${lastInjection.injectedAt}`,
+            `           ${lastInjection.indexCount} ${lastInjection.indexCount === 1 ? 'entry' : 'entries'} · ${lastInjection.characterCount} characters · autoretention ${lastInjection.autoretentionEnabled ? 'enabled' : 'disabled'}`,
+          ]
+          : ['Last       none'];
+        notify(ctx, [
+          'Nanomneme status',
+          `Injection  pending: ${pending ? 'yes' : 'no'}`,
+          `Prompts    since injection: ${promptCountSinceInjection}`,
+          ...last,
+          `Pins       project: ${projectPins?.length ?? 'unavailable'} · global: ${globalPins?.length ?? 'unavailable'}`,
+          `Index      budget: ${memoryIndex?.budget ?? 'unavailable'} · unresolved: ${memoryIndex?.unresolved ?? 'unavailable'}`,
+          `Periodic   reinjection: ${policy.enabled ? `every ${policy.every_n_prompts} prompts` : 'disabled'}`,
+          `Error      ${lastError ? `${lastError.message} at ${lastError.occurredAt}` : 'none'}`,
+        ].join('\n'));
         return;
       }
       if (action === 'list') {
@@ -164,7 +211,7 @@ export function registerPiMemory(pi, options = {}) {
             operation: 'remove', input: { id: target.id, mode: 'soft' },
           });
           if (result) {
-            refresh();
+            refresh('remove');
             notify(ctx, `Nanomneme removed [${store}] ${target.id}. Any matching pin remains configured until /memory unpin.`);
           } else {
             notify(ctx, `Nanomneme memory not found [${store}] ${target.id}.`);
@@ -191,7 +238,7 @@ export function registerPiMemory(pi, options = {}) {
           const path = pinsPath({ cwd: ctx.cwd, home: options.home, store: target.store });
           const pins = readPins(path);
           writePins(path, action === 'pin' ? pin(pins, target.id) : unpin(pins, target.id));
-          refresh();
+          refresh(action);
           notify(ctx, `Nanomneme ${action}ned [${target.store}] ${target.id}.`);
           return;
         }

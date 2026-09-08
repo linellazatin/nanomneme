@@ -80,26 +80,23 @@ function notify(ctx, message) {
 
 export function registerPiMemory(pi, options = {}) {
   let pending = true;
+  const refresh = () => { pending = true; };
   const agentDir = options.agentDir ?? piAgentDir({ home: options.home });
   const memoryOptions = { ...options, agentDir };
   const index = (cwd) => buildMemoryIndex({ cwd, ...memoryOptions });
 
-  pi.on('session_start', () => {
-    pending = true;
-  });
-  pi.on('before_agent_start', (_event, ctx) => {
+  pi.on('session_start', refresh);
+  pi.on('session_compact', refresh);
+  pi.on('before_agent_start', (event, ctx) => {
     if (!pending) return undefined;
     pending = false;
     try {
       const memoryIndex = index(ctx.cwd);
-      if (!memoryIndex.total) return undefined;
-      return {
-        message: {
-          customType: 'nanomneme-memory-index',
-          content: memoryIndex.content,
-          display: false,
-        },
-      };
+      const content = [memoryIndex.total ? memoryIndex.content : undefined, memoryIndex.autoretention]
+        .filter(Boolean)
+        .join('\n\n');
+      if (!content) return undefined;
+      return { systemPrompt: `${event.systemPrompt}\n\n${content}` };
     } catch (error) {
       notify(ctx, `Nanomneme memory index unavailable: ${error.message}`);
       return undefined;
@@ -110,7 +107,7 @@ export function registerPiMemory(pi, options = {}) {
     handler: async (args, ctx) => {
       const [action, ...values] = commandInput(args);
       if (action === 'refresh' && values.length === 0) {
-        pending = true;
+        refresh();
         notify(ctx, 'Nanomneme memory index will refresh on the next prompt.');
         return;
       }
@@ -152,7 +149,7 @@ export function registerPiMemory(pi, options = {}) {
             operation: 'remove', input: { id: target.id, mode: 'soft' },
           });
           if (result) {
-            pending = true;
+            refresh();
             notify(ctx, `Nanomneme removed [${store}] ${target.id}. Any matching pin remains configured until /memory unpin.`);
           } else {
             notify(ctx, `Nanomneme memory not found [${store}] ${target.id}.`);
@@ -179,7 +176,7 @@ export function registerPiMemory(pi, options = {}) {
           const path = pinsPath({ cwd: ctx.cwd, home: options.home, store: target.store });
           const pins = readPins(path);
           writePins(path, action === 'pin' ? pin(pins, target.id) : unpin(pins, target.id));
-          pending = true;
+          refresh();
           notify(ctx, `Nanomneme ${action}ned [${target.store}] ${target.id}.`);
           return;
         }
@@ -187,4 +184,5 @@ export function registerPiMemory(pi, options = {}) {
       notify(ctx, 'Usage: /memory refresh | status | list [project|global] [limit] [offset] | remove [project|global] <id> | pin [project|global] <id> | unpin [project|global] <id>');
     },
   });
+  return { refresh };
 }

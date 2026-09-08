@@ -9,11 +9,34 @@ const SETTINGS_FILE = 'nmnm.jsonc';
 const PINS_FILE = 'nmnm-pi.json';
 const PREVIEW_LENGTH = 240;
 
+function normalizedRuleArray(value, name) {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.some((rule) => typeof rule !== 'string' || !rule.trim())) {
+    throw new TypeError(`Pi memory autoretention ${name} must be an array of non-empty strings`);
+  }
+  return [...new Set(value)];
+}
+
+function normalizedAutoretention(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('Pi memory autoretention must be an object');
+  if (value.enabled !== undefined && typeof value.enabled !== 'boolean') throw new TypeError('Pi memory autoretention enabled must be a boolean');
+  return {
+    ...(value.enabled === undefined ? {} : { enabled: value.enabled }),
+    always_persist: normalizedRuleArray(value.always_persist, 'always_persist'),
+    never_persist: normalizedRuleArray(value.never_persist, 'never_persist'),
+    always_ask: normalizedRuleArray(value.always_ask, 'always_ask'),
+  };
+}
+
 function normalizedSettings(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('Pi memory settings must be an object');
   const budget = value.injection_budget;
   if (budget !== undefined && (!Number.isSafeInteger(budget) || budget < 0)) throw new TypeError('Pi memory injection_budget must be a non-negative integer');
-  return budget === undefined ? {} : { injection_budget: budget };
+  const autoretention = value.autoretention;
+  return {
+    ...(budget === undefined ? {} : { injection_budget: budget }),
+    ...(autoretention === undefined ? {} : { autoretention: normalizedAutoretention(autoretention) }),
+  };
 }
 
 function normalizedPins(value) {
@@ -81,6 +104,25 @@ function line(store, memory) {
   return `- [${store}] ${memory.id} ${preview(memory.content)}`;
 }
 
+function autoretentionContent(project, global) {
+  const enabled = project.autoretention?.enabled ?? global.autoretention?.enabled ?? false;
+  if (!enabled) return undefined;
+  const rules = (name) => [...new Set([
+    ...(global.autoretention?.[name] ?? []),
+    ...(project.autoretention?.[name] ?? []),
+  ])];
+  const sections = [
+    ['Never automatically retain:', rules('never_persist')],
+    ['Ask the user before retaining:', rules('always_ask')],
+    ['Automatically retain when applicable:', rules('always_persist')],
+  ].filter(([, values]) => values.length);
+  return [
+    '## Nanomneme autoretention',
+    'Autoretention is enabled. Use retain_memory only when retaining a memory. Never automatically retain rules take precedence over all other rules.',
+    ...sections.flatMap(([heading, values]) => [heading, ...values.map((value) => `- ${value}`)]),
+  ].join('\n');
+}
+
 function readStore({ cwd, home, platform, store, operation, input }) {
   if (!existsSync(databasePath({ cwd, home, platform, store }))) return null;
   return runMemory({ cwd, home, platform, store, operation, input, create: false, readOnly: true });
@@ -126,5 +168,11 @@ export function buildMemoryIndex({ cwd, home, agentDir, platform, budget } = {})
     content += next;
     total += 1;
   }
-  return { content: content.slice(0, limit), unresolved, total, budget: limit };
+  return {
+    content: content.slice(0, limit),
+    autoretention: autoretentionContent(projectSettings, globalSettings),
+    unresolved,
+    total,
+    budget: limit,
+  };
 }

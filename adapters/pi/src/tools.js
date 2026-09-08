@@ -20,7 +20,7 @@ function hasStore(ctx, store) {
   return existsSync(databasePath({ cwd: ctx.cwd, store }));
 }
 
-export function registerPiTools(pi, Type) {
+export function registerPiTools(pi, Type, options = {}) {
   pi.registerTool({
     name: 'retain_memory',
     label: 'Retain Memory',
@@ -32,7 +32,9 @@ export function registerPiTools(pi, Type) {
       expires_at: Type.Optional(Type.Union([Type.String(), Type.Null()])), metadata: Type.Optional(Type.Any()),
     }),
     async execute(_id, params, _signal, _update, ctx) {
-      return response(runMemory({ cwd: ctx.cwd, store: params.store, operation: 'retain', input: input(params, ['content', 'id', 'kind', 'scope', 'namespace', 'tags', 'importance', 'confidence', 'expires_at', 'metadata']) }));
+      const result = runMemory({ cwd: ctx.cwd, store: params.store, operation: 'retain', input: input(params, ['content', 'id', 'kind', 'scope', 'namespace', 'tags', 'importance', 'confidence', 'expires_at', 'metadata']) });
+      options.onMutation?.();
+      return response(result);
     },
   });
   pi.registerTool({
@@ -67,7 +69,9 @@ export function registerPiTools(pi, Type) {
     parameters: Type.Object({ id: Type.String(), store: store(Type), purge: Type.Optional(Type.Boolean()) }),
     async execute(_id, params, _signal, _update, ctx) {
       if (!hasStore(ctx, params.store)) return response(null);
-      return response(runMemory({ cwd: ctx.cwd, store: params.store, operation: 'remove', input: { id: params.id, mode: params.purge ? 'purge' : 'soft' }, create: false }));
+      const result = runMemory({ cwd: ctx.cwd, store: params.store, operation: 'remove', input: { id: params.id, mode: params.purge ? 'purge' : 'soft' }, create: false });
+      if (result) options.onMutation?.();
+      return response(result);
     },
   });
 }

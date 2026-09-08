@@ -27,16 +27,48 @@ test('injects a compact index once and refresh makes it pending again', async ()
     const ctx = { cwd: project, ui: { notify: (message) => notices.push(message) } };
 
     await handlers.get('session_start')({}, ctx);
-    const first = await handlers.get('before_agent_start')({}, ctx);
-    const second = await handlers.get('before_agent_start')({}, ctx);
+    const first = await handlers.get('before_agent_start')({ systemPrompt: 'Base prompt' }, ctx);
+    const second = await handlers.get('before_agent_start')({ systemPrompt: 'Base prompt' }, ctx);
     await commands.get('memory').handler('refresh', ctx);
-    const refreshed = await handlers.get('before_agent_start')({}, ctx);
+    const refreshed = await handlers.get('before_agent_start')({ systemPrompt: 'Base prompt' }, ctx);
+    await handlers.get('session_compact')({}, ctx);
+    const compacted = await handlers.get('before_agent_start')({ systemPrompt: 'Base prompt' }, ctx);
+    const afterCompaction = await handlers.get('before_agent_start')({ systemPrompt: 'Base prompt' }, ctx);
 
-    assert.equal(first.message.customType, 'nanomneme-memory-index');
-    assert.equal(first.message.display, false);
+    assert.equal(first.message, undefined);
+    assert.match(first.systemPrompt, /^Base prompt\n\nNanomneme memory index:/);
+    assert.match(first.systemPrompt, /Session index memory/);
     assert.equal(second, undefined);
-    assert.equal(refreshed.message.customType, 'nanomneme-memory-index');
+    assert.match(refreshed.systemPrompt, /^Base prompt\n\nNanomneme memory index:/);
+    assert.match(compacted.systemPrompt, /^Base prompt\n\nNanomneme memory index:/);
+    assert.equal(afterCompaction, undefined);
     assert.match(notices[0], /refresh/);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('injects enabled autoretention rules without a persistent message', async () => {
+  const project = temporaryDirectory('nmnm-pi-autoretention-project-');
+  const home = temporaryDirectory('nmnm-pi-autoretention-home-');
+  try {
+    const handlers = new Map();
+    const agentDir = join(home, 'pi-agent');
+    mkdirSync(join(project, '.nanomneme'), { recursive: true });
+    writeFileSync(settingsPath({ cwd: project, agentDir, store: 'project' }), JSON.stringify({
+      autoretention: { enabled: true, always_persist: ['Record durable project decisions'] },
+    }));
+    registerPiMemory({ on: (event, handler) => handlers.set(event, handler), registerCommand: () => {} }, { home, agentDir, platform: 'darwin' });
+    const ctx = { cwd: project, ui: { notify: () => {} } };
+
+    await handlers.get('session_start')({}, ctx);
+    const result = await handlers.get('before_agent_start')({ systemPrompt: 'Base prompt' }, ctx);
+
+    assert.equal(result.message, undefined);
+    assert.match(result.systemPrompt, /## Nanomneme autoretention/);
+    assert.match(result.systemPrompt, /Use retain_memory only when retaining a memory/);
+    assert.match(result.systemPrompt, /Record durable project decisions/);
   } finally {
     rmSync(project, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });

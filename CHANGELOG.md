@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.1 - Unreleased
+
+### Added
+
+- Add opt-in `autoretention` rules in project and global JSONC settings. 
+  - Enabled guidance uses the active model and `retain_memory`
+  - lobal and project rules combine, while `never_persist` takes precedence.
+- Rebuild and transiently inject the current index after successful Pi compaction or successful model/command memory mutations
+  - Read and no-op removal paths do not trigger reinjection.
+
+### Changed
+
+- Inject the bounded memory index through Pi's system prompt rather than a persistent
+  custom session message. `/memory refresh` continues to request one next-prompt injection.
+
 ## 0.1.0 - Thin harness adapter for Pi coding agent (pi.dev)
 
 ### Added

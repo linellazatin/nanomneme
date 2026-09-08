@@ -1,6 +1,6 @@
 # Pi Adapter Manual
 
-`nmnm-pi` is the Pi harness adapter for nanomneme 0.1.0. It calls `nmnm-core`
+`nmnm-pi` is the Pi harness adapter for nanomneme 0.1.1. It calls `nmnm-core`
 directly, keeps SQLite as the storage authority, and does not invoke or parse the CLI.
 
 ## Install
@@ -46,14 +46,17 @@ or support custom database paths. Only `retain_memory` creates a missing store.
 
 ## Automatic memory index
 
-At the first user prompt in each Pi session, the adapter injects a hidden compact index.
-It lists project pins first, then global pins, then recent active records from each store.
-Rows contain `store`, ID, and a short content preview. It is not a transfer of complete
-records; use `recall_memory` or `retrieve_memory` for full content.
+At the first user prompt in each Pi session, the adapter appends a bounded compact index to
+that prompt's system prompt. It lists project pins first, then global pins, then recent active
+records from each store. Rows contain `store`, ID, and a short content preview. It is not a
+transfer of complete records; use `recall_memory` or `retrieve_memory` for full content.
 
-Missing databases are empty. Missing, removed, expired, or otherwise unreadable pins are
-skipped and counted as unresolved. The pin remains configured until explicitly unpinned.
-Index reads are read-only and never create or migrate a SQLite database.
+The index is transient, not a session message. It is rebuilt for the next user prompt after
+`/memory refresh`, successful Pi compaction, or a successful retain, remove, pin, or unpin
+mutation. Read operations and no-op removals do not trigger it. Missing databases are empty.
+Missing, removed, expired, or otherwise unreadable pins are skipped and counted as unresolved.
+The pin remains configured until explicitly unpinned. Index reads are read-only and never create
+or migrate a SQLite database.
 
 ## Pins and configuration
 
@@ -68,18 +71,44 @@ Pi's agent directory defaults to `~/.pi/agent`; current Pi uses
 `PI_CODING_AGENT_DIR` to override it. Settings are read-only to the adapter and may use
 comments or trailing commas.
 
-### Complete v0.1.0 settings template
+### Complete settings template
 
-This is the complete supported `nmnm.jsonc` shape for v0.1.0. Copy it to either settings
-location above, then adjust the budget only if the default is not suitable. This template
-is the maintained place to add future adapter parameters.
+This is the complete supported `nmnm.jsonc` shape for v0.1.1. Copy it to either settings
+location above, then adjust the budget or opt in to autoretention. This template is the
+maintained place to add future adapter parameters.
 
 ```jsonc
 {
-  // Character limit for the hidden automatic memory index.
+  // Character limit for the transient automatic memory index.
   "injection_budget": 2000,
+
+  // Disabled unless explicitly true. Rules guide the active model's retain_memory calls.
+  "autoretention": {
+    "enabled": false,
+
+    // Durable facts the agent may retain without asking again.
+    "always_persist": [
+      "Project architecture decisions that affect future work.",
+      "Validated commands or environment configuration required to work in this project.",
+    ],
+
+    // Never retain sensitive or short-lived material automatically.
+    "never_persist": [
+      "Secrets, credentials, API tokens, private keys, or personal data.",
+      "Tool output, logs, or routine progress updates.",
+    ],
+
+    // Ask before retaining facts whose durable value depends on the user.
+    "always_ask": [
+      "User preferences or workflow conventions not explicitly stated as durable.",
+      "Potentially sensitive project details that are not credentials.",
+    ],
+  },
 }
 ```
+
+Use concise, scope-appropriate natural-language rules. Global rules provide baseline safeguards
+across projects; project rules add project-specific guidance.
 
 Pin files are plain JSON arrays, written only by `/memory pin` and `/memory unpin`:
 
@@ -88,9 +117,14 @@ Pin files are plain JSON arrays, written only by `/memory pin` and `/memory unpi
 ```
 
 `injection_budget` is a non-negative character limit. The project value overrides the
-global value; the default is 2,000. A project pin and a global pin use the same ID format
-but remain distinct `(store, id)` references. The unreleased combined
-`nmnm-memory.json` layout is not migrated automatically.
+global value; the default is 2,000. `autoretention` is inactive unless its effective
+`enabled` value is `true` (project overrides global). Rule arrays from both scopes combine
+with global entries first; `never_persist` takes precedence, `always_ask` requires user
+confirmation, and `always_persist` guides the active model when applicable. The adapter
+never writes memory directly for autoretention: the active model decides whether to call
+`retain_memory`. A project pin and a global pin use the same ID format but remain distinct
+`(store, id)` references. The unreleased combined `nmnm-memory.json` layout is not migrated
+automatically.
 
 ### Normal file lifecycle
 
@@ -102,16 +136,17 @@ adapter uses the default. The adapter never rewrites it.
 | Event or action | Reads | Writes | What to expect |
 |---|---|---|---|
 | Extension load or session start | Nothing | Nothing | No nanomneme files appear. |
-| First user prompt | Existing settings, pins, and SQLite stores | Nothing | A hidden index is injected when readable memories fit the budget. Missing files and stores are empty. |
-| `retain_memory` | Existing selected store when patching | Selected `memory.db` and core-derived rows | The core creates a missing selected database; no Pi settings or pin file changes. |
+| First user prompt, or a queued refresh | Existing settings, pins, and SQLite stores | Nothing | A bounded index, and enabled autoretention rules, are appended transiently to the system prompt. Missing files and stores are empty. |
+| Successful Pi compaction | Nothing immediately | Nothing | The next user prompt rebuilds the transient index and enabled rules. Pi's own compaction summary preserves session continuity. |
+| `retain_memory` | Existing selected store when patching | Selected `memory.db` and core-derived rows | The core creates a missing selected database; a successful mutation queues next-prompt index rebuild; no Pi settings or pin file changes. |
 | `recall_memory` or `retrieve_memory` | Selected existing `memory.db` | Nothing | Missing stores return `null` or an empty page without creating a database. |
-| `remove_memory` | Selected existing `memory.db` | Selected `memory.db` and core-derived rows | Missing stores return `null`; no Pi settings or pin file changes. |
+| `remove_memory` | Selected existing `memory.db` | Selected `memory.db` and core-derived rows | Missing stores return `null`; successful removal queues next-prompt index rebuild; no Pi settings or pin file changes. |
 | `/memory status` | Existing settings, pins, and stores | Nothing | Pi shows pin counts, effective budget, and unresolved count. |
 | `/memory refresh` | Nothing immediately | Nothing | The next user prompt rebuilds the hidden index. |
 | `/memory list ...` | Both default stores, or the selected `memory.db` and pins | Nothing | Displays a bounded, paginated active-memory page without invoking the model. |
-| `/memory remove ...` | Both stores when unqualified, otherwise the selected `memory.db` | Selected `memory.db` and core-derived rows | Soft-removes one unambiguous entry; a matching pin remains configured. |
-| `/memory pin ...` | Selected active `memory.db` and pin file when present | Selected `nmnm-pi.json` | Validates the selected store before creating the pin-file parent directory and file; settings remain untouched. |
-| `/memory unpin ...` | Selected pin file when present | Selected `nmnm-pi.json` | Removes the configured reference even when its memory is unresolved. |
+| `/memory remove ...` | Both stores when unqualified, otherwise the selected `memory.db` | Selected `memory.db` and core-derived rows | Soft-removes one unambiguous entry and queues next-prompt index rebuild; a matching pin remains configured. |
+| `/memory pin ...` | Selected active `memory.db` and pin file when present | Selected `nmnm-pi.json` | Validates the selected store before creating the pin-file parent directory and file, then queues next-prompt index rebuild; settings remain untouched. |
+| `/memory unpin ...` | Selected pin file when present | Selected `nmnm-pi.json` | Removes the configured reference even when its memory is unresolved, then queues next-prompt index rebuild. |
 
 To create project settings manually before starting Pi or between prompts, create the
 directory, then copy the complete template above into `.nanomneme/nmnm.jsonc` and adjust
@@ -145,11 +180,11 @@ skipped and Pi reports that the memory index is unavailable; correct the file an
 | List output | The notification reports `showing <n> of <total>` and is local command output, not a model request. |
 | Pin validation | An unscoped pin needs an active project memory. A global-only ID leaves pin files unchanged and reports `/memory pin global <id>`. Explicit scopes validate their selected store. |
 | Identity | UUID v4 collisions are unlikely, but explicit IDs and imports can duplicate IDs across stores; use `(store, id)`. |
-| Index refresh | `refresh`, `pin`, `unpin`, and removal make the index eligible for the next prompt; they do not alter other memory records. |
+| Index refresh | `refresh`, successful compaction, successful model retain/remove, and successful slash `pin`, `unpin`, or removal make the index eligible for the next prompt; they do not alter other memory records. |
 | Unresolved pins | Removed, expired, missing, or unreadable targets stay configured until unpinned and are counted as unresolved. |
 
 ## Boundaries
 
-This adapter has no Markdown memory storage, consolidation, compaction handoffs, or browser (yet). Those capabilities are not (yet) implied by configuration or pins.
+This adapter has no Markdown memory storage, consolidation, separate compaction handoff, auto-resume, or browser. Those capabilities are not implied by configuration or pins.
 See the [Core and CLI Manual](CORE_CLI_MANUAL.md) for the core and CLI, and the
 [adapter quick start](../adapters/pi/README.md) for the package-local entry point.

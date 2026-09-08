@@ -143,9 +143,34 @@ when they preserve that model.
     Current pins are durable adapter references until explicit unpin; unreadable targets
     are skipped and reported as unresolved.
 
+## v0.1.1
+
+- [x] Pi adapter memory lifecycle follow-up. Keep `nmnm-core` deterministic and SQLite-backed;
+  configuration, transient injection, post-compaction reinjection, and model guidance stay
+  adapter-only.
+  - [x] Phase 0-A: research Pi session context, compaction, persistence, and extension hooks;
+    use the findings to avoid duplicating Pi session retention or relying on unsupported events.
+  - [x] Phase 0-B: define the JSONC contract and regression matrix: `injection_budget` remains
+    bounded, while optional `autoretention` contains explicit opt-in `enabled` plus
+    `always_persist`, `never_persist`, and `always_ask` string arrays. Combine global and project
+    rules; `never_persist` wins conflicts. Automatic retention is inactive unless enabled;
+    injection must be transient context, never a persistent session-message snapshot.
+  - [x] Phase 1: change first-prompt index injection to a transient system-prompt addition.
+    Preserve the existing bounded read-only behavior and do not add recurring injection cadence or
+    an `inject_every_n_prompts` setting. Phase 2 adds enabled autoretention rule guidance.
+  - [x] Phase 2: add opt-in rules-guided automatic retention. Render user-authored rules for the
+    active model; it remains the only decision maker and calls canonical `retain_memory` itself.
+    Do not add a nested extraction model, background worker, or direct SQLite write path.
+  - [x] Phase 3: after every successful Pi compaction or memory-index mutation (`retain`,
+    `remove`, `pin`, or `unpin`), re-inject the current bounded memory index and rules on the next
+    prompt. Use Pi's retained compaction summary for session continuity; do not add a separate
+    handoff, automatic consolidation, auto-resume, or canonical memory for transient session state.
+  - [x] Phase 4: update the Pi manual, README, changelog, and complete JSONC template; run adapter
+    tests, full tests, and Pi smoke checks before declaring the 0.1.1 feature update complete.
+
 ## Not on the required path
 
-- LLM calls, embeddings, vector databases, and automatic consolidation.
+- Nested LLM calls, embeddings, vector databases, and automatic consolidation.
 - Background workers, mandatory network services, server mode, sync, or multi-user
   hosting.
 

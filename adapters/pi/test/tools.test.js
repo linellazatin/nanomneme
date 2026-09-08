@@ -46,16 +46,16 @@ test('Pi tools retain, recall, retrieve, and purge through the core', async () =
 test('Pi mutation tools notify the adapter, while reads do not', async () => {
   const cwd = temporaryDirectory('nmnm-pi-tools-mutations-');
   try {
-    let mutations = 0;
-    const tools = registeredTools({ onMutation: () => { mutations += 1; } });
+    const mutations = [];
+    const tools = registeredTools({ onMutation: (reason) => mutations.push(reason) });
     const retained = await execute(tools.get('retain_memory'), { content: 'Refresh after mutation' }, cwd);
     await execute(tools.get('recall_memory'), { id: retained.id }, cwd);
     await execute(tools.get('retrieve_memory'), {}, cwd);
-    assert.equal(mutations, 1);
+    assert.deepEqual(mutations, ['retain']);
     await execute(tools.get('remove_memory'), { id: retained.id }, cwd);
-    assert.equal(mutations, 2);
+    assert.deepEqual(mutations, ['retain', 'remove']);
     await execute(tools.get('remove_memory'), { id: '00000000-0000-4000-8000-000000000001' }, cwd);
-    assert.equal(mutations, 2);
+    assert.deepEqual(mutations, ['retain', 'remove']);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

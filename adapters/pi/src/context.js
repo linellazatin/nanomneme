@@ -5,6 +5,7 @@ import { parse } from 'jsonc-parser';
 import { databasePath, runMemory } from './store.js';
 
 export const DEFAULT_INJECTION_BUDGET = 2000;
+export const DEFAULT_REINJECTION_PROMPTS = 5;
 const SETTINGS_FILE = 'nmnm.jsonc';
 const PINS_FILE = 'nmnm-pi.json';
 const PREVIEW_LENGTH = 240;
@@ -28,13 +29,25 @@ function normalizedAutoretention(value) {
   };
 }
 
+function normalizedReinjection(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('Pi memory reinjection must be an object');
+  if (value.enabled !== undefined && typeof value.enabled !== 'boolean') throw new TypeError('Pi memory reinjection enabled must be a boolean');
+  if (value.every_n_prompts !== undefined && (!Number.isSafeInteger(value.every_n_prompts) || value.every_n_prompts < 1)) throw new TypeError('Pi memory reinjection every_n_prompts must be a positive safe integer');
+  return {
+    ...(value.enabled === undefined ? {} : { enabled: value.enabled }),
+    ...(value.every_n_prompts === undefined ? {} : { every_n_prompts: value.every_n_prompts }),
+  };
+}
+
 function normalizedSettings(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('Pi memory settings must be an object');
   const budget = value.injection_budget;
   if (budget !== undefined && (!Number.isSafeInteger(budget) || budget < 0)) throw new TypeError('Pi memory injection_budget must be a non-negative integer');
   const autoretention = value.autoretention;
+  const reinjection = value.reinjection;
   return {
     ...(budget === undefined ? {} : { injection_budget: budget }),
+    ...(reinjection === undefined ? {} : { reinjection: normalizedReinjection(reinjection) }),
     ...(autoretention === undefined ? {} : { autoretention: normalizedAutoretention(autoretention) }),
   };
 }
@@ -135,6 +148,10 @@ export function buildMemoryIndex({ cwd, home, agentDir, platform, budget } = {})
   const projectPins = readPins(pinsPath({ cwd, home, store: 'project' }));
   const globalPins = readPins(pinsPath({ cwd, home, store: 'global' }));
   const limit = budget ?? projectSettings.injection_budget ?? globalSettings.injection_budget ?? DEFAULT_INJECTION_BUDGET;
+  const reinjection = {
+    enabled: projectSettings.reinjection?.enabled ?? globalSettings.reinjection?.enabled ?? false,
+    every_n_prompts: projectSettings.reinjection?.every_n_prompts ?? globalSettings.reinjection?.every_n_prompts ?? DEFAULT_REINJECTION_PROMPTS,
+  };
   if (!Number.isSafeInteger(limit) || limit < 0) throw new TypeError('Pi memory injection budget must be a non-negative integer');
 
   const records = [];
@@ -180,5 +197,6 @@ export function buildMemoryIndex({ cwd, home, agentDir, platform, budget } = {})
     unresolved,
     total,
     budget: limit,
+    reinjection,
   };
 }

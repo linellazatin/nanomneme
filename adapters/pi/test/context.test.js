@@ -41,6 +41,32 @@ test('keeps JSONC settings and JSON pins in their requested project and global l
   }
 });
 
+test('buildMemoryIndex resolves opt-in reinjection settings and validates their values', () => {
+  const project = temporaryDirectory('nmnm-pi-reinjection-project-');
+  const home = temporaryDirectory('nmnm-pi-reinjection-home-');
+  try {
+    const agentDir = join(home, 'pi-agent');
+    mkdirSync(join(project, '.nanomneme'), { recursive: true });
+    mkdirSync(agentDir, { recursive: true });
+    const projectPath = settingsPath({ cwd: project, agentDir, store: 'project' });
+    writeFileSync(settingsPath({ cwd: project, agentDir, store: 'global' }), '{ "reinjection": { "enabled": true, "every_n_prompts": 9 } }\n');
+    writeFileSync(projectPath, '{ "reinjection": { "every_n_prompts": 5 } }\n');
+
+    assert.deepEqual(buildMemoryIndex({ cwd: project, home, agentDir, platform: 'darwin' }).reinjection, { enabled: true, every_n_prompts: 5 });
+    assert.deepEqual(readSettings(projectPath), { reinjection: { every_n_prompts: 5 } });
+    writeFileSync(projectPath, '{ "reinjection": { "enabled": "true" } }\n');
+    assert.throws(() => readSettings(projectPath), /reinjection enabled must be a boolean/);
+    writeFileSync(projectPath, '{ "reinjection": { "every_n_prompts": 0 } }\n');
+    assert.throws(() => readSettings(projectPath), /every_n_prompts must be a positive safe integer/);
+    writeFileSync(projectPath, '{}\n');
+    writeFileSync(settingsPath({ cwd: project, agentDir, store: 'global' }), '{}\n');
+    assert.deepEqual(buildMemoryIndex({ cwd: project, home, agentDir, platform: 'darwin' }).reinjection, { enabled: false, every_n_prompts: 5 });
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test('buildMemoryIndex merges enabled autoretention rules and validates their settings', () => {
   const project = temporaryDirectory('nmnm-pi-autoretention-project-');
   const home = temporaryDirectory('nmnm-pi-autoretention-home-');

@@ -5,6 +5,7 @@ import { databasePath, runMemory } from './store.js';
 const DEFAULT_LIST_LIMIT = 20;
 const MAX_LIST_LIMIT = 100;
 const LIST_PREVIEW_LENGTH = 60;
+const BROWSER_LIMIT = 20;
 
 function commandInput(args) {
   return args.trim().split(/\s+/).filter(Boolean);
@@ -48,8 +49,8 @@ function existingStoreMemory({ cwd, home, platform, store, operation, input }) {
   return runMemory({ cwd, home, platform, store, operation, input, create: false, readOnly: operation !== 'remove' });
 }
 
-function listedStore({ cwd, home, platform, store, limit, offset }) {
-  return existingStoreMemory({ cwd, home, platform, store, operation: 'retrieve', input: { limit, offset } }) ?? { total: 0, items: [] };
+function listedStore({ cwd, home, platform, store, limit, offset, query }) {
+  return existingStoreMemory({ cwd, home, platform, store, operation: 'retrieve', input: { query, limit, offset } }) ?? { total: 0, items: [] };
 }
 
 function listResult({ cwd, home, platform, target }) {
@@ -57,21 +58,181 @@ function listResult({ cwd, home, platform, target }) {
     const result = listedStore({ cwd, home, platform, ...target });
     return { store: target.store, total: result.total, items: result.items.map((memory) => ({ store: target.store, memory })) };
   }
-  const project = listedStore({ cwd, home, platform, store: 'project', limit: 1, offset: 0 });
-  const global = listedStore({ cwd, home, platform, store: 'global', limit: 1, offset: 0 });
+  const project = listedStore({ cwd, home, platform, store: 'project', limit: 1, offset: 0, query: target.query });
+  const global = listedStore({ cwd, home, platform, store: 'global', limit: 1, offset: 0, query: target.query });
   const items = [];
   if (target.offset < project.total) {
-    const projectPage = listedStore({ cwd, home, platform, store: 'project', limit: target.limit, offset: target.offset });
+    const projectPage = listedStore({ cwd, home, platform, store: 'project', limit: target.limit, offset: target.offset, query: target.query });
     items.push(...projectPage.items.map((memory) => ({ store: 'project', memory })));
     if (items.length < target.limit) {
-      const globalPage = listedStore({ cwd, home, platform, store: 'global', limit: target.limit - items.length, offset: 0 });
+      const globalPage = listedStore({ cwd, home, platform, store: 'global', limit: target.limit - items.length, offset: 0, query: target.query });
       items.push(...globalPage.items.map((memory) => ({ store: 'global', memory })));
     }
   } else {
-    const globalPage = listedStore({ cwd, home, platform, store: 'global', limit: target.limit, offset: target.offset - project.total });
+    const globalPage = listedStore({ cwd, home, platform, store: 'global', limit: target.limit, offset: target.offset - project.total, query: target.query });
     items.push(...globalPage.items.map((memory) => ({ store: 'global', memory })));
   }
   return { store: 'both', total: project.total + global.total, items };
+}
+
+function memoryIndexContent(memoryIndex) {
+  return [memoryIndex.total ? memoryIndex.content : undefined, memoryIndex.autoretention]
+    .filter(Boolean)
+    .join('\n\n');
+}
+
+function statusLine(label, value) {
+  return `${label.padEnd(26)}${value}`;
+}
+
+function browserRow({ store, memory }, pinned) {
+  return `[${store}]${pinned ? ' *' : ''} ${memory.id} ${preview(memory.content)}`;
+}
+
+function browserDetails(store, memory, pinned) {
+  return [
+    `Nanomneme [${store}] ${memory.id}${pinned ? ' · pinned' : ''}`,
+    '',
+    memory.content,
+    '',
+    `Kind       ${memory.kind}`,
+    `Scope      ${memory.scope}`,
+    `Namespace  ${memory.namespace ?? '(none)'}`,
+    `Tags       ${memory.tags.length ? memory.tags.join(', ') : '(none)'}`,
+    `Importance ${memory.importance}`,
+    `Confidence ${memory.confidence}`,
+    `Created    ${memory.created_at}`,
+    `Updated    ${memory.updated_at}`,
+    `Expires    ${memory.expires_at ?? '(never)'}`,
+    `Removed    ${memory.removed_at ?? '(active)'}`,
+    `Metadata   ${JSON.stringify(memory.metadata)}`,
+  ].join('\n');
+}
+
+function browserPins({ cwd, home }) {
+  return {
+    project: new Set(readPins(pinsPath({ cwd, home, store: 'project' }))),
+    global: new Set(readPins(pinsPath({ cwd, home, store: 'global' }))),
+  };
+}
+
+async function browseMemory({ ctx, home, platform, refresh, showStatus }) {
+  if (ctx.hasUI === false) {
+    notify(ctx, 'Nanomneme interactive memory browser is unavailable in this mode. Use /memory list, status, pin, unpin, or remove.');
+    return;
+  }
+
+  showStatus(ctx);
+  const target = { store: 'both', limit: BROWSER_LIMIT, offset: 0, query: undefined };
+  while (true) {
+    const result = listResult({ cwd: ctx.cwd, home, platform, target });
+    if (result.items.length === 0 && target.offset > 0) {
+      target.offset = Math.max(0, target.offset - target.limit);
+      continue;
+    }
+    const pins = browserPins({ cwd: ctx.cwd, home });
+    const rows = result.items.map((item) => ({
+      item,
+      label: browserRow(item, pins[item.store].has(item.memory.id)),
+    }));
+    const title = [
+      `Nanomneme memories [${target.store}]`,
+      `showing ${result.items.length} of ${result.total}`,
+      target.query ? `search: ${target.query}` : undefined,
+    ].filter(Boolean).join(' · ');
+    const actions = [
+      'Search',
+      `Store: ${target.store}`,
+      ...(target.query ? ['Clear search'] : []),
+      ...rows.map(({ label }) => label),
+      ...(target.offset > 0 ? ['Previous page'] : []),
+      ...(target.offset + result.items.length < result.total ? ['Next page'] : []),
+      'Close',
+    ];
+    const choice = await ctx.ui.select(title, actions);
+    if (!choice || choice === 'Close') return;
+
+    const selected = rows.find(({ label }) => label === choice)?.item;
+    if (selected) {
+      const pinned = pins[selected.store].has(selected.memory.id);
+      const action = await ctx.ui.select(browserDetails(selected.store, selected.memory, pinned), [pinned ? 'Unpin' : 'Pin', 'Remove', 'Back']);
+      if (action && action !== 'Back') {
+        await applyBrowserAction({ ctx, home, platform, refresh, selected, pinned, action });
+      }
+      continue;
+    }
+    if (choice === 'Search') {
+      const query = await ctx.ui.input('Search nanomneme memories', target.query ?? '');
+      if (query !== undefined) {
+        target.query = query.trim() || undefined;
+        target.offset = 0;
+      }
+      continue;
+    }
+    if (choice === 'Clear search') {
+      target.query = undefined;
+      target.offset = 0;
+      continue;
+    }
+    if (choice.startsWith('Store:')) {
+      const store = await ctx.ui.select('Nanomneme store', ['Both', 'Project', 'Global']);
+      if (store) {
+        target.store = store.toLowerCase();
+        target.offset = 0;
+      }
+      continue;
+    }
+    if (choice === 'Previous page') target.offset = Math.max(0, target.offset - target.limit);
+    if (choice === 'Next page') target.offset += target.limit;
+  }
+}
+
+async function applyBrowserAction({ ctx, home, platform, refresh, selected, pinned, action }) {
+  const { store, memory } = selected;
+  const active = existingStoreMemory({
+    cwd: ctx.cwd,
+    home,
+    platform,
+    store,
+    operation: 'recall',
+    input: { id: memory.id },
+  });
+  if (!active) {
+    notify(ctx, `Nanomneme memory is no longer active [${store}] ${memory.id}.`);
+    return;
+  }
+
+  if (action === 'Pin' || action === 'Unpin') {
+    const path = pinsPath({ cwd: ctx.cwd, home, store });
+    const pins = readPins(path);
+    writePins(path, action === 'Pin' ? pin(pins, memory.id) : unpin(pins, memory.id));
+    refresh(action.toLowerCase());
+    notify(ctx, `Nanomneme ${action.toLowerCase()}ned [${store}] ${memory.id}.`);
+    return;
+  }
+
+  if (action !== 'Remove') return;
+  const confirmed = await ctx.ui.confirm(
+    'Remove nanomneme memory?',
+    `[${store}] ${memory.id}\n${preview(memory.content)}\n\nThis is reversible soft removal.`,
+  );
+  if (!confirmed) return;
+  const result = existingStoreMemory({
+    cwd: ctx.cwd,
+    home,
+    platform,
+    store,
+    operation: 'remove',
+    input: { id: memory.id, mode: 'soft' },
+  });
+  if (!result) {
+    notify(ctx, `Nanomneme memory is no longer active [${store}] ${memory.id}.`);
+    return;
+  }
+  refresh('remove');
+  notify(ctx, pinned
+    ? `Nanomneme removed [${store}] ${memory.id}. Its pin remains configured and is now unresolved until unpinned.`
+    : `Nanomneme removed [${store}] ${memory.id}.`);
 }
 
 function notify(ctx, message) {
@@ -99,6 +260,32 @@ export function registerPiMemory(pi, options = {}) {
   const agentDir = options.agentDir ?? piAgentDir({ home: options.home });
   const memoryOptions = { ...options, agentDir };
   const index = (cwd) => buildMemoryIndex({ cwd, ...memoryOptions });
+  const showStatus = (ctx) => {
+    let projectPins;
+    let globalPins;
+    let memoryIndex;
+    try {
+      projectPins = readPins(pinsPath({ cwd: ctx.cwd, home: options.home, store: 'project' }));
+      globalPins = readPins(pinsPath({ cwd: ctx.cwd, home: options.home, store: 'global' }));
+      memoryIndex = index(ctx.cwd);
+    } catch (error) {
+      lastError = { message: error.message, occurredAt: new Date().toISOString() };
+    }
+    const policy = memoryIndex?.reinjection ?? periodicPolicy;
+    const last = lastInjection
+      ? `${lastInjection.reason} at ${lastInjection.injectedAt} · ${lastInjection.indexCount} ${lastInjection.indexCount === 1 ? 'entry' : 'entries'} · ${lastInjection.characterCount} characters · autoretention ${lastInjection.autoretentionEnabled ? 'enabled' : 'disabled'}`
+      : 'none';
+    notify(ctx, [
+      'Nanomneme status',
+      statusLine('Injection pending', pending ? 'yes' : 'no'),
+      statusLine('Periodic reinjection', policy.enabled ? `every ${policy.every_n_prompts} prompts` : 'disabled'),
+      statusLine('Prompts since injection', promptCountSinceInjection),
+      statusLine('Last', last),
+      statusLine('Pins', `project: ${projectPins?.length ?? 'unavailable'} · global: ${globalPins?.length ?? 'unavailable'}`),
+      statusLine('Index', `budget: ${memoryIndex?.budget ?? 'unavailable'} · current: ${memoryIndex ? memoryIndexContent(memoryIndex).length : 'unavailable'} · unresolved: ${memoryIndex?.unresolved ?? 'unavailable'}`),
+      statusLine('Error', lastError ? `${lastError.message} at ${lastError.occurredAt}` : 'none'),
+    ].join('\n'));
+  };
 
   pi.on('session_start', (_event, ctx) => {
     refresh('session_start');
@@ -119,9 +306,7 @@ export function registerPiMemory(pi, options = {}) {
     try {
       const memoryIndex = index(ctx.cwd);
       periodicPolicy = memoryIndex.reinjection;
-      const content = [memoryIndex.total ? memoryIndex.content : undefined, memoryIndex.autoretention]
-        .filter(Boolean)
-        .join('\n\n');
+      const content = memoryIndexContent(memoryIndex);
       pending = false;
       promptCountSinceInjection = 0;
       lastError = undefined;
@@ -142,42 +327,20 @@ export function registerPiMemory(pi, options = {}) {
     }
   });
   pi.registerCommand('memory', {
-    description: 'Refresh, list, remove, pin, unpin, or inspect Pi nanomneme memory context.',
+    description: 'Browse, refresh, list, remove, pin, unpin, or inspect Pi nanomneme memory context.',
     handler: async (args, ctx) => {
       const [action, ...values] = commandInput(args);
+      if ((action === undefined || action === 'browse') && values.length === 0) {
+        await browseMemory({ ctx, home: options.home, platform: options.platform, refresh, showStatus });
+        return;
+      }
       if (action === 'refresh' && values.length === 0) {
         refresh('refresh');
         notify(ctx, 'Nanomneme memory index will refresh on the next prompt.');
         return;
       }
       if (action === 'status' && values.length === 0) {
-        let projectPins;
-        let globalPins;
-        let memoryIndex;
-        try {
-          projectPins = readPins(pinsPath({ cwd: ctx.cwd, home: options.home, store: 'project' }));
-          globalPins = readPins(pinsPath({ cwd: ctx.cwd, home: options.home, store: 'global' }));
-          memoryIndex = index(ctx.cwd);
-        } catch (error) {
-          lastError = { message: error.message, occurredAt: new Date().toISOString() };
-        }
-        const policy = memoryIndex?.reinjection ?? periodicPolicy;
-        const last = lastInjection
-          ? [
-            `Last       ${lastInjection.reason} at ${lastInjection.injectedAt}`,
-            `           ${lastInjection.indexCount} ${lastInjection.indexCount === 1 ? 'entry' : 'entries'} · ${lastInjection.characterCount} characters · autoretention ${lastInjection.autoretentionEnabled ? 'enabled' : 'disabled'}`,
-          ]
-          : ['Last       none'];
-        notify(ctx, [
-          'Nanomneme status',
-          `Injection  pending: ${pending ? 'yes' : 'no'}`,
-          `Prompts    since injection: ${promptCountSinceInjection}`,
-          ...last,
-          `Pins       project: ${projectPins?.length ?? 'unavailable'} · global: ${globalPins?.length ?? 'unavailable'}`,
-          `Index      budget: ${memoryIndex?.budget ?? 'unavailable'} · unresolved: ${memoryIndex?.unresolved ?? 'unavailable'}`,
-          `Periodic   reinjection: ${policy.enabled ? `every ${policy.every_n_prompts} prompts` : 'disabled'}`,
-          `Error      ${lastError ? `${lastError.message} at ${lastError.occurredAt}` : 'none'}`,
-        ].join('\n'));
+        showStatus(ctx);
         return;
       }
       if (action === 'list') {
@@ -243,7 +406,7 @@ export function registerPiMemory(pi, options = {}) {
           return;
         }
       }
-      notify(ctx, 'Usage: /memory refresh | status | list [project|global] [limit] [offset] | remove [project|global] <id> | pin [project|global] <id> | unpin [project|global] <id>');
+      notify(ctx, 'Usage: /memory [browse] | refresh | status | list [project|global] [limit] [offset] | remove [project|global] <id> | pin [project|global] <id> | unpin [project|global] <id>');
     },
   });
   return { refresh };

@@ -26,18 +26,24 @@ test('registerPiTools exposes the nanomneme 4Rs', () => {
   assert.deepEqual([...registeredTools().keys()], ['retain_memory', 'recall_memory', 'retrieve_memory', 'remove_memory']);
 });
 
-test('Pi tools retain, recall, retrieve, and purge through the core', async () => {
+test('Pi tools retain, recall, retrieve, and soft-remove through the core', async () => {
   const cwd = temporaryDirectory('nmnm-pi-tools-');
   try {
     const tools = registeredTools();
+    const remove = tools.get('remove_memory');
+    assert.deepEqual(Object.keys(remove.parameters.properties), ['id', 'store']);
+
     const retained = await execute(tools.get('retain_memory'), { content: 'Stored from Pi', store: 'project', tags: ['pi'] }, cwd);
     const recalled = await execute(tools.get('recall_memory'), { id: retained.id, store: 'project' }, cwd);
     const retrieved = await execute(tools.get('retrieve_memory'), { query: 'Stored', store: 'project' }, cwd);
-    const removed = await execute(tools.get('remove_memory'), { id: retained.id, store: 'project', purge: true }, cwd);
+    const removed = await execute(remove, { id: retained.id, store: 'project' }, cwd);
+    const restored = await execute(tools.get('retain_memory'), { id: retained.id }, cwd);
 
     assert.equal(recalled.content, 'Stored from Pi');
     assert.equal(retrieved.items[0].id, retained.id);
-    assert.equal(removed.mode, 'purge');
+    assert.equal(removed.mode, 'soft');
+    assert.equal(restored.id, retained.id);
+    assert.equal((await execute(tools.get('recall_memory'), { id: retained.id, store: 'project' }, cwd)).content, 'Stored from Pi');
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

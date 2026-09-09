@@ -186,11 +186,50 @@ when they preserve that model.
     status output in README and manuals; replace planned changelog notes with user-facing release
     entries; then repeat adapter, full-suite, package, Pi smoke, and diff checks.
 
+## v0.1.3
+
+- [x] Pi adapter safety and memory-management UX. Keep all behavior in `nmnm-pi`; do not change
+  `nmnm-core` or `nmnm-cli`.
+  - [x] Phase 0: remove irreversible purge from the model-facing `remove_memory` schema and make
+    the tool soft-only. Keep CLI purge as the deliberate operator path and preserve missing-store,
+    mutation-refresh, and durable-pin behavior.
+  - [x] Phase 1: add a model-free native-dialog browser opened by `/memory` or `/memory browse`.
+    Show the shared status card before opening and keep record details inside their action dialog so
+    it persists on return, while keeping search and store selection above project/global/both pages; support FTS text search, full record details,
+    pin/unpin, and confirmed soft removal. Reuse Pi dialog primitives and existing adapter store operations;
+    do not add a custom TUI subsystem or dependency.
+  - [x] Phase 2: update adapter tests and documentation, recalculate model-tool schema overhead,
+    show the exact current full-payload character count in an aligned `/memory status` card, run
+    the full suite, and perform a real Pi extension smoke check.
+
+### Ranked Pi adapter backlog after v0.1.3
+
+1. [ ] Add model-facing project-plus-global retrieval with explicit `(store, id)` provenance,
+   composed in the adapter without comparing BM25 scores across databases.
+2. [ ] Improve adapter capture guidance: retain durable facts, ask before sensitive project detail,
+   never retain secrets or routine logs, verify volatile remembered facts before acting, and prefer
+   patching an existing memory over creating a duplicate. Keep policy guidance distinct from
+   enforceable privacy controls.
+3. [ ] Consider an explicit, user-invoked consolidation workflow only after duplicate-memory usage
+   demonstrates a need. Candidate records must be shown before replacement, and superseded records
+   remain soft-removed rather than purged. Do not add background or automatic consolidation.
+
+### Compaction continuity decision
+
+A separate Pi handoff or auto-resume remains rejected. Pi 0.85.1 compaction already persists a
+structured checkpoint containing goals, constraints, progress, decisions, next steps, critical
+context, and retained recent messages; repeated compactions incorporate the previous summary.
+`nmnm-pi` should continue rebuilding its bounded durable-memory context after `session_compact`
+rather than creating a competing session summary. Reconsider only for a harness without equivalent
+native continuity or measured evidence that Pi's checkpoint loses required state.
+
 ## Not on the required path
 
 - Nested LLM calls, embeddings, vector databases, and automatic consolidation.
 - Background workers, mandatory network services, server mode, sync, or multi-user
   hosting.
+- A separate Pi compaction handoff, auto-resume layer, or canonical memory for transient session
+  state.
 
 Every proposed capability must keep the core local, open, configurable, and usable
 without inference or extra infrastructure.

@@ -47,7 +47,8 @@ Nanomneme helps agents remember without pretending to be human memory.
 - **Bounded automatic context:** transient autoretention guidance and the first-prompt memory index share one configurable character budget; pinned entries come first, with recent active fallback, store labels, unresolved-pin reporting, and refresh after successful compaction or memory mutations.
 - **Opt-in autoretention:** project/global JSONC rules guide the active model's `retain_memory` calls without a nested model, worker, or direct adapter write.
 - **Adapter-owned configuration:** optional JSONC settings and separate JSON pin files, with project and global locations.
-- **Direct user controls:** `/memory refresh`, `status`, `list`, `remove`, `pin`, and `unpin` without model involvement; `status` reports transient injection lifecycle metadata without exposing memory content.
+- **Direct user controls:** `/memory refresh`, `status`, `list`, `remove`, `pin`, and `unpin` without model involvement; `status` reports the effective index budget, current full-payload character count, and transient injection lifecycle metadata without exposing memory content.
+- **Native memory browser:** `/memory` and `/memory browse` show the shared status card before opening; record details stay inside a native action dialog, so the card remains visible on return. Search and store controls stay above each record page.
 - **Readable list UX:** project-first combined listing, pagination, `[project]` and `[global]` labels, exact-store `*` pin markers, and 60-character previews.
 - **Safety boundaries:** validated pin targets, ambiguity-safe removal, soft-only slash removal, non-creating native reads, and durable unresolved pins.
 
@@ -73,7 +74,7 @@ are thin core clients: they never write SQLite directly or parse CLI output.
 |---|---|
 | `packages/nmnm-core` | Publishable Node.js ESM storage API. |
 | `packages/nmnm-cli` | Publishable `nmnm` CLI. |
-| `adapters/pi` | Private Git-first Pi package for v0.1.2. |
+| `adapters/pi` | Private Git-first Pi package for v0.1.3, including a model-free native-dialog memory browser. |
 
 Use Node.js 22.13+ with built-in `node:sqlite` and FTS5. Public npm publication of the
 Pi adapter is deferred; OpenCode is not included in this release.

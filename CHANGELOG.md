@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.3 - Pi adapter memory browser + stricter soft-only removal
+
+### Added
+
+- Add a model-free native-dialog `/memory` browser with project/global/both paging, FTS text search, full record details, pin/unpin, and confirmed soft removal. Both browser entry points show the shared status card before opening; record details remain inside their action dialog so the card persists on return. Search and store selection remain above every record page for immediate access.
+
+### Changed
+
+- Make the model-facing Pi `remove_memory` tool soft-only; `purge` is now CLI-only.
+- Show the exact current next-injection payload character count in `/memory status`, including enabled autoretention guidance, in an aligned shared status card.
+
 ## 0.1.2 - Pi adapter observability + reinjection enhancement
 
 ### Added

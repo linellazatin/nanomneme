@@ -1,6 +1,6 @@
 # Pi Adapter Manual
 
-`nmnm-pi` is the Pi harness adapter for nanomneme 0.1.2. It calls `nmnm-core`
+`nmnm-pi` is the Pi harness adapter for nanomneme 0.1.3. It calls `nmnm-core`
 directly, keeps SQLite as the storage authority, and does not invoke or parse the CLI.
 
 ## Install
@@ -37,7 +37,7 @@ Pi exposes four tools to the model:
 | `retain_memory` | `content`; optional `id`, canonical fields, `store` | Create, or patch and restore a known ID. | New records require `content`. |
 | `recall_memory` | `id`; optional `store` | Read one active, unexpired memory. | Returns canonical core JSON or `null`; missing stores remain absent. |
 | `retrieve_memory` | Optional query, filters, ordering, pagination, `store` | Search or list active memories. | One store only; missing stores return `{ total: 0, items: [] }`. |
-| `remove_memory` | `id`; optional `store`, `purge` | Soft-remove, or purge when requested by the model. | `purge: true` is irreversible; missing stores return `null`. |
+| `remove_memory` | `id`; optional `store` | Soft-remove an active memory. | Reversible through an explicit retain patch; irreversible purge is CLI-only; missing stores return `null`. |
 
 `store` accepts `"project"` or `"global"`; omitted means project. Project data is
 `./.nanomneme/memory.db`; global data is `~/.local/share/nanomneme/memory.db` on Linux
@@ -74,7 +74,7 @@ comments or trailing commas.
 
 ### Complete settings template
 
-This is the complete supported `nmnm.jsonc` shape for v0.1.2. Copy it to either settings
+This is the complete supported `nmnm.jsonc` shape for v0.1.3. Copy it to either settings
 location above, then adjust the budget or opt in to autoretention. This template is the
 maintained place to add future adapter parameters.
 
@@ -162,7 +162,8 @@ rewrites it.
 | `retain_memory` | Existing selected store when patching | Selected `memory.db` and core-derived rows | The core creates a missing selected database; a successful mutation queues next-prompt index rebuild; no Pi settings or pin file changes. |
 | `recall_memory` or `retrieve_memory` | Selected existing `memory.db` | Nothing | Missing stores return `null` or an empty page without creating a database. |
 | `remove_memory` | Selected existing `memory.db` | Selected `memory.db` and core-derived rows | Missing stores return `null`; successful removal queues next-prompt index rebuild; no Pi settings or pin file changes. |
-| `/memory status` | Existing settings, pins, and stores | Nothing | Pi shows pin counts, effective budget, unresolved count, and transient injection lifecycle metadata; it never shows injected memory content. |
+| `/memory` or `/memory browse` | Existing settings, pins, and stores | Nothing unless the user pins, unpins, or confirms soft removal | Shows the shared status card, then opens a model-free native-dialog browser with search and store quick actions above project/global/both pages, plus details and safe management actions. Missing stores remain absent. |
+| `/memory status` | Existing settings, pins, and stores | Nothing | Pi shows pin counts, effective budget, current full-payload character count (including the separator when both context sections exist), unresolved count, and transient injection lifecycle metadata; it never shows injected memory content. |
 | `/memory refresh` | Nothing immediately | Nothing | The next user prompt rebuilds the hidden index. |
 | `/memory list ...` | Both default stores, or the selected `memory.db` and pins | Nothing | Displays a bounded, paginated active-memory page without invoking the model. |
 | `/memory remove ...` | Both stores when unqualified, otherwise the selected `memory.db` | Selected `memory.db` and core-derived rows | Soft-removes one unambiguous entry and queues next-prompt index rebuild; a matching pin remains configured. |
@@ -186,8 +187,10 @@ not required.
 
 | Command | Input example | Description | Notes |
 |---|---|---|---|
+| `/memory` | None | Open the native-dialog memory browser. | Equivalent to `/memory browse`; requires a UI-capable mode. |
+| `/memory browse` | None | Browse, search, inspect, pin/unpin, or soft-remove active memories. | Shows the shared status card once, then keeps search and store selection above each 20-row project/global/both page; never invokes the model. |
 | `/memory refresh` | None | Queue a hidden index rebuild. | The next user prompt performs the read-only rebuild. |
-| `/memory status` | None | Show a compact transient-context status card. | Reports pending state, the current periodic policy, prompt count, last injection aggregate, and latest error without exposing injected content or writing files/stores. |
+| `/memory status` | None | Show a compact transient-context status card. | Reports aligned field values defined below without exposing injected content or writing files/stores. |
 | `/memory list [store] [limit] [offset]` | `/memory list global 50` | List active memories without the model. | Omit `store` for project-first, then global. `limit` is 1-100; `offset` is 0-1,000. |
 | `/memory remove [store] <id>` | `/memory remove global <memory-id>` | Soft-remove an active memory. | Unscoped IDs resolve one store or refuse ambiguity. Pins remain durable. |
 | `/memory pin [store] <id>` | `/memory pin global <memory-id>` | Pin an active memory for Pi index injection. | Omit `store` for project. Validation occurs before any pin-file write. |
@@ -197,7 +200,9 @@ not required.
 
 | Topic | Behavior |
 |---|---|
-| List order | Unscoped list combines project entries before global entries; selected-store lists read one store. |
+| Browser | `/memory` and `/memory browse` show the shared status card before opening Pi-native dialogs. Search and current store selection are the first two actions before record rows. Text search uses FTS retrieval; changing search or store resets pagination. Pi's selector also supports vertical arrows and Vim-style `j`/`k` navigation. Non-UI modes should use explicit subcommands. |
+| Browser details | Selecting a row opens a native action dialog whose title contains full canonical content and fields, then offers exact-store pin/unpin, confirmed soft removal, or back. Closing it returns to the browser under the existing status card. Structured filter controls are intentionally deferred. |
+| List order | Unscoped list and browser `both` pages combine project entries before global entries; selected-store views read one store. |
 | List display | Rows include `[project]` or `[global]`; `*` after an ID means that exact `(store, id)` is pinned. Previews normalize whitespace, show 60 characters, and append `...` only when truncated. |
 | List output | The notification reports `showing <n> of <total>` and is local command output, not a model request. |
 | Pin validation | An unscoped pin needs an active project memory. A global-only ID leaves pin files unchanged and reports `/memory pin global <id>`. Explicit scopes validate their selected store. |
@@ -205,11 +210,25 @@ not required.
 | Index refresh | `refresh`, successful compaction, successful model retain/remove, and successful slash `pin`, `unpin`, or removal make the index eligible for the next prompt; they do not alter other memory records. |
 | Unresolved pins | Removed, expired, missing, or unreadable targets stay configured until unpinned and are counted as unresolved. |
 
+### Status card fields
+
+`/memory status` and both browser entry points show the same read-only card:
+
+| Field | Meaning |
+|---|---|
+| `Injection pending` | `yes` means the next eligible agent start will rebuild and attempt transient context injection. Session start, compaction, refresh, cadence, and successful memory mutations can make it pending. |
+| `Periodic reinjection` | The effective periodic policy: `disabled` or the configured interval after which eligible prompts queue a rebuild. |
+| `Prompts since injection` | Eligible prompt count since the last successful injection while periodic reinjection is enabled. It resets after a successful injection. |
+| `Last` | The most recent successful transient-memory injection in this Pi session. `none` means no injection has succeeded. Otherwise it reports the trigger, timestamp, index-entry count, full injected character count, and whether autoretention guidance was included. It is not the last database write or browser action. |
+| `Pins` | Configured project and global pin counts, including pins whose targets are currently unresolved. |
+| `Index` | Effective character budget, the full current next-injection payload size (including its separator when both sections exist), and unresolved pin count. The card does not expose payload content. |
+| `Error` | The latest context-build or status-read error recorded in this session, with its timestamp; `none` means no error is currently recorded. A successful injection clears it. |
+
 ### Pi token overhead
 
 `nmnm-pi` adds four model-visible tool definitions: `retain_memory`, `recall_memory`,
-`retrieve_memory`, and `remove_memory`. Their JSON schemas total `1,217 characters`
-(`retain_memory` 440, `recall_memory` 164, `retrieve_memory` 422, `remove_memory` 191).
+`retrieve_memory`, and `remove_memory`. Their JSON schemas total `1,190 characters`
+(`retain_memory` 440, `recall_memory` 164, `retrieve_memory` 422, `remove_memory` 164).
 This is a schema-only reference, not a token or cost estimate: Pi adds tool names,
 descriptions, and provider request structure, while each provider uses its own tokenizer.
 
@@ -234,6 +253,7 @@ usage is provider-reported and is the authoritative token and cost measurement.
 
 ## Boundaries
 
-This adapter has no Markdown memory storage, consolidation, separate compaction handoff, auto-resume, or browser. Those capabilities are not implied by configuration or pins.
+This adapter has no Markdown memory storage, consolidation, separate compaction handoff,
+or auto-resume. Those capabilities are not implied by configuration, pins, or the browser.
 See the [Core and CLI Manual](CORE_CLI_MANUAL.md) for the core and CLI, and the
 [adapter quick start](../adapters/pi/README.md) for the package-local entry point.

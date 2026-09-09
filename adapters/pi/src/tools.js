@@ -65,11 +65,11 @@ export function registerPiTools(pi, Type, options = {}) {
   pi.registerTool({
     name: 'remove_memory',
     label: 'Remove Memory',
-    description: 'Soft-remove or explicitly purge a nanomneme memory by ID.',
-    parameters: Type.Object({ id: Type.String(), store: store(Type), purge: Type.Optional(Type.Boolean()) }),
+    description: 'Soft-remove a nanomneme memory by ID.',
+    parameters: Type.Object({ id: Type.String(), store: store(Type) }),
     async execute(_id, params, _signal, _update, ctx) {
       if (!hasStore(ctx, params.store)) return response(null);
-      const result = runMemory({ cwd: ctx.cwd, store: params.store, operation: 'remove', input: { id: params.id, mode: params.purge ? 'purge' : 'soft' }, create: false });
+      const result = runMemory({ cwd: ctx.cwd, store: params.store, operation: 'remove', input: { id: params.id, mode: 'soft' }, create: false });
       if (result) options.onMutation?.('remove');
       return response(result);
     },

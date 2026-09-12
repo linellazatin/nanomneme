@@ -1,6 +1,6 @@
 # nanomneme (nmnm)
 
-nanomneme is a small, deterministic SQLite core for coding-agent memory: useful context survives a session without becoming an opaque service. Inspired by [`openpi-memory`](https://github.com/linellazatin/openpi-memory) and [`openclaude-memory`](https://github.com/linellazatin/openclaude-memory), and their demonstration that memory can persist in inspectable files, it replaces per-harness memory formats with one shared system for `Pi`, `OpenCode` (soon), and future adapters.
+nanomneme is a small, deterministic SQLite core for coding-agent memory: useful context survives a session without becoming an opaque service. Inspired by [`openpi-memory`](https://github.com/linellazatin/openpi-memory) and [`openclaude-memory`](https://github.com/linellazatin/openclaude-memory), and their demonstration that memory can persist in inspectable files, it replaces per-harness memory formats with one shared system for `Pi`, `Claude Code`, `OpenCode` (soon), and future adapters.
 
 ## What the name means
 
@@ -23,7 +23,7 @@ Nanomneme helps agents remember without pretending to be human memory.
 ### Core memory handler
 
 - **Local and user-owned:** no required LLM calls, embeddings, vector database, daemon, ORM, or network service; operations are local and deterministic, SQLite is the source of truth, and JSONL portability preserves explicit project/global boundaries.
-- **Harness-agnostic foundation:** one shared memory contract supports Pi, OpenCode (soon), and future thin adapters.
+- **Harness-agnostic foundation:** one shared memory contract supports Pi, Claude Code, OpenCode (soon), and future thin adapters.
 - **4Rs lifecycle:** retain, recall, retrieve, and remove; soft removal is reversible and purge is explicit.
 - **Local SQLite storage:** transactional canonical records with derived tags and FTS5 indexes.
 - **Canonical validation:** UUID v4 IDs, UTC timestamps, supported kinds and scopes, kebab-case namespaces and tags, and JSON metadata.
@@ -52,10 +52,18 @@ Nanomneme helps agents remember without pretending to be human memory.
 - **Readable list UX:** project-first combined listing, pagination, `[project]` and `[global]` labels, exact-store `*` pin markers, and 60-character previews.
 - **Safety boundaries:** validated pin targets, ambiguity-safe removal, soft-only slash removal, non-creating native reads, and durable unresolved pins.
 
+#### Claude Code
+
+- **Native MCP memory tools:** model-invoked retain, recall, retrieve, and remove over a local stdio MCP server that imports `nmnm-core` directly; no daemon, network, or CLI parsing. `remove_memory` is soft-only.
+- **Bounded session-start context:** a `SessionStart` command hook injects the project/global index and optional autoretention guidance as transient context; disabled-by-default `UserPromptSubmit` reinjection uses a configurable cadence.
+- **Shared and adapter-owned config:** project `nmnm.jsonc` settings shared with Pi, adapter-owned `nmnm-claude.json` pins, and global settings under `${CLAUDE_PLUGIN_DATA}`.
+- **Model guidance:** a `memory-guide` Skill (`/nanomneme:memory-guide`) teaches the 4Rs, project-versus-global scope, and safe capture.
+- **Model-free management command:** `bin/memory.js` (`status`, `list`, `search`, `show`, `pin`, `unpin`, `remove`) reuses the shared store/context helpers; a `/nanomneme:memory` slash command embeds it and relays output verbatim, or invoke the CLI with `!` for a fully model-free path.
+
 ## Architecture
 
 ```text
-Pi adapter or nmnm CLI
+chosen adapter or nmnm CLI
           |
           v
        nmnm-core
@@ -75,6 +83,7 @@ are thin core clients: they never write SQLite directly or parse CLI output.
 | `packages/nmnm-core` | Publishable Node.js ESM storage API. |
 | `packages/nmnm-cli` | Publishable `nmnm` CLI. |
 | `adapters/pi` | Private Git-first Pi package for v0.1.3, including a model-free native-dialog memory browser. |
+| `adapters/claude` | Private Git-first Claude Code plugin: native MCP memory tools plus session-start index injection. |
 
 Use Node.js 22.13+ with built-in `node:sqlite` and FTS5. Public npm publication of the
 Pi adapter is deferred; OpenCode is not included in this release.
@@ -116,6 +125,8 @@ Pi manual for the full lifecycle.
 | [CLI README](packages/nmnm-cli/README.md) | CLI package installation and command discovery. |
 | [Pi quick start](adapters/pi/README.md) | Package-local Pi entry point. |
 | [Pi Adapter Manual](docs/PI_ADAPTER_MANUAL.md) | Pi installation, tools, pins, configuration, and automatic index behavior. |
+| [Claude quick start](adapters/claude/README.md) | Package-local Claude Code plugin entry point. |
+| [Claude Adapter Manual](docs/CLAUDE_ADAPTER_MANUAL.md) | Claude Code plugin install, MCP tools, hooks, the `/nanomneme:memory` management command, pins, and configuration. |
 | [Roadmap](ROADMAP.md) | Phased delivery and deferred work. |
 | [Changelog](CHANGELOG.md) | Released and unreleased changes. |
 

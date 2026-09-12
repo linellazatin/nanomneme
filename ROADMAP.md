@@ -4,6 +4,18 @@ nanomneme remains an embedded, deterministic memory primitive: inspectable SQLit
 records, lexical retrieval, and thin interfaces. Features are optional additions only
 when they preserve that model.
 
+## Package versions
+
+- `nanomneme`: 0.2.0
+- `nmnm-core`: 0.0.5 (only bump version if modified/updated)
+- `nmnm-cli`: 0.0.5 (only bump version if modified/updated)
+- `nmnm-pi`: 0.1.3 (pi coding agent adapter; only bump version if modified/updated; started 0.1.0)
+- `nmnm-claude`: 0.1.0 (claude code adapter; only bump version if modified/updated; started 0.1.0)
+- `nmnm-opencode*`: 0.1.0 (opencode adapter; only bump version if modified/updated; started 0.1.0)
+- `nmnm-codex*`: 0.1.0 (Git-first Codex plugin; only bump version if modified/updated; started 0.1.0)
+
+> `* upcoming feature developments`
+
 ## v0.0.3
 
 - Core 4Rs, SQLite/FTS5 retrieval, project-local storage, and global persistence.
@@ -222,6 +234,38 @@ context, and retained recent messages; repeated compactions incorporate the prev
 `nmnm-pi` should continue rebuilding its bounded durable-memory context after `session_compact`
 rather than creating a competing session summary. Reconsider only for a harness without equivalent
 native continuity or measured evidence that Pi's checkpoint loses required state.
+
+## v0.2.0
+
+- [x] Connectivity: Git-first Claude Code adapter (`nmnm-claude`). Keep `nmnm-core` and
+  `nmnm-cli` unchanged; the adapter is a thin core client. Transport is a local stdio MCP
+  server (the sanctioned "optional MCP/stdio transport") rather than the Pi native-tool API,
+  which Claude Code cannot reproduce without MCP.
+  - [x] Phase 1: `adapters/claude` plugin scaffold with `.claude-plugin/plugin.json`,
+    `.mcp.json`, and shared `src/store.js` + `src/context.js` ported from Pi (project/global
+    routing, bounded index, pins, settings). Import `nmnm-core` directly; no CLI parsing.
+  - [x] Phase 2: native `retain_memory`, `recall_memory`, `retrieve_memory`, and
+    `remove_memory` MCP tools over a stdio server that imports the core; `remove_memory` is
+    soft-only. Tests drive the tools through a real MCP client against isolated stores.
+  - [x] Phase 3: `SessionStart` command hook injects the bounded project/global index and
+    optional autoretention guidance as transient `additionalContext`; disabled-by-default
+    `UserPromptSubmit` reinjection on a configurable cadence with ephemeral prompt-count
+    state. Command hooks (not `mcp_tool` hooks) so injection works during the launch window.
+  - [x] Phase 4: adapter-owned `nmnm-claude.json` pins (project and global) and shared
+    project `nmnm.jsonc` settings; global settings under `${CLAUDE_PLUGIN_DATA}`. A
+    model-facing `memory-guide` skill (`/nanomneme:memory-guide`) teaches the 4Rs,
+    project/global scope, and autoretention.
+  - [x] Phase 5: `docs/CLAUDE_ADAPTER_MANUAL.md`, adapter README, root README/changelog
+    updates, full test suite, and a real MCP-client + hook smoke check.
+  - [x] Phase 6: a deterministic, model-free memory management surface. A `bin/memory.js`
+    CLI (`status`, `list`, `search`, `show`, `pin`, `unpin`, `remove`) reuses the shared
+    store/context helpers; a `/nanomneme:memory` slash command embeds it via bash execution
+    and relays the output verbatim, and `!`-invoking the CLI is a fully model-free path.
+    Claude Code slash commands are prompt templates, not native dialogs, so Pi's interactive
+    browser (arrow-key navigation, in-dialog actions) still does not port; this delivers the
+    equivalent text list/status/management output instead. The guidance skill is renamed
+    `memory-guide` (`/nanomneme:memory-guide`) so the command owns `/nanomneme:memory`
+    outright; a plugin skill and command that share a name collide on one slash invocation.
 
 ## Not on the required path
 

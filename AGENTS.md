@@ -22,26 +22,28 @@ pi -e ./adapters/pi/extensions/index.js
 - `packages/nmnm-core/src/index.js` owns the SQLite schema, validation, memory lifecycle, JSONL portability, verification, and FTS repair.
 - `packages/nmnm-cli/bin/nmnm.js` implements the `nmnm` command.
 - `adapters/pi/` is a private Pi extension package. Its source handles adapter configuration, pins, session context, and tool registration; `extensions/index.js` is the entry point.
-- Tests sit beside their components under `packages/*/test/` and `adapters/pi/test/`.
+- `adapters/claude/` provides the Claude Code plugin, including command, hooks, MCP server, skill guidance, and adapter source.
+- Tests sit beside their components under `packages/*/test/` and `adapters/*/test/`.
 
-Keep core independent of CLI parsing, Pi-specific behavior, HTTP, MCP, embeddings, and LLM providers. Adapters must call the core API rather than write SQLite directly or parse CLI output.
+Keep core independent of CLI parsing, harness-specific behavior, HTTP, MCP, embeddings, and LLM providers. Adapters must call the core API rather than write SQLite directly or parse CLI output.
 
 ## Configuration and installation
 
-The root workspace contains `packages/*` and `adapters/*`. Core and CLI are publishable packages; the Pi adapter is private and depends on a matching `nmnm-core` version. Publish core before CLI.
+The root workspace contains `packages/*` and `adapters/*`. Core and CLI are publishable packages; adapters are private and depend on a matching `nmnm-core` version. Publish core before CLI.
 
-The CLI default store is `./.nanomneme/memory.db`; `--global` selects the user-global database. Pi configuration and pins are adapter-owned files outside SQLite. Reads and removals in Pi must not create missing databases; only retain may create a missing store.
+The CLI default store is `./.nanomneme/memory.db`; `--global` selects the user-global database. Pi configuration and pins are adapter-owned files outside SQLite. Claude Code plugin metadata lives in `adapters/claude/.claude-plugin/`, while `.claude-plugin/marketplace.json` defines the repository marketplace.
 
 ## Testing and operational quirks
 
 Use `node:test` and `node:assert/strict`, temporary databases, and isolated home directories for global-store tests. `memories` rows are canonical; tags and FTS rows are derived. Prefer CLI mutations because direct SQLite updates can desynchronize derived data.
 
-Removal is soft and reversible by default; purge is irreversible. Validate canonical imports before opening a new destination. Use JSONL for transfer or restore; exact backups require a closed SQLite copy. Exports must not alias their source and must use same-directory atomic replacement. Do not commit `.nanomneme/`, personal global databases, or local Pi settings and pin files.
+Removal is soft and reversible by default; purge is irreversible. Validate canonical imports before opening a new destination. Use JSONL for transfer or restore; exact backups require a closed SQLite copy. Exports must not alias their source and must use same-directory atomic replacement. Do not commit `.nanomneme/`, personal global databases, or local Claude/Pi settings and pin files.
 
 ## Key files
 
 - `README.md`: project overview and quick start.
 - `docs/CORE_CLI_MANUAL.md`: core, CLI, data contract, and recovery details.
 - `docs/PI_ADAPTER_MANUAL.md`: Pi installation, configuration, pins, and context behavior.
+- `docs/CLAUDE_ADAPTER_MANUAL.md`: Claude Code adapter setup and behavior.
 - `ROADMAP.md` and `CHANGELOG.md`: planned and released behavior.
-<!-- opl-init:fp a0e80f3ce855b04b -->
+<!-- opl-init:fp e891bb0442d0a1d6 -->

@@ -1,0 +1,17 @@
+{
+  "name": "openlines",
+  "owner": {
+    "name": "openlines",
+    "url": "https://github.com/linellazatin/nanomneme"
+  },
+  "description": "Shared, deterministic SQLite memory for coding agents. Hosts the nanomneme Claude Code plugin.",
+  "plugins": [
+    {
+      "name": "nanomneme",
+      "source": "./adapters/claude",
+      "description": "Native retain/recall/retrieve/remove MCP memory tools plus bounded session-start memory injection, backed by the shared nanomneme SQLite store.",
+      "category": "productivity",
+      "keywords": ["memory", "mcp", "sqlite", "context", "recall"]
+    }
+  ]
+}

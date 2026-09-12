@@ -4,21 +4,16 @@
 
 ### Added
 
-- Add `nmnm-claude`, a Git-first Claude Code plugin. Native `retain_memory`,
-  `recall_memory`, `retrieve_memory`, and `remove_memory` tools run over a local stdio MCP
-  server that imports `nmnm-core` directly; `remove_memory` is soft-only.
-- Inject the bounded project/global memory index and optional autoretention guidance as
-  transient `SessionStart` context via a command hook; add disabled-by-default
-  `UserPromptSubmit` reinjection on a configurable cadence.
-- Reuse the Pi store/context semantics: project-first index, adapter-owned
-  `nmnm-claude.json` pins, shared project `nmnm.jsonc` settings, and global settings under
-  `${CLAUDE_PLUGIN_DATA}`. Ship a `memory-guide` skill (`/nanomneme:memory-guide`) teaching
-  the 4Rs and project/global scope.
-- Add a deterministic, model-free memory management surface: a `bin/memory.js` CLI
-  (`status`, `list`, `search`, `show`, `pin`, `unpin`, `remove`) reusing the shared store
-  and context helpers, plus a `/nanomneme:memory` slash command that embeds it via bash
-  execution and relays the output verbatim. Run the CLI directly with `!` for a fully
-  model-free path. Reads never create a store; `remove` stays soft-only.
+- Add `nmnm-claude`, a Claude Code plugin: native `retain_memory`, `recall_memory`,
+  `retrieve_memory`, and `remove_memory` tools over a local stdio MCP server importing
+  `nmnm-core` directly. `remove_memory` is soft-only.
+- Inject the bounded project/global index and optional autoretention guidance as transient
+  `SessionStart` context; add disabled-by-default `UserPromptSubmit` reinjection.
+- Reuse existing store/context semantics: project-first index, adapter-owned `nmnm-claude.json`
+  pins, shared project `nmnm.jsonc` settings, global settings under `${CLAUDE_PLUGIN_DATA}`.
+- Ship a `memory-guide` skill (`/nanomneme:memory-guide`) teaching the 4Rs and scope.
+- Add a deterministic, model-free `/nanomneme:memory` command (and `bin/memory.js` CLI):
+  `status`, `list`, `search`, `show`, `pin`, `unpin`, `remove`. Reads never create a store.
 
 ## 0.1.3 - Pi adapter memory browser + stricter soft-only removal
 

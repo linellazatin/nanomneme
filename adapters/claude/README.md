@@ -12,8 +12,8 @@ adapters; only the harness-facing surface differs.
 - A **`SessionStart` hook** that injects the bounded project/global index (and optional
   autoretention guidance) as transient context, and a disabled-by-default
   **`UserPromptSubmit`** reinjection hook.
-- A **`memory` Skill** (`/nanomneme:memory`) teaching when to use memory and how to choose
-  project vs global.
+- A **`memory-guide` Skill** (`/nanomneme:memory-guide`) teaching when to use memory and how
+  to choose project vs global.
 - A deterministic **`memory` command** — `bin/memory.js` (`status`, `list`, `search`,
   `show`, `pin`, `unpin`, `remove`) plus a `/nanomneme:memory` slash command that embeds it.
   Model-free output; run `bin/memory.js` directly with `!` for a fully model-free path.

@@ -12,7 +12,7 @@ The plugin lives at `adapters/claude` inside the nanomneme monorepo. Claude Code
 plugins through a **marketplace** (`.claude-plugin/marketplace.json`), which this repo ships
 at its root; the plugin manifest (`adapters/claude/.claude-plugin/plugin.json`) alone only
 supports local dev loading. On enable, Claude reads the bundled `.mcp.json`,
-`hooks/hooks.json`, `skills/memory/SKILL.md`, and `commands/memory.md`.
+`hooks/hooks.json`, `skills/memory-guide/SKILL.md`, and `commands/memory.md`.
 
 **Prerequisite:** Node.js 22.13+ (built-in `node:sqlite` with FTS5). The plugin runs Node
 subprocesses with full local-system access (an MCP server and two command hooks); review the
@@ -94,8 +94,11 @@ and removal leave missing stores absent. The server resolves the project directo
 `NMNM_PROJECT_DIR`, set to `${CLAUDE_PROJECT_DIR}` in `.mcp.json`, falling back to the
 process working directory.
 
-The `memory` Skill (invoked as `/nanomneme:memory`) teaches the model when to use these
-tools, how to choose project vs global scope, and which facts not to retain.
+The `memory-guide` Skill (invoked as `/nanomneme:memory-guide`) teaches the model when to
+use these tools, how to choose project vs global scope, and which facts not to retain. It is
+named `memory-guide`, not `memory`, so it does not collide with the `/nanomneme:memory`
+management command below (a plugin skill and a command that share a name resolve to the same
+slash invocation, and the command would win).
 
 ## Session-start injection
 

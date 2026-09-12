@@ -1,5 +1,5 @@
 ---
-name: memory
+name: memory-guide
 description: Use when the user states a durable fact, decision, preference, or instruction worth remembering across sessions, when they ask what is remembered, or when a remembered fact should be corrected or removed. Stores shared memory through the nanomneme MCP tools so it is reusable across Claude, Pi, and other adapters.
 allowed-tools: mcp__plugin_nanomneme_memory__retain_memory mcp__plugin_nanomneme_memory__recall_memory mcp__plugin_nanomneme_memory__retrieve_memory mcp__plugin_nanomneme_memory__remove_memory
 ---
@@ -39,3 +39,9 @@ maker — nothing is retained without your explicit `retain_memory` call.
 
 `kind` is one of `note`, `decision`, `preference`, `fact`, `instruction`. Choose the one
 that best matches the memory; default to `note` when unsure.
+
+## Inspecting memory without model reasoning
+
+For a deterministic listing or status the user can run the `/nanomneme:memory` command
+(`status`, `list`, `search`, `show`, `pin`, `unpin`, `remove`); it prints directly and
+uses no model reasoning. Use these MCP tools when *you* need to read or write memory.

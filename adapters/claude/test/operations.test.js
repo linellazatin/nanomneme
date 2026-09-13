@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { databasePath } from '../src/store.js';
+import { databasePath, runMemory } from '../src/store.js';
 import { TOOL_DEFINITIONS, handleTool } from '../src/operations.js';
 
 function temporaryDirectory(name) {
@@ -23,15 +23,30 @@ test('handlers retain, recall, retrieve, and soft-remove through the core', () =
   try {
     const retained = call('retain_memory', { content: 'Stored from Claude', store: 'project', tags: ['claude'] }, { cwd });
     const recalled = call('recall_memory', { id: retained.id, store: 'project' }, { cwd });
+    const nullMetadata = call('retain_memory', { content: 'Null metadata', metadata: null }, { cwd });
     const retrieved = call('retrieve_memory', { query: 'Stored', store: 'project' }, { cwd });
     const removed = call('remove_memory', { id: retained.id, store: 'project' }, { cwd });
     const restored = call('retain_memory', { id: retained.id }, { cwd });
 
     assert.equal(recalled.content, 'Stored from Claude');
+    assert.equal(retained.metadata.source, 'claude-code');
+    assert.equal(nullMetadata.metadata.source, 'claude-code');
     assert.equal(retrieved.items[0].id, retained.id);
     assert.equal(removed.mode, 'soft');
     assert.equal(restored.id, retained.id);
     assert.equal(call('recall_memory', { id: retained.id, store: 'project' }, { cwd }).content, 'Stored from Claude');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('Claude retain patches preserve an existing source', () => {
+  const cwd = temporaryDirectory('nmnm-claude-ops-source-');
+  try {
+    const original = runMemory({ cwd, store: 'project', operation: 'retain', input: { content: 'From Pi', metadata: { source: 'pi' } } });
+    const patched = call('retain_memory', { id: original.id, content: 'Patched by Claude' }, { cwd });
+
+    assert.equal(patched.metadata.source, 'pi');
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

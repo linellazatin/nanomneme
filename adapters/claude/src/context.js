@@ -114,7 +114,8 @@ function preview(content) {
 }
 
 function line(store, memory) {
-  return `- [${store}] ${memory.id} ${preview(memory.content)}`;
+  const source = typeof memory.metadata.source === 'string' ? ` [${memory.metadata.source}]` : '';
+  return `- [${store}]${source} ${memory.id} ${preview(memory.content)}`;
 }
 
 function autoretentionContent(project, global) {

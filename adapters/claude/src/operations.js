@@ -27,11 +27,19 @@ function hasStore(ctx, store) {
   return existsSync(databasePath({ cwd: ctx.cwd, home: ctx.home, platform: ctx.platform, store }));
 }
 
+function retainInput(params) {
+  const result = input(params, RETAIN_FIELDS);
+  if (params.id == null && (params.metadata == null || (params.metadata && typeof params.metadata === 'object' && !Array.isArray(params.metadata)))) {
+    result.metadata = { ...params.metadata, source: 'claude-code' };
+  }
+  return result;
+}
+
 export function handleTool(name, params = {}, ctx = {}, options = {}) {
   const base = { cwd: ctx.cwd, home: ctx.home, platform: ctx.platform, store: params.store };
   switch (name) {
     case 'retain_memory': {
-      const result = runMemory({ ...base, operation: 'retain', input: input(params, RETAIN_FIELDS) });
+      const result = runMemory({ ...base, operation: 'retain', input: retainInput(params) });
       options.onMutation?.('retain');
       return response(result);
     }

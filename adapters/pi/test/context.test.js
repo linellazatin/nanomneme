@@ -207,7 +207,7 @@ test('buildMemoryIndex prioritizes pins, falls back to recent records, reports u
   const home = temporaryDirectory('nmnm-pi-context-home-');
   try {
     const projectPin = runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Pinned project memory' } });
-    const projectRecent = runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Recent project memory' } });
+    const projectRecent = runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Recent project memory', metadata: { source: 'pi' } } });
     const globalPin = runMemory({
       cwd: project,
       home,
@@ -229,6 +229,7 @@ test('buildMemoryIndex prioritizes pins, falls back to recent records, reports u
 
     assert.ok(index.content.indexOf(projectPin.id) < index.content.indexOf(projectRecent.id));
     assert.ok(index.content.indexOf(globalPin.id) < index.content.indexOf(projectRecent.id));
+    assert.match(index.content, new RegExp(`\\[pi\\].*${projectRecent.id}`));
     assert.equal(index.unresolved, 1);
     assert.ok(bounded.content.length <= 160);
   } finally {

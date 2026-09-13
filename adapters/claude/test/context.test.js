@@ -164,7 +164,7 @@ test('buildMemoryIndex prioritizes pins, falls back to recent records, reports u
   const home = temporaryDirectory('nmnm-claude-context-home-');
   try {
     const projectPin = runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Pinned project memory' } });
-    const projectRecent = runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Recent project memory' } });
+    const projectRecent = runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Recent project memory', metadata: { source: 'claude-code' } } });
     const globalPin = runMemory({
       cwd: project,
       home,
@@ -186,6 +186,7 @@ test('buildMemoryIndex prioritizes pins, falls back to recent records, reports u
 
     assert.ok(index.content.indexOf(projectPin.id) < index.content.indexOf(projectRecent.id));
     assert.ok(index.content.indexOf(globalPin.id) < index.content.indexOf(projectRecent.id));
+    assert.match(index.content, new RegExp(`\\[claude-code\\].*${projectRecent.id}`));
     assert.equal(index.unresolved, 1);
     assert.ok(bounded.content.length <= 160);
   } finally {

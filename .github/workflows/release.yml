@@ -1,0 +1,64 @@
+name: Release npm packages
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm audit --audit-level=high
+      - run: npm run release:check
+      - run: npm test
+      - run: git diff --check
+      - run: npm pack --dry-run --workspace @openlines/nmnm-core --workspace @openlines/nmnm-cli
+
+  publish:
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: npm
+      - run: npm ci
+      - run: npm install -g npm@latest
+      - name: Publish core when this version is new
+        env:
+          NODE_AUTH_TOKEN: ''
+        run: |
+          version=$(node -p "require('./packages/nmnm-core/package.json').version")
+          if npm view "@openlines/nmnm-core@$version" version >/dev/null 2>error.log; then exit 0; fi
+          if ! grep -q 'E404' error.log; then cat error.log; exit 1; fi
+          npm publish --workspace @openlines/nmnm-core --access public --provenance
+      - name: Publish CLI when this version is new
+        env:
+          NODE_AUTH_TOKEN: ''
+        run: |
+          version=$(node -p "require('./packages/nmnm-cli/package.json').version")
+          if npm view "@openlines/nmnm-cli@$version" version >/dev/null 2>error.log; then exit 0; fi
+          if ! grep -q 'E404' error.log; then cat error.log; exit 1; fi
+          npm publish --workspace @openlines/nmnm-cli --access public --provenance
+      - name: Generate GitHub Release notes
+        run: node scripts/release-notes.js "${GITHUB_REF_NAME#v}" > release-notes.md
+      - name: Create GitHub Release from changelog
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release-notes.md

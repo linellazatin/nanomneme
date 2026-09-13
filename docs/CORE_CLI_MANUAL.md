@@ -77,7 +77,7 @@ Use `--db` in examples and scripts when the storage target should be explicit:
 
 ```sh
 nmnm retain "Prefer concise documentation" --kind preference \
-  --tags docs,style --db ./memory.db --json
+  --tags docs,style --db ./memory.db --scope project --json
 nmnm retrieve "documentation" --db ./memory.db --json
 nmnm recall <memory-id> --db ./memory.db --json
 nmnm remove <memory-id> --db ./memory.db --json
@@ -96,7 +96,7 @@ The retain response supplies `<memory-id>`. Removal is soft by default. A later
 | `retrieve --both` | Project, then global | Retrieval only; missing stores remain absent. |
 
 `--global` cannot be combined with `--db`. `--both` cannot be combined with either.
-The record's `scope` is a label and does not choose its database.
+For a custom `--db` retain, `scope` is an explicit record label; standard project and global retains derive the matching scope and reject mismatches.
 
 ## CLI reference
 
@@ -365,7 +365,7 @@ manual SQL changes.
 A default remove is reversible. Restore the same ID with an explicit retain patch:
 
 ```sh
-nmnm retain "Restored content" --id <memory-id> --db ./memory.db --json
+nmnm retain "Restored content" --id <memory-id> --db ./memory.db --scope project --json
 ```
 
 `remove --purge` is irreversible within the live store. Recovery then requires a prior

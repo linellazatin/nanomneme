@@ -142,7 +142,6 @@ Pi manual for the full lifecycle.
 | [Pi Adapter Manual](docs/PI_ADAPTER_MANUAL.md) | Pi installation, tools, pins, configuration, and automatic index behavior. |
 | [Claude quick start](adapters/claude/README.md) | Package-local Claude Code plugin entry point. |
 | [Claude Adapter Manual](docs/CLAUDE_ADAPTER_MANUAL.md) | Claude Code plugin install, MCP tools, hooks, the `/nanomneme:memory` management command, pins, and configuration. |
-| [Release guide](docs/RELEASING.md) | Manual bootstrap, npm Trusted Publishing, validation, and future releases. |
 | [Roadmap](ROADMAP.md) | Phased delivery and deferred work. |
 | [Changelog](CHANGELOG.md) | Released and unreleased changes. |
 

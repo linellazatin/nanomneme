@@ -3,6 +3,14 @@
   "version": "0.1.5",
   "private": true,
   "type": "module",
+  "keywords": [
+    "pi",
+    "pi-package",
+    "pi-coding-agent",
+    "pi-extension",
+    "coding-agent",
+    "extension"
+  ],
   "pi": {
     "extensions": [
       "./extensions/index.js"

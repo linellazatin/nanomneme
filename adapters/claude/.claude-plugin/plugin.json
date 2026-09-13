@@ -1,6 +1,6 @@
 {
   "name": "nanomneme",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Shared, deterministic SQLite memory for Claude Code via nanomneme: native retain/recall/retrieve/remove MCP tools plus bounded session-start memory injection.",
   "author": { "name": "nanomneme" },
   "license": "MIT"

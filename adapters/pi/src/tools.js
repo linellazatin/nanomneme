@@ -20,6 +20,14 @@ function hasStore(ctx, store) {
   return existsSync(databasePath({ cwd: ctx.cwd, store }));
 }
 
+function retainInput(params) {
+  const result = input(params, ['content', 'id', 'kind', 'scope', 'namespace', 'tags', 'importance', 'confidence', 'expires_at', 'metadata']);
+  if (params.id == null && (params.metadata == null || (params.metadata && typeof params.metadata === 'object' && !Array.isArray(params.metadata)))) {
+    result.metadata = { ...params.metadata, source: 'pi' };
+  }
+  return result;
+}
+
 export function registerPiTools(pi, Type, options = {}) {
   pi.registerTool({
     name: 'retain_memory',
@@ -32,7 +40,7 @@ export function registerPiTools(pi, Type, options = {}) {
       expires_at: Type.Optional(Type.Union([Type.String(), Type.Null()])), metadata: Type.Optional(Type.Any()),
     }),
     async execute(_id, params, _signal, _update, ctx) {
-      const result = runMemory({ cwd: ctx.cwd, store: params.store, operation: 'retain', input: input(params, ['content', 'id', 'kind', 'scope', 'namespace', 'tags', 'importance', 'confidence', 'expires_at', 'metadata']) });
+      const result = runMemory({ cwd: ctx.cwd, store: params.store, operation: 'retain', input: retainInput(params) });
       options.onMutation?.('retain');
       return response(result);
     },

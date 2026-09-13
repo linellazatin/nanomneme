@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Type } from 'typebox';
-import { databasePath } from '../src/store.js';
+import { databasePath, runMemory } from '../src/store.js';
 import { registerPiTools } from '../src/tools.js';
 
 function temporaryDirectory(name) {
@@ -35,15 +35,31 @@ test('Pi tools retain, recall, retrieve, and soft-remove through the core', asyn
 
     const retained = await execute(tools.get('retain_memory'), { content: 'Stored from Pi', store: 'project', tags: ['pi'] }, cwd);
     const recalled = await execute(tools.get('recall_memory'), { id: retained.id, store: 'project' }, cwd);
+    const nullMetadata = await execute(tools.get('retain_memory'), { content: 'Null metadata', metadata: null }, cwd);
     const retrieved = await execute(tools.get('retrieve_memory'), { query: 'Stored', store: 'project' }, cwd);
     const removed = await execute(remove, { id: retained.id, store: 'project' }, cwd);
     const restored = await execute(tools.get('retain_memory'), { id: retained.id }, cwd);
 
     assert.equal(recalled.content, 'Stored from Pi');
+    assert.equal(retained.metadata.source, 'pi');
+    assert.equal(nullMetadata.metadata.source, 'pi');
     assert.equal(retrieved.items[0].id, retained.id);
     assert.equal(removed.mode, 'soft');
     assert.equal(restored.id, retained.id);
     assert.equal((await execute(tools.get('recall_memory'), { id: retained.id, store: 'project' }, cwd)).content, 'Stored from Pi');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('Pi retain patches preserve an existing source', async () => {
+  const cwd = temporaryDirectory('nmnm-pi-tools-source-');
+  try {
+    const tools = registeredTools();
+    const original = runMemory({ cwd, store: 'project', operation: 'retain', input: { content: 'From Claude', metadata: { source: 'claude-code' } } });
+    const patched = await execute(tools.get('retain_memory'), { id: original.id, content: 'Patched by Pi' }, cwd);
+
+    assert.equal(patched.metadata.source, 'claude-code');
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

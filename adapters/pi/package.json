@@ -1,8 +1,16 @@
 {
   "name": "nmnm-pi",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "type": "module",
+  "keywords": [
+    "pi",
+    "pi-package",
+    "pi-coding-agent",
+    "pi-extension",
+    "coding-agent",
+    "extension"
+  ],
   "pi": {
     "extensions": [
       "./extensions/index.js"
@@ -10,7 +18,7 @@
   },
   "dependencies": {
     "jsonc-parser": "3.3.1",
-    "nmnm-core": "0.0.5"
+    "@openlines/nmnm-core": "0.1.0"
   },
   "peerDependencies": {
     "typebox": "*"

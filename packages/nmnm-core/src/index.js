@@ -302,6 +302,7 @@ export function open(path, { create = true, readOnly = false } = {}) {
     retrieve(selector = {}) {
       if (!selector || typeof selector !== 'object' || Array.isArray(selector)) throw new TypeError('retrieve selector must be an object');
       const query = selector.query == null ? null : text(selector.query, 'query');
+      const source = selector.source == null ? null : text(selector.source, 'source');
       const limit = integer(selector.limit, 'limit', 20, 1);
       const offset = integer(selector.offset, 'offset', 0, 0);
       const expires = selector.expires ?? 'active';
@@ -317,6 +318,7 @@ export function open(path, { create = true, readOnly = false } = {}) {
       }
       const join = query ? 'JOIN memories_fts ON memories_fts.rowid = m.rowid' : '';
       if (query) { where.push('memories_fts MATCH ?'); parameters.push(query); }
+      if (source) { where.push("json_extract(m.metadata, '$.source') = ?"); parameters.push(source); }
       for (const [field, value] of [['kind', selector.kind], ['scope', selector.scope], ['namespace', selector.namespace]]) {
         const values = list(value, field);
         if (field === 'kind') values.forEach(kind);

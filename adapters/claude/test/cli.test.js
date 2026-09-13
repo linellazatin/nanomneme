@@ -26,9 +26,11 @@ function cleanup({ project, home }) {
 test('parseArgs recognizes every command and its optional store/paging arguments', () => {
   assert.deepEqual(parseArgs([]), { command: 'status' });
   assert.deepEqual(parseArgs(['status']), { command: 'status' });
-  assert.deepEqual(parseArgs(['list']), { command: 'list', store: 'both', limit: 20, offset: 0 });
-  assert.deepEqual(parseArgs(['list', 'global', '5', '10']), { command: 'list', store: 'global', limit: 5, offset: 10 });
-  assert.deepEqual(parseArgs(['search', 'token', 'project', '3']), { command: 'search', query: 'token', store: 'project', limit: 3, offset: 0 });
+  assert.deepEqual(parseArgs(['list']), { command: 'list', store: 'both', limit: 20, offset: 0, source: 'all' });
+  assert.deepEqual(parseArgs(['list', 'global', '5', '10']), { command: 'list', store: 'global', limit: 5, offset: 10, source: 'all' });
+  assert.deepEqual(parseArgs(['list', '--source', 'claude-code']), { command: 'list', store: 'both', limit: 20, offset: 0, source: 'claude-code' });
+  assert.deepEqual(parseArgs(['search', 'token', 'project', '3']), { command: 'search', query: 'token', store: 'project', limit: 3, offset: 0, source: 'all' });
+  assert.deepEqual(parseArgs(['search', 'token', '--source', 'claude-code']), { command: 'search', query: 'token', store: 'both', limit: 20, offset: 0, source: 'claude-code' });
   assert.deepEqual(parseArgs(['show', 'global', 'abc']), { command: 'show', store: 'global', id: 'abc' });
   assert.deepEqual(parseArgs(['show', 'abc']), { command: 'show', store: undefined, id: 'abc' });
   assert.deepEqual(parseArgs(['pin', 'global', 'abc']), { command: 'pin', store: 'global', id: 'abc' });
@@ -86,6 +88,25 @@ test('list shows project-then-global rows with a pinned marker and total count',
     const scoped = runCli({ argv: ['list', 'global'], ...f.ctx });
     assert.match(scoped.text, /showing 1 of 1/);
     assert.doesNotMatch(scoped.text, /Project row/);
+  } finally {
+    cleanup(f);
+  }
+});
+
+test('list and search filter by Claude Code source', () => {
+  const f = fixture();
+  try {
+    const claude = runMemory({ cwd: f.project, store: 'project', operation: 'retain', input: { content: 'Claude source list memory', metadata: { source: 'claude-code' } } });
+    const pi = runMemory({ cwd: f.project, store: 'project', operation: 'retain', input: { content: 'Pi source list memory', metadata: { source: 'pi' } } });
+
+    const list = runCli({ argv: ['list', '--source', 'claude-code'], ...f.ctx });
+    const search = runCli({ argv: ['search', 'source', '--source', 'claude-code'], ...f.ctx });
+
+    assert.match(list.text, /source: claude-code/);
+    assert.match(list.text, new RegExp(claude.id));
+    assert.doesNotMatch(list.text, new RegExp(pi.id));
+    assert.match(search.text, new RegExp(claude.id));
+    assert.doesNotMatch(search.text, new RegExp(pi.id));
   } finally {
     cleanup(f);
   }

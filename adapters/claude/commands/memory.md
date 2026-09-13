@@ -1,6 +1,6 @@
 ---
 description: Show or manage nanomneme memory deterministically (status, list, search, show, pin, unpin, remove) without model reasoning.
-argument-hint: [status|list|search|show|pin|unpin|remove] [args]
+argument-hint: [status|list|search|show|pin|unpin|remove] [args] [--source all|claude-code]
 allowed-tools: Bash(node:*)
 ---
 

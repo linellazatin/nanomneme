@@ -23,8 +23,8 @@ const STORES = ['project', 'global'];
 const USAGE = [
   'Usage: /nanomneme:memory <command>',
   '  status                                   configuration and per-store totals',
-  '  list [project|global] [limit] [offset]   list active memories (project then global)',
-  '  search <query> [project|global] [limit] [offset]',
+  '  list [project|global] [limit] [offset] [--source all|claude-code]',
+  '  search <query> [project|global] [limit] [offset] [--source all|claude-code]',
   '  show [project|global] <id>               full record detail',
   '  pin [project|global] <id>                pin a memory (defaults to project)',
   '  unpin [project|global] <id>              unpin a memory',
@@ -43,6 +43,21 @@ function paging(values) {
   return { store, limit, offset };
 }
 
+function sourceOption(values) {
+  const remaining = [];
+  let source = 'all';
+  for (let index = 0; index < values.length; index += 1) {
+    if (values[index] !== '--source') {
+      remaining.push(values[index]);
+      continue;
+    }
+    const value = values[++index];
+    if (!['all', 'claude-code'].includes(value) || source !== 'all') return null;
+    source = value;
+  }
+  return { source, values: remaining };
+}
+
 function idTarget(values) {
   if (values.length === 1) return { store: undefined, id: values[0] };
   if (values.length === 2 && STORES.includes(values[0])) return { store: values[0], id: values[1] };
@@ -55,14 +70,16 @@ export function parseArgs(argv) {
     return values.length ? { error: USAGE } : { command: 'status' };
   }
   if (command === 'list') {
-    const page = paging(values);
-    return page ? { command: 'list', ...page } : { error: USAGE };
+    const option = sourceOption(values);
+    const page = option && paging(option.values);
+    return page ? { command: 'list', ...page, source: option.source } : { error: USAGE };
   }
   if (command === 'search') {
-    if (!values.length) return { error: USAGE };
-    const [query, ...rest] = values;
+    const option = sourceOption(values);
+    if (!option?.values.length) return { error: USAGE };
+    const [query, ...rest] = option.values;
     const page = paging(rest);
-    return page ? { command: 'search', query, ...page } : { error: USAGE };
+    return page ? { command: 'search', query, ...page, source: option.source } : { error: USAGE };
   }
   if (['show', 'pin', 'unpin', 'remove'].includes(command)) {
     const target = idTarget(values);
@@ -85,29 +102,29 @@ function existingStoreMemory({ ctx, store, operation, input, readOnly = true }) 
   return runMemory({ cwd: ctx.cwd, home: ctx.home, platform: ctx.platform, store, operation, input, create: false, readOnly });
 }
 
-function listedStore({ ctx, store, limit, offset, query }) {
-  return existingStoreMemory({ ctx, store, operation: 'retrieve', input: { query, limit, offset } }) ?? { total: 0, items: [] };
+function listedStore({ ctx, store, limit, offset, query, source }) {
+  return existingStoreMemory({ ctx, store, operation: 'retrieve', input: { query, limit, offset, source: source === 'all' ? undefined : source } }) ?? { total: 0, items: [] };
 }
 
 // Compose a bounded project-then-global page across both stores, preserving BM25 order
 // within each store without comparing scores between databases.
-function listResult({ ctx, store, limit, offset, query }) {
+function listResult({ ctx, store, limit, offset, query, source }) {
   if (store !== 'both') {
-    const result = listedStore({ ctx, store, limit, offset, query });
+    const result = listedStore({ ctx, store, limit, offset, query, source });
     return { total: result.total, items: result.items.map((memory) => ({ store, memory })) };
   }
-  const project = listedStore({ ctx, store: 'project', limit: 1, offset: 0, query });
-  const global = listedStore({ ctx, store: 'global', limit: 1, offset: 0, query });
+  const project = listedStore({ ctx, store: 'project', limit: 1, offset: 0, query, source });
+  const global = listedStore({ ctx, store: 'global', limit: 1, offset: 0, query, source });
   const items = [];
   if (offset < project.total) {
-    const projectPage = listedStore({ ctx, store: 'project', limit, offset, query });
+    const projectPage = listedStore({ ctx, store: 'project', limit, offset, query, source });
     items.push(...projectPage.items.map((memory) => ({ store: 'project', memory })));
     if (items.length < limit) {
-      const globalPage = listedStore({ ctx, store: 'global', limit: limit - items.length, offset: 0, query });
+      const globalPage = listedStore({ ctx, store: 'global', limit: limit - items.length, offset: 0, query, source });
       items.push(...globalPage.items.map((memory) => ({ store: 'global', memory })));
     }
   } else {
-    const globalPage = listedStore({ ctx, store: 'global', limit, offset: offset - project.total, query });
+    const globalPage = listedStore({ ctx, store: 'global', limit, offset: offset - project.total, query, source });
     items.push(...globalPage.items.map((memory) => ({ store: 'global', memory })));
   }
   return { total: project.total + global.total, items };
@@ -125,6 +142,7 @@ function formatList({ store, request, result, pins }) {
     `Nanomneme memories [${store}]`,
     `showing ${result.items.length} of ${result.total}`,
     request.query ? `search: ${request.query}` : undefined,
+    request.source === 'all' ? undefined : `source: ${request.source}`,
   ].filter(Boolean).join(' · ');
   const rows = result.items.map(({ store: memoryStore, memory }) =>
     `- [${memoryStore}] ${memory.id}${pins[memoryStore].has(memory.id) ? ' *' : ''} ${preview(memory.content)}`);
@@ -197,7 +215,7 @@ export function runCli({ argv = [], cwd, home, globalDir, platform } = {}) {
   if (parsed.command === 'status') return { text: status(ctx), ok: true };
 
   if (parsed.command === 'list' || parsed.command === 'search') {
-    const request = { store: parsed.store, limit: parsed.limit, offset: parsed.offset, query: parsed.query };
+    const request = { store: parsed.store, limit: parsed.limit, offset: parsed.offset, query: parsed.query, source: parsed.source };
     const result = listResult({ ctx, ...request });
     return { text: formatList({ store: parsed.store, request, result, pins: pinSets(ctx) }), ok: true };
   }

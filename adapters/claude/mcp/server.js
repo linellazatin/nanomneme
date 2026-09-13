@@ -16,10 +16,9 @@ function register(name, description, shape) {
   server.registerTool(name, { description, inputSchema: shape }, async (args) => handleTool(name, args ?? {}, ctx));
 }
 
-register('retain_memory', 'Create or explicitly patch a nanomneme memory. Prefer project store unless the fact clearly applies to all projects (then store: global).', {
+register('retain_memory', 'Create or explicitly patch a nanomneme memory. Prefer project scope unless the fact clearly applies to all projects (then scope: global).', {
   content: z.string().optional(),
   id: z.string().optional(),
-  store: storeParam,
   kind: z.string().optional(),
   scope: z.string().optional(),
   namespace: z.string().optional(),

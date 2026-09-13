@@ -21,7 +21,7 @@ test('TOOL_DEFINITIONS exposes the nanomneme 4Rs in order', () => {
 test('handlers retain, recall, retrieve, and soft-remove through the core', () => {
   const cwd = temporaryDirectory('nmnm-claude-ops-');
   try {
-    const retained = call('retain_memory', { content: 'Stored from Claude', store: 'project', tags: ['claude'] }, { cwd });
+    const retained = call('retain_memory', { content: 'Stored from Claude', tags: ['claude'] }, { cwd });
     const recalled = call('recall_memory', { id: retained.id, store: 'project' }, { cwd });
     const nullMetadata = call('retain_memory', { content: 'Null metadata', metadata: null }, { cwd });
     const retrieved = call('retrieve_memory', { query: 'Stored', store: 'project' }, { cwd });
@@ -37,6 +37,21 @@ test('handlers retain, recall, retrieve, and soft-remove through the core', () =
     assert.equal(call('recall_memory', { id: retained.id, store: 'project' }, { cwd }).content, 'Stored from Claude');
   } finally {
     rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('Claude retain uses the global store when scope is global', () => {
+  const cwd = temporaryDirectory('nmnm-claude-ops-global-');
+  const home = temporaryDirectory('nmnm-claude-home-');
+  try {
+    const retained = call('retain_memory', { content: 'Global by scope', scope: 'global' }, { cwd, home, platform: 'darwin' });
+
+    assert.equal(retained.scope, 'global');
+    assert.equal(call('recall_memory', { id: retained.id, store: 'global' }, { cwd, home, platform: 'darwin' }).content, 'Global by scope');
+    assert.equal(existsSync(databasePath({ cwd, store: 'project' })), false);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
   }
 });
 

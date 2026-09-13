@@ -1,15 +1,15 @@
-# nmnm-core
+# @openlines/nmnm-core
 
 Deterministic local SQLite memory storage for [nanomneme](https://github.com/linellazatin/nanomneme).
 
 Requires Node.js 22.13 or later and the built-in `node:sqlite` runtime with FTS5.
 
 ```sh
-npm install nmnm-core
+npm install @openlines/nmnm-core
 ```
 
 ```js
-import { open } from 'nmnm-core';
+import { open } from '@openlines/nmnm-core';
 
 const store = open('./memory.db');
 try {
@@ -20,9 +20,9 @@ try {
 }
 ```
 
-The public API provides `open(path)`, the 4Rs, canonical portability records,
-integrity verification, and FTS repair. See the
-[Core and CLI Manual](https://github.com/linellazatin/nanomneme/blob/main/docs/CORE_CLI_MANUAL.md)
+The public API provides `open(path)`, the 4Rs, source-filtered retrieval through
+`retrieve({ source })`, canonical portability records, integrity verification, and FTS repair. See the
+[Core and CLI Manual](../../docs/CORE_CLI_MANUAL.md)
 for task-based guidance and the repository README for the complete data contract.
 Imports reject unknown fields, values that require normalization, and `updated_at`
 values earlier than `created_at`. Public reads and exports return only canonical memory

@@ -1,6 +1,17 @@
 # nanomneme (nmnm)
 
-nanomneme is a small, deterministic SQLite core for coding-agent memory: useful context survives a session without becoming an opaque service. Inspired by [`openpi-memory`](https://github.com/linellazatin/openpi-memory) and [`openclaude-memory`](https://github.com/linellazatin/openclaude-memory), and their demonstration that memory can persist in inspectable files, it replaces per-harness memory formats with one shared system for `Pi`, `Claude Code`, `OpenCode` (soon), and future adapters.
+[![gh stars](https://img.shields.io/github/stars/linellazatin/nanomneme?logo=github&color=ffffe0)](https://github.com/linellazatin/nanomneme)
+[![gh release](https://img.shields.io/github/v/release/linellazatin/nanomneme?label=release&logo=github&color=ffffe0)](https://github.com/linellazatin/nanomneme)
+
+[![nmnm-cli version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-cli?label=cli&logo=npm&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-cli)
+[![nmnm-cli downloads](https://img.shields.io/npm/dm/@openlines/nmnm-cli?label=cli&logo=npm&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-cli)
+
+[![nmnm-core version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-core?label=core&logo=npm&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-core)
+[![nmnm-core downloads](https://img.shields.io/npm/dm/@openlines/nmnm-core?label=core&logo=npm&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-core)
+
+[![license](https://img.shields.io/npm/l/@openlines/opl-pi-sht)](./LICENSE)
+
+nanomneme is a small, deterministic SQLite core for coding-agent memory: useful context survives a session without becoming an opaque service. Inspired by [`openpi-memory`](https://github.com/linellazatin/openpi-memory) and [`openclaude-memory`](https://github.com/linellazatin/openclaude-memory), and their demonstration that memory can persist in inspectable files, it replaces per-harness memory formats with one shared system for `Pi`, `Claude Code`, and future adapters.
 
 ## What the name means
 
@@ -24,7 +35,7 @@ Nanomneme helps agents remember without pretending to be human memory.
 
 - **Local and user-owned:** no required LLM calls, embeddings, vector database, daemon, ORM, or network service; operations are local and deterministic, SQLite is the source of truth, and JSONL portability preserves explicit project/global boundaries.
 - **Harness-agnostic foundation:** one shared memory contract supports Pi, Claude Code, OpenCode (soon), and future thin adapters.
-- **4Rs lifecycle:** retain, recall, retrieve, and remove; soft removal is reversible and purge is explicit.
+- **4Rs lifecycle:** retain, recall, retrieve, and remove; retrieval can filter recorded harness sources; soft removal is reversible and purge is explicit.
 - **Local SQLite storage:** transactional canonical records with derived tags and FTS5 indexes.
 - **Canonical validation:** UUID v4 IDs, UTC timestamps, supported kinds and scopes, kebab-case namespaces and tags, and JSON metadata.
 - **Deterministic retrieval:** lexical FTS5/BM25 search, structured filters, expiry handling, pagination, and stable relevance, importance, recency, and ID ordering.
@@ -42,7 +53,7 @@ Nanomneme helps agents remember without pretending to be human memory.
 
 #### Pi coding agent
 
-- **Native memory tools:** model-invoked retain, recall, retrieve, and remove operations over `nmnm-core`.
+- **Native memory tools:** model-invoked retain, recall, retrieve, and remove operations over `nmnm-core`; the browser and `/memory list` can show all or Pi-source records.
 - **Project and global memory:** explicit store selection with canonical records and no custom database-path parsing.
 - **Bounded automatic context:** transient autoretention guidance and the first-prompt memory index share one configurable character budget; pinned entries come first, with recent active fallback, store and recorded-source labels, unresolved-pin reporting, and refresh after successful compaction or memory mutations.
 - **Opt-in autoretention:** project/global JSONC rules guide the active model's `retain_memory` calls without a nested model, worker, or direct adapter write.
@@ -58,7 +69,7 @@ Nanomneme helps agents remember without pretending to be human memory.
 - **Bounded session-start context:** a `SessionStart` command hook injects the project/global index and optional autoretention guidance as transient context; disabled-by-default `UserPromptSubmit` reinjection uses a configurable cadence.
 - **Shared and adapter-owned config:** project `nmnm.jsonc` settings shared with Pi, adapter-owned `nmnm-claude.json` pins, and global settings under `${CLAUDE_PLUGIN_DATA}`.
 - **Model guidance:** a `memory-guide` Skill (`/nanomneme:memory-guide`) teaches the 4Rs, project-versus-global scope, and safe capture.
-- **Model-free management command:** `bin/memory.js` (`status`, `list`, `search`, `show`, `pin`, `unpin`, `remove`) reuses the shared store/context helpers; a `/nanomneme:memory` slash command embeds it and relays output verbatim, or invoke the CLI with `!` for a fully model-free path.
+- **Model-free management command:** `bin/memory.js` (`status`, `list`, `search`, `show`, `pin`, `unpin`, `remove`) reuses the shared store/context helpers; `list` and `search` accept `--source all|claude-code`. A `/nanomneme:memory` slash command embeds it and relays output verbatim, or invoke the CLI with `!` for a fully model-free path.
 
 ## Architecture
 
@@ -80,10 +91,10 @@ are thin core clients: they never write SQLite directly or parse CLI output.
 
 | Component | Role |
 |---|---|
-| `packages/nmnm-core` | Publishable Node.js ESM storage API. |
-| `packages/nmnm-cli` | Publishable `nmnm` CLI. |
-| `adapters/pi` | Private Git-first Pi package for v0.1.4, including a model-free native-dialog memory browser. |
-| `adapters/claude` | Private Git-first Claude Code plugin v0.1.1: native MCP memory tools plus session-start index injection. |
+| `packages/nmnm-core` | Publishable `@openlines/nmnm-core` Node.js ESM storage API. |
+| `packages/nmnm-cli` | Publishable `@openlines/nmnm-cli` package providing the `nmnm` CLI. |
+| `adapters/pi` | Private Git-first Pi package for v0.1.5, including a model-free native-dialog memory browser. |
+| `adapters/claude` | Private Git-first Claude Code plugin v0.1.2: native MCP memory tools plus session-start index injection. |
 
 Use Node.js 22.13+ with built-in `node:sqlite` and FTS5. Public npm publication of the
 Pi adapter is deferred; OpenCode is not included in this release.
@@ -91,15 +102,19 @@ Pi adapter is deferred; OpenCode is not included in this release.
 ## Quick start
 
 ```sh
-npm install
-node packages/nmnm-cli/bin/nmnm.js retain "Use SQLite for storage" \
-  --kind decision --tags architecture,storage
-node packages/nmnm-cli/bin/nmnm.js retrieve "SQLite"
+npm install --global @openlines/nmnm-cli
+nmnm retain "Use SQLite for storage" --kind decision --tags architecture,storage
+nmnm retrieve "SQLite"
 ```
 
+This one command installs the CLI and its exact `@openlines/nmnm-core` dependency. Install
+`@openlines/nmnm-core` directly only when writing a Node.js integration; Pi and Claude Code
+remain separately installed adapters.
+
 The CLI defaults to `./.nanomneme/memory.db`. `--global` uses
-`~/.local/share/nanomneme/memory.db` on Linux and macOS. `retrieve --both` composes
-project results before global results; `(store, id)` identifies a retrieval item.
+`~/.local/share/nanomneme/memory.db` on Linux and macOS. Standard `retain` routes derive the
+matching scope; custom `--db` retains require `--scope project|global`. `retrieve --both`
+composes project results before global results; `(store, id)` identifies a retrieval item.
 
 Try the Pi adapter directly from a checkout:
 
@@ -138,7 +153,7 @@ when documentation disagrees with behavior.
 ```sh
 npm test
 pi -e ./adapters/pi/extensions/index.js --help
-npm pack --dry-run --workspace nmnm-core --workspace nmnm-cli
+npm pack --dry-run --workspace @openlines/nmnm-core --workspace @openlines/nmnm-cli
 ```
 
 Run `npm test` before submitting changes. Do not commit `.nanomneme/`, personal global

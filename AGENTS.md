@@ -11,7 +11,7 @@ npm install
 npm test
 node packages/nmnm-cli/bin/nmnm.js --help
 node packages/nmnm-cli/bin/nmnm.js export --out memory.jsonl
-npm pack --dry-run --workspace nmnm-core --workspace nmnm-cli
+npm pack --dry-run --workspace @openlines/nmnm-core --workspace @openlines/nmnm-cli
 pi -e ./adapters/pi/extensions/index.js
 ```
 

@@ -39,7 +39,7 @@ export function handleTool(name, params = {}, ctx = {}, options = {}) {
   const base = { cwd: ctx.cwd, home: ctx.home, platform: ctx.platform, store: params.store };
   switch (name) {
     case 'retain_memory': {
-      const result = runMemory({ ...base, operation: 'retain', input: retainInput(params) });
+      const result = runMemory({ cwd: ctx.cwd, home: ctx.home, platform: ctx.platform, store: params.scope === 'global' ? 'global' : 'project', operation: 'retain', input: retainInput(params) });
       options.onMutation?.('retain');
       return response(result);
     }

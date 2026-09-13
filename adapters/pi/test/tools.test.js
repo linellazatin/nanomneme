@@ -23,7 +23,9 @@ async function execute(tool, params, cwd) {
 }
 
 test('registerPiTools exposes the nanomneme 4Rs', () => {
-  assert.deepEqual([...registeredTools().keys()], ['retain_memory', 'recall_memory', 'retrieve_memory', 'remove_memory']);
+  const tools = registeredTools();
+  assert.deepEqual([...tools.keys()], ['retain_memory', 'recall_memory', 'retrieve_memory', 'remove_memory']);
+  assert.equal(Object.hasOwn(tools.get('retain_memory').parameters.properties, 'store'), false);
 });
 
 test('Pi tools retain, recall, retrieve, and soft-remove through the core', async () => {
@@ -33,7 +35,7 @@ test('Pi tools retain, recall, retrieve, and soft-remove through the core', asyn
     const remove = tools.get('remove_memory');
     assert.deepEqual(Object.keys(remove.parameters.properties), ['id', 'store']);
 
-    const retained = await execute(tools.get('retain_memory'), { content: 'Stored from Pi', store: 'project', tags: ['pi'] }, cwd);
+    const retained = await execute(tools.get('retain_memory'), { content: 'Stored from Pi', tags: ['pi'] }, cwd);
     const recalled = await execute(tools.get('recall_memory'), { id: retained.id, store: 'project' }, cwd);
     const nullMetadata = await execute(tools.get('retain_memory'), { content: 'Null metadata', metadata: null }, cwd);
     const retrieved = await execute(tools.get('retrieve_memory'), { query: 'Stored', store: 'project' }, cwd);
@@ -48,6 +50,23 @@ test('Pi tools retain, recall, retrieve, and soft-remove through the core', asyn
     assert.equal(restored.id, retained.id);
     assert.equal((await execute(tools.get('recall_memory'), { id: retained.id, store: 'project' }, cwd)).content, 'Stored from Pi');
   } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('Pi retain uses the global store when scope is global', async () => {
+  const cwd = temporaryDirectory('nmnm-pi-tools-global-');
+  const home = process.env.HOME;
+  process.env.HOME = cwd;
+  try {
+    const tools = registeredTools();
+    const retained = await execute(tools.get('retain_memory'), { content: 'Global by scope', scope: 'global' }, cwd);
+
+    assert.equal(retained.scope, 'global');
+    assert.equal((await execute(tools.get('recall_memory'), { id: retained.id, store: 'global' }, cwd)).content, 'Global by scope');
+    assert.equal(existsSync(databasePath({ cwd, store: 'project' })), false);
+  } finally {
+    process.env.HOME = home;
     rmSync(cwd, { recursive: true, force: true });
   }
 });

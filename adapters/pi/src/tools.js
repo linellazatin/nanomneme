@@ -28,19 +28,23 @@ function retainInput(params) {
   return result;
 }
 
+function retainStore(params) {
+  return params.scope === 'global' ? 'global' : 'project';
+}
+
 export function registerPiTools(pi, Type, options = {}) {
   pi.registerTool({
     name: 'retain_memory',
     label: 'Retain Memory',
     description: 'Create or explicitly patch a nanomneme memory.',
     parameters: Type.Object({
-      content: Type.Optional(Type.String()), id: Type.Optional(Type.String()), store: store(Type),
+      content: Type.Optional(Type.String()), id: Type.Optional(Type.String()),
       kind: Type.Optional(Type.String()), scope: Type.Optional(Type.String()), namespace: Type.Optional(Type.String()),
       tags: Type.Optional(Type.Array(Type.String())), importance: Type.Optional(Type.Number()), confidence: Type.Optional(Type.Number()),
       expires_at: Type.Optional(Type.Union([Type.String(), Type.Null()])), metadata: Type.Optional(Type.Any()),
     }),
     async execute(_id, params, _signal, _update, ctx) {
-      const result = runMemory({ cwd: ctx.cwd, store: params.store, operation: 'retain', input: retainInput(params) });
+      const result = runMemory({ cwd: ctx.cwd, store: retainStore(params), operation: 'retain', input: retainInput(params) });
       options.onMutation?.('retain');
       return response(result);
     },

@@ -15,7 +15,7 @@ nmnm retrieve "operator documentation" --both
 ```
 
 Installing this package also installs its exact `@openlines/nmnm-core` dependency. The CLI defaults to `./.nanomneme/memory.db`. Use `--global` for the standard global
-database or `--db <path>` for a custom database. See the
+database or `--db <path> --scope project|global` for a custom database. See the
 [Core and CLI Manual](../../docs/CORE_CLI_MANUAL.md)
 for commands and recovery workflows. `export --out <file>` replaces its destination
 atomically after the complete JSONL file is written. `verify` and `export` open their

@@ -19,10 +19,10 @@ never write the SQLite database or the `nmnm` CLI output directly.
 
 ## Project vs global scope
 
-Every tool takes an optional `store`: `project` (this repository) or `global`
-(cross-project user information). **Prefer `project`** unless the fact clearly applies to
-every project the user works on (e.g. a personal preference or a cross-repo convention),
-in which case use `store: global`.
+For `retain_memory`, omit `scope` for this repository or use `scope: global` for
+cross-project user information. **Prefer project** unless the fact clearly applies to every
+project the user works on (e.g. a personal preference or a cross-repo convention). Other tools
+use optional `store` (`project` or `global`) to choose a physical database.
 
 ## When to retain
 

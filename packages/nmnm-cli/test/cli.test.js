@@ -72,7 +72,7 @@ test('CLI validates commands and positional arguments before creating a database
 test('CLI accepts -- before content or a query that starts with --', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-end-options-'));
   const db = join(directory, 'memory.db');
-  const retained = run('retain', '--db', db, '--json', '--', '--leading content');
+  const retained = run('retain', '--db', db, '--scope', 'project', '--json', '--', '--leading content');
 
   assert.equal(retained.status, 0, retained.stderr);
   assert.equal(JSON.parse(retained.stdout).content, '--leading content');
@@ -85,8 +85,8 @@ test('CLI exports canonical JSONL and imports it atomically', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-portable-cli-'));
   const source = join(directory, 'source.db');
   const target = join(directory, 'target.db');
-  const first = JSON.parse(run('retain', 'Portable CLI memory', '--db', source, '--tags', 'portable', '--json').stdout);
-  const removed = JSON.parse(run('retain', 'Removed portable CLI memory', '--db', source, '--json').stdout);
+  const first = JSON.parse(run('retain', 'Portable CLI memory', '--db', source, '--scope', 'project', '--tags', 'portable', '--json').stdout);
+  const removed = JSON.parse(run('retain', 'Removed portable CLI memory', '--db', source, '--scope', 'project', '--json').stdout);
   run('remove', removed.id, '--db', source);
 
   const exported = run('export', '--db', source);
@@ -140,7 +140,7 @@ test('CLI refuses to export over its source database or an alias', async () => {
   const source = join(directory, 'memory.db');
   const hardlink = join(directory, 'memory-hardlink.db');
   const symlinkPath = join(directory, 'memory-symlink.db');
-  const memory = JSON.parse(run('retain', 'Export safety', '--db', source, '--json').stdout);
+  const memory = JSON.parse(run('retain', 'Export safety', '--db', source, '--scope', 'project', '--json').stdout);
   await link(source, hardlink);
   await symlink(source, symlinkPath);
 
@@ -159,7 +159,7 @@ test('CLI atomically replaces an existing export file', async () => {
   const source = join(directory, 'memory.db');
   const output = join(directory, 'memory.jsonl');
   const snapshot = join(directory, 'previous.jsonl');
-  run('retain', 'Atomic export target', '--db', source);
+  run('retain', 'Atomic export target', '--db', source, '--scope', 'project');
   await writeFile(output, 'previous export\n');
   await link(output, snapshot);
 
@@ -175,7 +175,7 @@ test('CLI removes temporary files when atomic export replacement fails', async (
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-export-cleanup-'));
   const source = join(directory, 'memory.db');
   const output = join(directory, 'memory.jsonl');
-  run('retain', 'Failed export target', '--db', source);
+  run('retain', 'Failed export target', '--db', source, '--scope', 'project');
   await mkdir(output);
   await writeFile(join(output, 'marker'), 'unchanged');
 
@@ -189,7 +189,7 @@ test('CLI removes temporary files when atomic export replacement fails', async (
 test('CLI repairs FTS only with the explicit rebuild flag', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-repair-cli-'));
   const db = join(directory, 'memory.db');
-  const memory = JSON.parse(run('retain', 'Repair CLI target', '--db', db, '--json').stdout);
+  const memory = JSON.parse(run('retain', 'Repair CLI target', '--db', db, '--scope', 'project', '--json').stdout);
   const raw = new DatabaseSync(db);
   const row = raw.prepare('SELECT rowid FROM memories WHERE id = ?').get(memory.id);
   raw.prepare('DELETE FROM memories_fts WHERE rowid = ?').run(row.rowid);
@@ -222,7 +222,7 @@ function runIn(directory, ...args) {
 test('CLI performs all 4Rs with JSON output', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-cli-'));
   const db = join(directory, 'memory.db');
-  const retained = run('retain', 'SQLite is embedded.', '--db', db, '--kind', 'decision', '--tags', 'architecture,storage', '--json');
+  const retained = run('retain', 'SQLite is embedded.', '--db', db, '--scope', 'project', '--kind', 'decision', '--tags', 'architecture,storage', '--json');
   assert.equal(retained.status, 0, retained.stderr);
   const memory = JSON.parse(retained.stdout);
   assert.equal(memory.kind, 'decision');
@@ -241,7 +241,7 @@ test('CLI performs all 4Rs with JSON output', async () => {
 test('CLI verifies existing project and global databases', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-verify-cli-'));
   const db = join(directory, 'memory.db');
-  const retained = JSON.parse(run('retain', 'Verify CLI target', '--db', db, '--json').stdout);
+  const retained = JSON.parse(run('retain', 'Verify CLI target', '--db', db, '--scope', 'project', '--json').stdout);
   const healthy = run('verify', '--db', db, '--json');
   assert.equal(healthy.status, 0, healthy.stderr);
   assert.deepEqual(JSON.parse(healthy.stdout), { ok: true, schema_version: 1, issues: [] });
@@ -276,7 +276,7 @@ test('CLI prints readable output without --json and reports invalid input', asyn
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-cli-'));
   const db = join(directory, 'memory.db');
   const result = run(
-    'retain', 'Readable output', '--db', db,
+    'retain', 'Readable output', '--db', db, '--scope', 'project',
     '--importance', '0.8', '--confidence', '0.9', '--metadata', '{"source":"test"}',
   );
   assert.equal(result.status, 0, result.stderr);
@@ -291,7 +291,7 @@ test('CLI prints readable output without --json and reports invalid input', asyn
   const invalid = run('retain', '--db', db);
   assert.notEqual(invalid.status, 0);
   assert.match(invalid.stderr, /content/);
-  const emptyNumber = run('retain', 'Invalid empty number', '--importance', '', '--db', db);
+  const emptyNumber = run('retain', 'Invalid empty number', '--importance', '', '--db', db, '--scope', 'project');
   assert.notEqual(emptyNumber.status, 0);
   assert.match(emptyNumber.stderr, /importance/);
 });
@@ -299,7 +299,7 @@ test('CLI prints readable output without --json and reports invalid input', asyn
 test('CLI can retrieve expired memories explicitly', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-cli-'));
   const db = join(directory, 'memory.db');
-  const expired = JSON.parse(run('retain', 'Expired', '--db', db, '--expires-at', '2000-01-01T00:00:00.000Z', '--json').stdout);
+  const expired = JSON.parse(run('retain', 'Expired', '--db', db, '--scope', 'project', '--expires-at', '2000-01-01T00:00:00.000Z', '--json').stdout);
   const result = run('retrieve', '--db', db, '--expires', 'expired', '--json');
 
   assert.equal(result.status, 0, result.stderr);
@@ -314,15 +314,28 @@ test('CLI persists global memories in the home share directory', async () => {
   assert.equal(globalMemory.scope, 'global');
   await access(join(home, '.local', 'share', 'nanomneme', 'memory.db'));
 
-  const projectScoped = JSON.parse(runIn(home, 'retain', 'Global db project scope', '--global', '--scope', 'project', '--json').stdout);
-  assert.equal(projectScoped.scope, 'project');
-  const patched = runIn(home, 'retain', 'Patched', '--global', '--id', projectScoped.id, '--json');
-  assert.equal(JSON.parse(patched.stdout).scope, 'project');
+  const conflict = runIn(home, 'retain', 'Global db project scope', '--global', '--scope', 'project', '--json');
+  assert.notEqual(conflict.status, 0);
+  assert.match(conflict.stderr, /--global requires --scope global/);
 
   assert.equal(JSON.parse(runIn(home, 'recall', globalMemory.id, '--global', '--json').stdout).id, globalMemory.id);
   assert.equal(JSON.parse(runIn(home, 'retrieve', 'Global', '--global', '--json').stdout).items[0].id, globalMemory.id);
   assert.equal(JSON.parse(runIn(home, 'remove', globalMemory.id, '--global', '--json').stdout).id, globalMemory.id);
   assert.equal(JSON.parse(runIn(home, 'recall', globalMemory.id, '--global', '--json').stdout), null);
+});
+
+test('CLI requires scope for custom database retains and aligns standard routes', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-cli-scope-routing-'));
+  const db = join(directory, 'custom.db');
+  const missingScope = runIn(directory, 'retain', 'Custom scope required', '--db', db);
+  const projectConflict = runIn(directory, 'retain', 'Project mismatch', '--scope', 'global');
+  const custom = runIn(directory, 'retain', 'Custom global scope', '--db', db, '--scope', 'global', '--json');
+
+  assert.notEqual(missingScope.status, 0);
+  assert.match(missingScope.stderr, /--db requires --scope project or global/);
+  assert.notEqual(projectConflict.status, 0);
+  assert.match(projectConflict.stderr, /project database requires --scope project/);
+  assert.equal(JSON.parse(custom.stdout).scope, 'global');
 });
 
 test('CLI keeps project defaults and rejects ambiguous database flags', async () => {
@@ -342,7 +355,7 @@ test('CLI retrieval selects only the requested project, global, or custom databa
   const customDb = join(directory, 'custom.db');
   const project = JSON.parse(runIn(directory, 'retain', 'Project isolation', '--json').stdout);
   const global = JSON.parse(runIn(directory, 'retain', 'Global isolation', '--global', '--json').stdout);
-  const custom = JSON.parse(runIn(directory, 'retain', 'Custom isolation', '--db', customDb, '--json').stdout);
+  const custom = JSON.parse(runIn(directory, 'retain', 'Custom isolation', '--db', customDb, '--scope', 'project', '--json').stdout);
 
   const projectResult = JSON.parse(runIn(directory, 'retrieve', 'isolation', '--json').stdout);
   const globalResult = JSON.parse(runIn(directory, 'retrieve', 'isolation', '--global', '--json').stdout);
@@ -454,15 +467,15 @@ test('CLI validates --both selectors when both databases are missing', async () 
 test('CLI restores soft removals and purges with an explicit flag', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-remove-'));
   const db = join(directory, 'memory.db');
-  const memory = JSON.parse(run('retain', 'Restore target', '--db', db, '--json').stdout);
+  const memory = JSON.parse(run('retain', 'Restore target', '--db', db, '--scope', 'project', '--json').stdout);
   const removed = run('remove', memory.id, '--db', db, '--json');
   assert.equal(JSON.parse(removed.stdout).mode, 'soft');
 
-  const restored = run('retain', 'Restored target', '--id', memory.id, '--db', db, '--json');
+  const restored = run('retain', 'Restored target', '--id', memory.id, '--db', db, '--scope', 'project', '--json');
   assert.equal(JSON.parse(restored.stdout).content, 'Restored target');
   const purged = run('remove', memory.id, '--purge', '--db', db, '--json');
   assert.equal(JSON.parse(purged.stdout).mode, 'purge');
-  const readableTarget = JSON.parse(run('retain', 'Readable purge target', '--db', db, '--json').stdout);
+  const readableTarget = JSON.parse(run('retain', 'Readable purge target', '--db', db, '--scope', 'project', '--json').stdout);
   const purgedReadable = run('remove', readableTarget.id, '--purge', '--db', db);
   assert.match(purgedReadable.stdout, /^Purged: /m);
   assert.match(purgedReadable.stdout, /^Mode: purge$/m);

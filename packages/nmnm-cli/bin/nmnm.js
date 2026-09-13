@@ -80,6 +80,9 @@ function validateCommand(command, positionals, options) {
   }
   if (command === 'retain' && positionals.length > 1) throw new TypeError('retain accepts one content argument');
   if (command === 'retain' && !positionals.length && options.id === undefined) throw new TypeError('retain requires content unless --id is supplied');
+  if (command === 'retain' && options.db && options.scope === undefined) throw new TypeError('--db requires --scope project or global');
+  if (command === 'retain' && options.global && options.scope === 'project') throw new TypeError('--global requires --scope global');
+  if (command === 'retain' && !options.db && !options.global && options.scope === 'global') throw new TypeError('project database requires --scope project');
   if (command === 'retrieve' && positionals.length > 1) throw new TypeError('retrieve accepts one query argument');
   if (command === 'recall' && positionals.length !== 1) throw new TypeError('recall requires an id');
   if (command === 'remove' && positionals.length !== 1) throw new TypeError('remove requires an id');
@@ -115,7 +118,7 @@ function retainInput(positionals, options) {
   assign(input, 'confidence', number(options.confidence));
   assign(input, 'expires_at', options['expires-at']);
   assign(input, 'metadata', json(options.metadata));
-  if (options.global && options.id === undefined && options.scope === undefined) input.scope = 'global';
+  if (input.scope === undefined && !options.db) input.scope = options.global ? 'global' : 'project';
   return input;
 }
 

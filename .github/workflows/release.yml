@@ -20,7 +20,9 @@ jobs:
       - run: npm ci
       - run: npm audit --audit-level=high
       - name: Verify release tag
-        run: test "$GITHUB_REF_NAME" = "v$(node -p \"require('./package.json').version\")"
+        run: |
+          version=$(node -p "require('./package.json').version")
+          test "$GITHUB_REF_NAME" = "v$version"
       - run: npm test
       - run: git diff --check
       - run: npm pack --dry-run --workspace @openlines/nmnm-core --workspace @openlines/nmnm-cli

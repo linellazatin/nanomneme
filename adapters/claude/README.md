@@ -8,7 +8,7 @@ adapters; only the harness-facing surface differs.
 ## What it provides
 
 - A local stdio **MCP server** (`mcp/server.js`) exposing `retain_memory`,
-  `recall_memory`, `retrieve_memory`, and `remove_memory`, importing `nmnm-core` directly.
+  `recall_memory`, `retrieve_memory`, and `remove_memory`, importing `@openlines/nmnm-core` directly.
   New retains record `metadata.source` as `"claude-code"`; ID-based patches preserve an
   existing source. `list` and `search` accept `--source all|claude-code`.
 - A **`SessionStart` hook** that injects the bounded project/global index (and optional
@@ -31,9 +31,9 @@ the nanomneme marketplace (`.claude-plugin/marketplace.json` at the repo root):
 ```
 
 Then install the plugin's Node dependencies so the MCP server resolves
-`@modelcontextprotocol/sdk`, `zod`, and `nmnm-core` (Claude Code does not run this for you).
-`nmnm-core` is an unpublished workspace package, so run `npm install` at the **monorepo
-root** of the cloned marketplace repo, not inside `adapters/claude`:
+`@modelcontextprotocol/sdk`, `zod`, and `@openlines/nmnm-core` (Claude Code does not run this
+for you). From a cloned marketplace repository, run `npm install` at the **monorepo root**,
+not inside `adapters/claude`:
 
 ```sh
 npm install

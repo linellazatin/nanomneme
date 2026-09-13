@@ -19,7 +19,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm audit --audit-level=high
-      - run: npm run release:check
+      - name: Verify release tag
+        run: test "$GITHUB_REF_NAME" = "v$(node -p \"require('./package.json').version\")"
       - run: npm test
       - run: git diff --check
       - run: npm pack --dry-run --workspace @openlines/nmnm-core --workspace @openlines/nmnm-cli
@@ -56,9 +57,16 @@ jobs:
           if npm view "@openlines/nmnm-cli@$version" version >/dev/null 2>error.log; then exit 0; fi
           if ! grep -q 'E404' error.log; then cat error.log; exit 1; fi
           npm publish --workspace @openlines/nmnm-cli --access public --provenance
-      - name: Generate GitHub Release notes
-        run: node scripts/release-notes.js "${GITHUB_REF_NAME#v}" > release-notes.md
+      - name: Extract changelog for this version
+        id: changelog
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          NOTES=$(awk -v version="$VERSION" '$0 == "## " version || index($0, "## " version " - ") == 1 { found=1; next } found && /^## / { exit } found { print }' CHANGELOG.md)
+          test -n "$NOTES"
+          echo "notes<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$NOTES" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
       - name: Create GitHub Release from changelog
         uses: softprops/action-gh-release@v2
         with:
-          body_path: release-notes.md
+          body: ${{ steps.changelog.outputs.notes }}

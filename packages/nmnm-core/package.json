@@ -1,5 +1,5 @@
 {
-  "name": "nmnm-core",
+  "name": "@openlines/nmnm-core",
   "version": "0.1.0",
   "description": "Deterministic local SQLite memory core for nanomneme",
   "type": "module",
@@ -13,6 +13,9 @@
     "node": ">=22.13.0"
   },
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "author": "Linel Lazatin",
   "repository": {
     "type": "git",

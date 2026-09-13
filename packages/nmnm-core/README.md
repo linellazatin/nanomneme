@@ -1,15 +1,15 @@
-# nmnm-core
+# @openlines/nmnm-core
 
 Deterministic local SQLite memory storage for [nanomneme](https://github.com/linellazatin/nanomneme).
 
 Requires Node.js 22.13 or later and the built-in `node:sqlite` runtime with FTS5.
 
 ```sh
-npm install nmnm-core
+npm install @openlines/nmnm-core
 ```
 
 ```js
-import { open } from 'nmnm-core';
+import { open } from '@openlines/nmnm-core';
 
 const store = open('./memory.db');
 try {

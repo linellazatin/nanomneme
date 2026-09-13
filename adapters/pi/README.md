@@ -1,7 +1,7 @@
 # nmnm-pi
 
-Private Pi package for the nanomneme SQLite memory adapter. It imports `nmnm-core`
-directly and never shells out to the CLI.
+Private Pi package for the nanomneme SQLite memory adapter. It imports
+`@openlines/nmnm-core` directly and never shells out to the CLI.
 
 From a repository checkout, load it for one run:
 

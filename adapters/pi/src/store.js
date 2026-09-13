@@ -1,4 +1,4 @@
-import { open } from 'nmnm-core';
+import { open } from '@openlines/nmnm-core';
 import { homedir, platform as currentPlatform } from 'node:os';
 import { join, resolve } from 'node:path';
 

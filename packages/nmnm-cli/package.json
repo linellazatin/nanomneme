@@ -1,5 +1,5 @@
 {
-  "name": "nmnm-cli",
+  "name": "@openlines/nmnm-cli",
   "version": "0.1.0",
   "description": "Local-first SQLite memory command-line interface for nanomneme",
   "type": "module",
@@ -12,12 +12,15 @@
     "LICENSE"
   ],
   "dependencies": {
-    "nmnm-core": "0.1.0"
+    "@openlines/nmnm-core": "0.1.0"
   },
   "engines": {
     "node": ">=22.13.0"
   },
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "author": "Linel Lazatin",
   "repository": {
     "type": "git",

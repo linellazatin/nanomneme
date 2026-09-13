@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { open } from 'nmnm-core';
+import { open } from '@openlines/nmnm-core';
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, platform } from 'node:os';

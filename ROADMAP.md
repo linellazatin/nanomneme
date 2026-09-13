@@ -6,11 +6,11 @@ when they preserve that model.
 
 ## Package versions
 
-- `nanomneme`: 0.2.1
-- `nmnm-core`: 0.0.5 (only bump version if modified/updated)
-- `nmnm-cli`: 0.0.5 (only bump version if modified/updated)
-- `nmnm-pi`: 0.1.4 (pi coding agent adapter; only bump version if modified/updated; started 0.1.0)
-- `nmnm-claude`: 0.1.1 (claude code adapter; only bump version if modified/updated; started 0.1.0)
+- `nanomneme`: 0.2.2
+- `@openlines/nmnm-core`: 0.1.0 (only bump version if modified/updated)
+- `@openlines/nmnm-cli`: 0.1.0 (only bump version if modified/updated)
+- `nmnm-pi`: 0.1.5 (pi coding agent adapter; only bump version if modified/updated; started 0.1.0)
+- `nmnm-claude`: 0.1.2 (claude code adapter; only bump version if modified/updated; started 0.1.0)
 - `nmnm-opencode*`: 0.1.0 (opencode adapter; only bump version if modified/updated; started 0.1.0)
 - `nmnm-codex*`: 0.1.0 (Git-first Codex plugin; only bump version if modified/updated; started 0.1.0)
 
@@ -267,9 +267,16 @@ native continuity or measured evidence that Pi's checkpoint loses required state
     `memory-guide` (`/nanomneme:memory-guide`) so the command owns `/nanomneme:memory`
     outright; a plugin skill and command that share a name collide on one slash invocation.
 
+
 ## v0.2.1
 
 - [x] New Pi and Claude Code retains write their harness provenance to `metadata.source`; bounded indexes show recorded source labels, while ID-based patches preserve the existing source.
+
+## v0.2.2
+
+- [x] Filter core retrieval by `metadata.source`; expose Pi `all`/`pi` browse/list controls and Claude Code `--source all|claude-code` list/search flags.
+- [x] Prepare scoped core/CLI packages, human bootstrap publishing, tag-driven npm Trusted Publishing, and changelog-backed GitHub Releases with audit and artifact validation; adapters remain Git/marketplace installs.
+- [x] Align standard retain routes so scope selects the matching project/global store; require explicit scope for CLI custom-database retains.
 
 ## Not on the required path
 

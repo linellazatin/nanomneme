@@ -1,6 +1,6 @@
 # Pi Adapter Manual
 
-`nmnm-pi` is the Pi harness adapter for nanomneme. It calls `nmnm-core`
+`nmnm-pi` is the Pi harness adapter for nanomneme. It calls `@openlines/nmnm-core`
 directly, keeps SQLite as the storage authority, and does not invoke or parse the CLI.
 
 ## Install
@@ -34,15 +34,17 @@ Pi exposes four tools to the model:
 
 | Tool | Input | Description | Notes |
 |---|---|---|---|
-| `retain_memory` | `content`; optional `id`, canonical fields, `store` | Create, or patch and restore a known ID. | New records require `content`. |
+| `retain_memory` | `content`; optional `id`, canonical fields | Create, or patch and restore a known ID. | New records require `content`. Scope selects the matching write store. |
 | `recall_memory` | `id`; optional `store` | Read one active, unexpired memory. | Returns canonical core JSON or `null`; missing stores remain absent. |
 | `retrieve_memory` | Optional query, filters, ordering, pagination, `store` | Search or list active memories. | One store only; missing stores return `{ total: 0, items: [] }`. |
 | `remove_memory` | `id`; optional `store` | Soft-remove an active memory. | Reversible through an explicit retain patch; irreversible purge is CLI-only; missing stores return `null`. |
 
-`store` accepts `"project"` or `"global"`; omitted means project. Project data is
-`./.nanomneme/memory.db`; global data is `~/.local/share/nanomneme/memory.db` on Linux
-and macOS. Results are canonical core JSON records. The adapter does not parse CLI flags
-or support custom database paths. Only `retain_memory` creates a missing store.
+For `retain_memory`, scope selects the matching write store: omitted scope means project and
+`scope: "global"` means global. The other tools use optional `store` (`"project"` or
+`"global"`) to choose a physical database. Project data is `./.nanomneme/memory.db`; global
+data is `~/.local/share/nanomneme/memory.db` on Linux and macOS. Results are canonical core JSON
+records. The adapter does not parse CLI flags or support custom database paths. Only
+`retain_memory` creates a missing store.
 
 ## Automatic memory index
 
@@ -76,7 +78,7 @@ comments or trailing commas.
 
 ### Complete settings template
 
-This is the complete supported `nmnm.jsonc` shape for v0.1.4. Copy it to either settings
+This is the complete supported `nmnm.jsonc` shape for v0.1.5. Copy it to either settings
 location above, then adjust the budget or opt in to autoretention. This template is the
 maintained place to add future adapter parameters.
 
@@ -161,10 +163,10 @@ rewrites it.
 | Session start | Existing settings and pins | Nothing | Read-only validation reports malformed configuration without preventing Pi startup. |
 | First user prompt, queued refresh, or enabled cadence | Existing settings, pins, and SQLite stores | Nothing | A bounded index, and enabled autoretention rules, are appended transiently to the system prompt. Cadence is disabled by default and counts user prompts only. Missing files and stores are empty. |
 | Successful Pi compaction | Nothing immediately | Nothing | The next user prompt rebuilds the transient index and enabled rules. Pi's own compaction summary preserves session continuity. |
-| `retain_memory` | Existing selected store when patching | Selected `memory.db` and core-derived rows | The core creates a missing selected database; a successful mutation queues next-prompt index rebuild; no Pi settings or pin file changes. |
+| `retain_memory` | Scope-selected store when patching | Selected `memory.db` and core-derived rows | The core creates a missing selected database; a successful mutation queues next-prompt index rebuild; no Pi settings or pin file changes. |
 | `recall_memory` or `retrieve_memory` | Selected existing `memory.db` | Nothing | Missing stores return `null` or an empty page without creating a database. |
 | `remove_memory` | Selected existing `memory.db` | Selected `memory.db` and core-derived rows | Missing stores return `null`; successful removal queues next-prompt index rebuild; no Pi settings or pin file changes. |
-| `/memory` or `/memory browse` | Existing settings, pins, and stores | Nothing unless the user pins, unpins, or confirms soft removal | Shows the shared status card, then opens a model-free native-dialog browser with search and store quick actions above project/global/both pages, plus details and safe management actions. Missing stores remain absent. |
+| `/memory` or `/memory browse` | Existing settings, pins, and stores | Nothing unless the user pins, unpins, or confirms soft removal | Shows the shared status card, then opens a model-free native-dialog browser with search, store, and source quick actions above project/global/both pages, plus details and safe management actions. Missing stores remain absent. |
 | `/memory status` | Existing settings, pins, and stores | Nothing | Pi shows pin counts, effective budget, current full-payload character count (including the separator when both context sections exist), unresolved count, and transient injection lifecycle metadata; it never shows injected memory content. |
 | `/memory refresh` | Nothing immediately | Nothing | The next user prompt rebuilds the hidden index. |
 | `/memory list ...` | Both default stores, or the selected `memory.db` and pins | Nothing | Displays a bounded, paginated active-memory page without invoking the model. |
@@ -190,10 +192,10 @@ not required.
 | Command | Input example | Description | Notes |
 |---|---|---|---|
 | `/memory` | None | Open the native-dialog memory browser. | Equivalent to `/memory browse`; requires a UI-capable mode. |
-| `/memory browse` | None | Browse, search, inspect, pin/unpin, or soft-remove active memories. | Shows the shared status card once, then keeps search and store selection above each 20-row project/global/both page; never invokes the model. |
+| `/memory browse` | None | Browse, search, inspect, pin/unpin, or soft-remove active memories. | Shows the shared status card once, then keeps search, store, and `all`/`pi` source selection above each 20-row project/global/both page; never invokes the model. |
 | `/memory refresh` | None | Queue a hidden index rebuild. | The next user prompt performs the read-only rebuild. |
 | `/memory status` | None | Show a compact transient-context status card. | Reports aligned field values defined below without exposing injected content or writing files/stores. |
-| `/memory list [store] [limit] [offset]` | `/memory list global 50` | List active memories without the model. | Omit `store` for project-first, then global. `limit` is 1-100; `offset` is 0-1,000. |
+| `/memory list [store] [all\|pi] [limit] [offset]` | `/memory list global pi 50` | List active memories without the model. | Omit source or use `all` for every record, including legacy records without a source. `limit` is 1-100; `offset` is 0-1,000. |
 | `/memory remove [store] <id>` | `/memory remove global <memory-id>` | Soft-remove an active memory. | Unscoped IDs resolve one store or refuse ambiguity. Pins remain durable. |
 | `/memory pin [store] <id>` | `/memory pin global <memory-id>` | Pin an active memory for Pi index injection. | Omit `store` for project. Validation occurs before any pin-file write. |
 | `/memory unpin [store] <id>` | `/memory unpin <memory-id>` | Remove a Pi pin reference. | Omit `store` for project; unresolved references can be removed. |
@@ -202,8 +204,8 @@ not required.
 
 | Topic | Behavior |
 |---|---|
-| Browser | `/memory` and `/memory browse` show the shared status card before opening Pi-native dialogs. Search and current store selection are the first two actions before record rows. Text search uses FTS retrieval; changing search or store resets pagination. Pi's selector also supports vertical arrows and Vim-style `j`/`k` navigation. Non-UI modes should use explicit subcommands. |
-| Browser details | Selecting a row opens a native action dialog whose title contains full canonical content and fields, then offers exact-store pin/unpin, confirmed soft removal, or back. Closing it returns to the browser under the existing status card. Structured filter controls are intentionally deferred. |
+| Browser | `/memory` and `/memory browse` show the shared status card before opening Pi-native dialogs. Search, store, and source selection precede record rows. Text search uses FTS retrieval; changing search, store, or source resets pagination. Source `all` includes legacy records; `pi` matches `metadata.source: "pi"`. Pi's selector also supports vertical arrows and Vim-style `j`/`k` navigation. Non-UI modes should use explicit subcommands. |
+| Browser details | Selecting a row opens a native action dialog whose title contains full canonical content and fields, then offers exact-store pin/unpin, confirmed soft removal, or back. Closing it returns to the browser under the existing status card. |
 | List order | Unscoped list and browser `both` pages combine project entries before global entries; selected-store views read one store. |
 | List display | Rows include `[project]` or `[global]`; `*` after an ID means that exact `(store, id)` is pinned. Previews normalize whitespace, show 60 characters, and append `...` only when truncated. |
 | List output | The notification reports `showing <n> of <total>` and is local command output, not a model request. |

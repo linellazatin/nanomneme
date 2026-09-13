@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.2 - Source filtering
+
+- Add core `retrieve({ source })` filtering.
+- Add Pi `all`/`pi` source controls to browse and list.
+- Add Claude Code `--source all|claude-code` to list and search.
+- Align standard retain routes for matching project/global store; require explicit scope for CLI custom-database retains.
+- Prepare public `@openlines/nmnm-core` and `@openlines/nmnm-cli` releases with audited,
+  provenance-enabled GitHub Actions publishing, versioned GitHub Release notes.
+
 ## 0.2.1 - Harness provenance
 
 ### Added

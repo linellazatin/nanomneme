@@ -1,7 +1,7 @@
 # Claude Code Adapter Manual
 
 `nmnm-claude` is the Claude Code harness adapter for nanomneme. It is a plugin that
-gives Claude native memory tools over a local stdio MCP server calling `nmnm-core`
+gives Claude native memory tools over a local stdio MCP server calling `@openlines/nmnm-core`
 directly, plus bounded memory injection at session start. SQLite stays the storage
 authority; the adapter never parses the `nmnm` CLI. Memory is shared with Pi and other
 adapters; only pins and the harness surface are Claude-specific.
@@ -40,11 +40,10 @@ source before installing.
    Or run `/plugin`, pick the `openlines` marketplace, and install from the menu.
 
 3. Install the plugin's Node dependencies once. Claude Code does not run `npm install` for
-   plugins, so the MCP server needs `@modelcontextprotocol/sdk`, `zod`, and `nmnm-core`
-   resolvable. `nmnm-core` is an unpublished workspace package, so run `npm install` at the
-   **monorepo root** (the parent of `adapters/claude` in the cloned marketplace repo, one
-   level up from the plugin path `/plugin` shows), which links `nmnm-core` through npm
-   workspaces:
+   plugins, so the MCP server needs `@modelcontextprotocol/sdk`, `zod`, and
+   `@openlines/nmnm-core` resolvable. Run `npm install` at the **monorepo root** (the parent
+   of `adapters/claude` in the cloned marketplace repo, one level up from the plugin path
+   `/plugin` shows), which links the core package through npm workspaces:
 
    ```sh
    npm install
@@ -82,15 +81,16 @@ namespaces them by plugin name and server key, so they appear as
 
 | Tool | Input | Description | Notes |
 |---|---|---|---|
-| `retain_memory` | `content`; optional `id`, canonical fields, `store` | Create, or patch and restore a known ID. | New records require `content`. |
+| `retain_memory` | `content`; optional `id`, canonical fields | Create, or patch and restore a known ID. | New records require `content`; scope selects the matching write store. |
 | `recall_memory` | `id`; optional `store` | Read one active, unexpired memory. | Canonical core JSON or `null`; missing stores stay absent. |
 | `retrieve_memory` | Optional `query`, filters, ordering, pagination, `store` | Search or list active memories. | One store only; missing stores return `{ total: 0, items: [] }`. |
 | `remove_memory` | `id`; optional `store` | Soft-remove an active memory. | Reversible via a retain patch; purge is CLI-only; missing stores return `null`. |
 
-`store` accepts `"project"` or `"global"`; omitted means project. Project data is
-`./.nanomneme/memory.db`; global data is `~/.local/share/nanomneme/memory.db` on Linux and
-macOS. Results are canonical core JSON. Only `retain_memory` creates a missing store; reads
-and removal leave missing stores absent. The server resolves the project directory from
+For `retain_memory`, omitted scope means the project store and `scope: "global"` means the
+global store. The other tools accept `store` (`"project"` or `"global"`) to select a physical
+database. Project data is `./.nanomneme/memory.db`; global data is
+`~/.local/share/nanomneme/memory.db` on Linux and macOS. Results are canonical core JSON. Only
+`retain_memory` creates a missing store; reads and removal leave missing stores absent. The server resolves the project directory from
 `NMNM_PROJECT_DIR`, set to `${CLAUDE_PROJECT_DIR}` in `.mcp.json`, falling back to the
 process working directory.
 
@@ -135,8 +135,8 @@ and prints text:
 | Command | Output |
 |---|---|
 | `status` | Injection budget/current/unresolved, reinjection policy, autoretention counts, pin counts, per-store totals. |
-| `list [project\|global] [limit] [offset]` | Active memories, project rows before global, `*` marks pins. Defaults to both stores, limit 20. |
-| `search <query> [project\|global] [limit] [offset]` | Same listing, filtered by an FTS query. |
+| `list [project\|global] [limit] [offset] [--source all\|claude-code]` | Active memories, project rows before global, `*` marks pins. Defaults to both stores, limit 20; `all` includes legacy records without a source. |
+| `search <query> [project\|global] [limit] [offset] [--source all\|claude-code]` | Same listing, filtered by an FTS query and optional source. |
 | `show [project\|global] <id>` | Full record detail for one memory. |
 | `pin` / `unpin` `[project\|global] <id>` | Edit the adapter `nmnm-claude.json` pin file. |
 | `remove [project\|global] <id>` | Reversible soft removal (purge stays CLI-only). |
@@ -184,7 +184,7 @@ load. Locations:
   `<plugin>-<marketplace>`). For settings you want shared with Pi, or that should survive a
   rename, prefer the project `.nanomneme/nmnm.jsonc`.
 
-Project settings override global. Complete v0.2.1 template:
+Project settings override global. Complete v0.2.2 template:
 
 ```jsonc
 {

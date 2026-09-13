@@ -51,14 +51,14 @@ Use Node.js 22.13 or later with FTS5 available in the built-in `node:sqlite` mod
 Install the CLI for terminal or agent use:
 
 ```sh
-npm install --global nmnm-cli
+npm install --global @openlines/nmnm-cli
 nmnm --version
 ```
 
 Install the core package in a Node.js ESM application:
 
 ```sh
-npm install nmnm-core
+npm install @openlines/nmnm-core
 ```
 
 From a repository checkout, install both workspaces and invoke the CLI directly:
@@ -115,8 +115,8 @@ The record's `scope` is a label and does not choose its database.
 
 | Flag | Value | Description | Notes |
 |---|---|---|---|
-| `--db` | `<path>` | Select an exact database. | Cannot combine with `--global` or `--both`. |
-| `--global` | None | Select the standard global database. | Cannot combine with `--db` or `--both`. |
+| `--db` | `<path>` | Select an exact database. | Cannot combine with `--global` or `--both`; `retain` requires an explicit `--scope`. |
+| `--global` | None | Select the standard global database. | Cannot combine with `--db` or `--both`; `retain` uses global scope. |
 | `--json` | None | Emit structured JSON. | Invalid with `export`, which emits JSONL. |
 | `--help` | None | Show current CLI usage. | Authoritative flag reference. |
 | `--version`, `-v` | None | Print the installed version. | Opens no storage. |
@@ -128,7 +128,7 @@ The record's `scope` is a label and does not choose its database.
 |---|---|---|---|
 | `--id` | UUID v4 | Patch and restore a known record. | Never creates a record with a caller-supplied ID. |
 | `--kind` | `note`, `decision`, `preference`, `fact`, `instruction` | Classify the record. | Optional. |
-| `--scope` | `project`, `global` | Label the record scope. | Does not select the database. |
+| `--scope` | `project`, `global` | Set the record scope. | Standard project/global `retain` routes require the matching scope; custom `--db` retains require it explicitly. |
 | `--namespace` | `<lowercase-slug>` | Add a namespace. | Optional. |
 | `--tags` | `<lowercase-slug,...>` | Add normalized tags. | Comma-separated. |
 | `--importance`, `--confidence` | `0..1` | Set ranking and confidence values. | Optional numeric values. |
@@ -158,7 +158,7 @@ Always close the store. Use `try`/`finally` so validation, SQLite, or applicatio
 cannot leave a connection open:
 
 ```js
-import { open } from 'nmnm-core';
+import { open } from '@openlines/nmnm-core';
 
 const store = open('./memory.db');
 try {
@@ -203,9 +203,9 @@ New `retain` inputs require `content`. Optional fields are `kind`, `scope`, `nam
 ID and timestamps. Passing `id` switches retain to patch/restore mode and never performs
 content-based deduplication.
 
-Retrieve selectors support `query`; scalar or array `kind`, `scope`, and `namespace`;
-an array of `tags`; numeric `importance` and `confidence` values or `{ gt, gte, lt, lte }`
-ranges; `expires`; `order_by`; `limit`; and `offset`. Text retrieval uses FTS5/BM25.
+Retrieve selectors support `query`; `source` matching `metadata.source`; scalar or array
+`kind`, `scope`, and `namespace`; an array of `tags`; numeric `importance` and `confidence`
+values or `{ gt, gte, lt, lte }` ranges; `expires`; `order_by`; `limit`; and `offset`. Text retrieval uses FTS5/BM25.
 Equal lexical scores prefer higher importance, then ID. Without a query, the default is
 newest `updated_at` first.
 

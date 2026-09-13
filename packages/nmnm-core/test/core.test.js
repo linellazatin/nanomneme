@@ -345,6 +345,19 @@ test('retrieve combines FTS, field filters, and all requested tags', async (t) =
   assert.equal(typeof result.items[0].score, 'number');
 });
 
+test('retrieve filters memories by metadata source', async (t) => {
+  const store = await createStore(t);
+  const pi = store.retain({ content: 'Pi source memory', metadata: { source: 'pi' } });
+  store.retain({ content: 'Claude source memory', metadata: { source: 'claude-code' } });
+  store.retain({ content: 'Legacy source memory' });
+
+  const result = store.retrieve({ source: 'pi' });
+
+  assert.equal(result.total, 1);
+  assert.deepEqual(result.items.map(({ id }) => id), [pi.id]);
+  assert.throws(() => store.retrieve({ source: '' }), /source must be a non-empty string/);
+});
+
 test('retrieve baseline preserves deterministic relevance and explicit ordering', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-'));
   const path = join(directory, 'memory.db');

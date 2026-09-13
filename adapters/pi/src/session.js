@@ -26,12 +26,13 @@ function removeTarget(values) {
 function listTarget(values) {
   const remaining = [...values];
   const store = ['project', 'global'].includes(remaining[0]) ? remaining.shift() : 'both';
+  const source = ['all', 'pi'].includes(remaining[0]) ? remaining.shift() : 'all';
   if (remaining.length > 2) return null;
   const [limitText, offsetText] = remaining;
   const limit = limitText === undefined ? DEFAULT_LIST_LIMIT : Number(limitText);
   const offset = offsetText === undefined ? 0 : Number(offsetText);
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_LIST_LIMIT || !Number.isSafeInteger(offset) || offset < 0 || offset > 1000) return null;
-  return { store, limit, offset };
+  return { store, source, limit, offset };
 }
 
 function preview(content) {
@@ -39,9 +40,10 @@ function preview(content) {
   return text.length > LIST_PREVIEW_LENGTH ? `${text.slice(0, LIST_PREVIEW_LENGTH)}...` : text;
 }
 
-function listMessage(store, result, pins) {
+function listMessage(store, source, result, pins) {
   const rows = result.items.map(({ store: memoryStore, memory }) => `- [${memoryStore}] ${memory.id}${pins[memoryStore].has(memory.id) ? ' *' : ''} ${preview(memory.content)}`);
-  return [`Nanomneme [${store}]: showing ${result.items.length} of ${result.total}; * pinned`, ...rows].join('\n');
+  const label = source === 'all' ? '' : ` · source: ${source}`;
+  return [`Nanomneme [${store}]${label}: showing ${result.items.length} of ${result.total}; * pinned`, ...rows].join('\n');
 }
 
 function existingStoreMemory({ cwd, home, platform, store, operation, input }) {
@@ -49,8 +51,8 @@ function existingStoreMemory({ cwd, home, platform, store, operation, input }) {
   return runMemory({ cwd, home, platform, store, operation, input, create: false, readOnly: operation !== 'remove' });
 }
 
-function listedStore({ cwd, home, platform, store, limit, offset, query }) {
-  return existingStoreMemory({ cwd, home, platform, store, operation: 'retrieve', input: { query, limit, offset } }) ?? { total: 0, items: [] };
+function listedStore({ cwd, home, platform, store, limit, offset, query, source }) {
+  return existingStoreMemory({ cwd, home, platform, store, operation: 'retrieve', input: { query, limit, offset, source: source === 'all' ? undefined : source } }) ?? { total: 0, items: [] };
 }
 
 function listResult({ cwd, home, platform, target }) {
@@ -58,18 +60,18 @@ function listResult({ cwd, home, platform, target }) {
     const result = listedStore({ cwd, home, platform, ...target });
     return { store: target.store, total: result.total, items: result.items.map((memory) => ({ store: target.store, memory })) };
   }
-  const project = listedStore({ cwd, home, platform, store: 'project', limit: 1, offset: 0, query: target.query });
-  const global = listedStore({ cwd, home, platform, store: 'global', limit: 1, offset: 0, query: target.query });
+  const project = listedStore({ cwd, home, platform, store: 'project', limit: 1, offset: 0, query: target.query, source: target.source });
+  const global = listedStore({ cwd, home, platform, store: 'global', limit: 1, offset: 0, query: target.query, source: target.source });
   const items = [];
   if (target.offset < project.total) {
-    const projectPage = listedStore({ cwd, home, platform, store: 'project', limit: target.limit, offset: target.offset, query: target.query });
+    const projectPage = listedStore({ cwd, home, platform, store: 'project', limit: target.limit, offset: target.offset, query: target.query, source: target.source });
     items.push(...projectPage.items.map((memory) => ({ store: 'project', memory })));
     if (items.length < target.limit) {
-      const globalPage = listedStore({ cwd, home, platform, store: 'global', limit: target.limit - items.length, offset: 0, query: target.query });
+      const globalPage = listedStore({ cwd, home, platform, store: 'global', limit: target.limit - items.length, offset: 0, query: target.query, source: target.source });
       items.push(...globalPage.items.map((memory) => ({ store: 'global', memory })));
     }
   } else {
-    const globalPage = listedStore({ cwd, home, platform, store: 'global', limit: target.limit, offset: target.offset - project.total, query: target.query });
+    const globalPage = listedStore({ cwd, home, platform, store: 'global', limit: target.limit, offset: target.offset - project.total, query: target.query, source: target.source });
     items.push(...globalPage.items.map((memory) => ({ store: 'global', memory })));
   }
   return { store: 'both', total: project.total + global.total, items };
@@ -123,7 +125,7 @@ async function browseMemory({ ctx, home, platform, refresh, showStatus }) {
   }
 
   showStatus(ctx);
-  const target = { store: 'both', limit: BROWSER_LIMIT, offset: 0, query: undefined };
+  const target = { store: 'both', source: 'all', limit: BROWSER_LIMIT, offset: 0, query: undefined };
   while (true) {
     const result = listResult({ cwd: ctx.cwd, home, platform, target });
     if (result.items.length === 0 && target.offset > 0) {
@@ -137,12 +139,14 @@ async function browseMemory({ ctx, home, platform, refresh, showStatus }) {
     }));
     const title = [
       `Nanomneme memories [${target.store}]`,
+      `source: ${target.source}`,
       `showing ${result.items.length} of ${result.total}`,
       target.query ? `search: ${target.query}` : undefined,
     ].filter(Boolean).join(' · ');
     const actions = [
       'Search',
       `Store: ${target.store}`,
+      `Source: ${target.source}`,
       ...(target.query ? ['Clear search'] : []),
       ...rows.map(({ label }) => label),
       ...(target.offset > 0 ? ['Previous page'] : []),
@@ -178,6 +182,14 @@ async function browseMemory({ ctx, home, platform, refresh, showStatus }) {
       const store = await ctx.ui.select('Nanomneme store', ['Both', 'Project', 'Global']);
       if (store) {
         target.store = store.toLowerCase();
+        target.offset = 0;
+      }
+      continue;
+    }
+    if (choice.startsWith('Source:')) {
+      const source = await ctx.ui.select('Nanomneme source', ['All', 'Pi']);
+      if (source) {
+        target.source = source.toLowerCase();
         target.offset = 0;
       }
       continue;
@@ -351,7 +363,7 @@ export function registerPiMemory(pi, options = {}) {
             project: new Set(readPins(pinsPath({ cwd: ctx.cwd, home: options.home, store: 'project' }))),
             global: new Set(readPins(pinsPath({ cwd: ctx.cwd, home: options.home, store: 'global' }))),
           };
-          notify(ctx, listMessage(result.store, result, pins));
+          notify(ctx, listMessage(result.store, target.source, result, pins));
           return;
         }
       }
@@ -406,7 +418,7 @@ export function registerPiMemory(pi, options = {}) {
           return;
         }
       }
-      notify(ctx, 'Usage: /memory [browse] | refresh | status | list [project|global] [limit] [offset] | remove [project|global] <id> | pin [project|global] <id> | unpin [project|global] <id>');
+      notify(ctx, 'Usage: /memory [browse] | refresh | status | list [project|global] [all|pi] [limit] [offset] | remove [project|global] <id> | pin [project|global] <id> | unpin [project|global] <id>');
     },
   });
   return { refresh };

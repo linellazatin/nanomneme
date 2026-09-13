@@ -16,7 +16,8 @@ pi install -l "$(pwd)/adapters/pi"
 ```
 
 This is not an npm-installable `nmnm-pi` package yet. New `retain_memory` entries record
-`metadata.source` as `"pi"`; ID-based patches preserve an existing source. The model-facing
+`metadata.source` as `"pi"`; ID-based patches preserve an existing source. The browser and
+`/memory list` can show all records or Pi-source records. The model-facing
 `remove_memory` tool and `/memory remove` are soft-only; irreversible purge remains an explicit CLI operation.
 Run `/memory` or `/memory browse` for the model-free native-dialog browser. The shared status
 card appears before the browser opens; record details stay inside a native action dialog, so the

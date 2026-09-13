@@ -485,6 +485,28 @@ test('memory browser switches to the selected store', async () => {
   }
 });
 
+test('memory browser switches to Pi source only', async () => {
+  const project = temporaryDirectory('nmnm-pi-browser-source-project-');
+  const home = temporaryDirectory('nmnm-pi-browser-source-home-');
+  try {
+    const commands = new Map();
+    const pi = runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Pi source browser memory', metadata: { source: 'pi' } } });
+    const claude = runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Claude source browser memory', metadata: { source: 'claude-code' } } });
+    const scripted = scriptedUi({ selections: ['Source: all', 'Pi', undefined] });
+    registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, { home, platform: 'darwin' });
+
+    await commands.get('memory').handler('browse', { cwd: project, hasUI: true, ui: scripted.ui });
+
+    const sourcePage = scripted.selectCalls.find(({ title }) => title.includes('source: pi'));
+    assert.ok(sourcePage);
+    assert.ok(sourcePage.options.some((option) => option.includes(pi.id)));
+    assert.ok(sourcePage.options.every((option) => !option.includes(claude.id)));
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test('memory browser moves between 20-row pages', async () => {
   const project = temporaryDirectory('nmnm-pi-browser-page-project-');
   const home = temporaryDirectory('nmnm-pi-browser-page-home-');
@@ -621,6 +643,27 @@ test('memory list shows a compact selected-store page without model involvement'
     assert.match(notices.at(-1), /^Nanomneme \[project\]: showing 1 of 2; \* pinned\n/);
     assert.match(notices.at(-1), new RegExp(`${first.id}|${second.id}`));
     assert.equal(notices.at(-1).split('\n').filter((line) => line.startsWith('- ')).length, 1);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('memory list filters by Pi source', async () => {
+  const project = temporaryDirectory('nmnm-pi-session-source-project-');
+  const home = temporaryDirectory('nmnm-pi-session-source-home-');
+  try {
+    const commands = new Map();
+    const notices = [];
+    const pi = runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Pi source list memory', metadata: { source: 'pi' } } });
+    const claude = runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Claude source list memory', metadata: { source: 'claude-code' } } });
+    registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, { home, platform: 'darwin' });
+
+    await commands.get('memory').handler('list pi', { cwd: project, ui: { notify: (message) => notices.push(message) } });
+
+    assert.match(notices.at(-1), /source: pi/);
+    assert.match(notices.at(-1), new RegExp(pi.id));
+    assert.doesNotMatch(notices.at(-1), new RegExp(claude.id));
   } finally {
     rmSync(project, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });

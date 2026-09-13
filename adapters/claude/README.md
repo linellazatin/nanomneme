@@ -10,7 +10,7 @@ adapters; only the harness-facing surface differs.
 - A local stdio **MCP server** (`mcp/server.js`) exposing `retain_memory`,
   `recall_memory`, `retrieve_memory`, and `remove_memory`, importing `nmnm-core` directly.
   New retains record `metadata.source` as `"claude-code"`; ID-based patches preserve an
-  existing source.
+  existing source. `list` and `search` accept `--source all|claude-code`.
 - A **`SessionStart` hook** that injects the bounded project/global index (and optional
   autoretention guidance) as transient context, and a disabled-by-default
   **`UserPromptSubmit`** reinjection hook.

@@ -1,5 +1,12 @@
 # @openlines/nmnm-core
 
+<div align="center">
+
+[![nmnm-core version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-core?label=core&logo=npm&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-core)
+[![nmnm-core downloads](https://img.shields.io/npm/dm/@openlines/nmnm-core?label=core&logo=npm&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-core)
+
+</div>
+
 Deterministic local SQLite memory storage for [nanomneme](https://github.com/linellazatin/nanomneme).
 
 Requires Node.js 22.13 or later and the built-in `node:sqlite` runtime with FTS5.

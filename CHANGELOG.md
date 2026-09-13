@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.1 - Harness provenance
+
+### Added
+
+- New Pi and Claude Code retains record their originating harness in `metadata.source`
+  (`"pi"` or `"claude-code"`), and both bounded indexes display recorded source labels.
+
+### Changed
+
+- ID-based adapter patches preserve an existing source; records created before provenance
+  tracking remain unlabeled.
+
 ## 0.2.0 - Claude Code adapter
 
 ### Added

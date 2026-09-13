@@ -1,6 +1,6 @@
 # Pi Adapter Manual
 
-`nmnm-pi` is the Pi harness adapter for nanomneme 0.1.3. It calls `nmnm-core`
+`nmnm-pi` is the Pi harness adapter for nanomneme. It calls `nmnm-core`
 directly, keeps SQLite as the storage authority, and does not invoke or parse the CLI.
 
 ## Install
@@ -49,8 +49,10 @@ or support custom database paths. Only `retain_memory` creates a missing store.
 At the first user prompt in each Pi session, the adapter appends bounded Nanomneme context to
 that prompt's system prompt. Enabled autoretention guidance takes priority, followed by a compact
 index that lists project pins first, then global pins, then recent active records from each store.
-Rows contain `store`, ID, and a short content preview. It is not a transfer of complete records;
+Rows contain `store`, a `[source]` label when recorded, ID, and a short content preview. It is not a transfer of complete records;
 use `recall_memory` or `retrieve_memory` for full content.
+
+New Pi retains record `metadata.source` as `"pi"`. **Note:** ID-based patches preserve the existing source automatically; older or externally created records have no source label unless they already carry one.
 
 The index is transient, not a session message. It is rebuilt for the next user prompt after
 `/memory refresh`, successful Pi compaction, or a successful retain, remove, pin, or unpin
@@ -74,7 +76,7 @@ comments or trailing commas.
 
 ### Complete settings template
 
-This is the complete supported `nmnm.jsonc` shape for v0.1.3. Copy it to either settings
+This is the complete supported `nmnm.jsonc` shape for v0.1.4. Copy it to either settings
 location above, then adjust the budget or opt in to autoretention. This template is the
 maintained place to add future adapter parameters.
 

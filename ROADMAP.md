@@ -6,11 +6,11 @@ when they preserve that model.
 
 ## Package versions
 
-- `nanomneme`: 0.2.0
+- `nanomneme`: 0.2.1
 - `nmnm-core`: 0.0.5 (only bump version if modified/updated)
 - `nmnm-cli`: 0.0.5 (only bump version if modified/updated)
-- `nmnm-pi`: 0.1.3 (pi coding agent adapter; only bump version if modified/updated; started 0.1.0)
-- `nmnm-claude`: 0.1.0 (claude code adapter; only bump version if modified/updated; started 0.1.0)
+- `nmnm-pi`: 0.1.4 (pi coding agent adapter; only bump version if modified/updated; started 0.1.0)
+- `nmnm-claude`: 0.1.1 (claude code adapter; only bump version if modified/updated; started 0.1.0)
 - `nmnm-opencode*`: 0.1.0 (opencode adapter; only bump version if modified/updated; started 0.1.0)
 - `nmnm-codex*`: 0.1.0 (Git-first Codex plugin; only bump version if modified/updated; started 0.1.0)
 
@@ -266,6 +266,10 @@ native continuity or measured evidence that Pi's checkpoint loses required state
     equivalent text list/status/management output instead. The guidance skill is renamed
     `memory-guide` (`/nanomneme:memory-guide`) so the command owns `/nanomneme:memory`
     outright; a plugin skill and command that share a name collide on one slash invocation.
+
+## v0.2.1
+
+- [x] New Pi and Claude Code retains write their harness provenance to `metadata.source`; bounded indexes show recorded source labels, while ID-based patches preserve the existing source.
 
 ## Not on the required path
 

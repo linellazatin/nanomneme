@@ -44,7 +44,7 @@ Nanomneme helps agents remember without pretending to be human memory.
 
 - **Native memory tools:** model-invoked retain, recall, retrieve, and remove operations over `nmnm-core`.
 - **Project and global memory:** explicit store selection with canonical records and no custom database-path parsing.
-- **Bounded automatic context:** transient autoretention guidance and the first-prompt memory index share one configurable character budget; pinned entries come first, with recent active fallback, store labels, unresolved-pin reporting, and refresh after successful compaction or memory mutations.
+- **Bounded automatic context:** transient autoretention guidance and the first-prompt memory index share one configurable character budget; pinned entries come first, with recent active fallback, store and recorded-source labels, unresolved-pin reporting, and refresh after successful compaction or memory mutations.
 - **Opt-in autoretention:** project/global JSONC rules guide the active model's `retain_memory` calls without a nested model, worker, or direct adapter write.
 - **Adapter-owned configuration:** optional JSONC settings and separate JSON pin files, with project and global locations.
 - **Direct user controls:** `/memory refresh`, `status`, `list`, `remove`, `pin`, and `unpin` without model involvement; `status` reports the effective index budget, current full-payload character count, and transient injection lifecycle metadata without exposing memory content.
@@ -54,7 +54,7 @@ Nanomneme helps agents remember without pretending to be human memory.
 
 #### Claude Code
 
-- **Native MCP memory tools:** model-invoked retain, recall, retrieve, and remove over a local stdio MCP server that imports `nmnm-core` directly; no daemon, network, or CLI parsing. `remove_memory` is soft-only.
+- **Native MCP memory tools:** model-invoked retain, recall, retrieve, and remove over a local stdio MCP server that imports `nmnm-core` directly; no daemon, network, or CLI parsing. `retain_memory` records Claude Code source provenance on new entries; `remove_memory` is soft-only.
 - **Bounded session-start context:** a `SessionStart` command hook injects the project/global index and optional autoretention guidance as transient context; disabled-by-default `UserPromptSubmit` reinjection uses a configurable cadence.
 - **Shared and adapter-owned config:** project `nmnm.jsonc` settings shared with Pi, adapter-owned `nmnm-claude.json` pins, and global settings under `${CLAUDE_PLUGIN_DATA}`.
 - **Model guidance:** a `memory-guide` Skill (`/nanomneme:memory-guide`) teaches the 4Rs, project-versus-global scope, and safe capture.
@@ -82,8 +82,8 @@ are thin core clients: they never write SQLite directly or parse CLI output.
 |---|---|
 | `packages/nmnm-core` | Publishable Node.js ESM storage API. |
 | `packages/nmnm-cli` | Publishable `nmnm` CLI. |
-| `adapters/pi` | Private Git-first Pi package for v0.1.3, including a model-free native-dialog memory browser. |
-| `adapters/claude` | Private Git-first Claude Code plugin: native MCP memory tools plus session-start index injection. |
+| `adapters/pi` | Private Git-first Pi package for v0.1.4, including a model-free native-dialog memory browser. |
+| `adapters/claude` | Private Git-first Claude Code plugin v0.1.1: native MCP memory tools plus session-start index injection. |
 
 Use Node.js 22.13+ with built-in `node:sqlite` and FTS5. Public npm publication of the
 Pi adapter is deferred; OpenCode is not included in this release.

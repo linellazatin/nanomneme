@@ -105,9 +105,11 @@ slash invocation, and the command would win).
 A `SessionStart` command hook (`hooks/session-start.js`) appends bounded Nanomneme context
 to the session as transient `additionalContext`. Enabled autoretention guidance comes
 first, followed by a compact index listing project pins, then global pins, then recent
-active records from each store. Rows contain `store`, ID, and a short content preview. The
+active records from each store. Rows contain `store`, a `[source]` label when recorded, ID, and a short content preview. The
 index is not a transfer of complete records; the model uses `recall_memory` or
 `retrieve_memory` for full content.
+
+New Claude Code retains record `metadata.source` as `"claude-code"`. **Note:** ID-based patches preserve the existing source automatically; older or externally created records have no source label unless they already carry one.
 
 Injection is a command hook (Node importing `nmnm-core`), not an `mcp_tool` hook, so it
 works during the launch window when MCP tools are not yet available. Index reads are
@@ -182,7 +184,7 @@ load. Locations:
   `<plugin>-<marketplace>`). For settings you want shared with Pi, or that should survive a
   rename, prefer the project `.nanomneme/nmnm.jsonc`.
 
-Project settings override global. Complete v0.2.0 template:
+Project settings override global. Complete v0.2.1 template:
 
 ```jsonc
 {

@@ -187,6 +187,22 @@ test('pins deduplicate and unpin removes only the requested ID', () => {
   assert.deepEqual(unpin(pinned, 'one'), []);
 });
 
+test('buildMemoryIndex keeps project memory available when global storage is unsupported', () => {
+  const project = temporaryDirectory('nmnm-pi-context-windows-project-');
+  const home = temporaryDirectory('nmnm-pi-context-windows-home-');
+  try {
+    runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Windows project memory' } });
+
+    const index = buildMemoryIndex({ cwd: project, home, platform: 'win32' });
+
+    assert.equal(index.total, 1);
+    assert.match(index.content, /Windows project memory/);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test('buildMemoryIndex treats missing stores as empty without creating databases', () => {
   const project = temporaryDirectory('nmnm-pi-context-project-');
   const home = temporaryDirectory('nmnm-pi-context-home-');

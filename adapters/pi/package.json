@@ -1,7 +1,7 @@
 {
-  "name": "nmnm-pi",
-  "version": "0.1.5",
-  "private": true,
+  "name": "@openlines/nmnm-pi",
+  "version": "0.1.7",
+  "description": "Pi coding agent adapter for nanomneme local SQLite memory",
   "type": "module",
   "keywords": [
     "pi",
@@ -9,22 +9,41 @@
     "pi-coding-agent",
     "pi-extension",
     "coding-agent",
-    "extension"
+    "extension",
+    "memory",
+    "adapter"
   ],
   "pi": {
     "extensions": [
       "./extensions/index.js"
     ]
   },
+  "files": [
+    "extensions/index.js",
+    "src",
+    "docs/img",
+    "README.md",
+    "LICENSE"
+  ],
   "dependencies": {
     "jsonc-parser": "3.3.1",
     "@openlines/nmnm-core": "0.1.0"
   },
   "peerDependencies": {
+    "@earendil-works/pi-tui": "*",
     "typebox": "*"
   },
   "engines": {
     "node": ">=22.13.0"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "author": "Linel Lazatin",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/linellazatin/nanomneme.git",
+    "directory": "adapters/pi"
+  }
 }

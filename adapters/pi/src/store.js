@@ -4,10 +4,14 @@ import { join, resolve } from 'node:path';
 
 const OPERATIONS = new Set(['retain', 'recall', 'retrieve', 'remove']);
 
+export function supportsGlobalStore(platform = currentPlatform()) {
+  return ['darwin', 'linux'].includes(platform);
+}
+
 export function databasePath({ cwd, home = homedir(), platform = currentPlatform(), store = 'project' }) {
   if (store === 'project') return resolve(cwd, '.nanomneme', 'memory.db');
   if (store === 'global') {
-    if (!['darwin', 'linux'].includes(platform)) throw new TypeError('--global is supported only on Linux and macOS; use --db');
+    if (!supportsGlobalStore(platform)) throw new TypeError('--global is supported only on Linux and macOS; use --db');
     return join(home, '.local', 'share', 'nanomneme', 'memory.db');
   }
   throw new TypeError('store must be project or global');

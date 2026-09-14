@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.3 - Pi adapter memory browser enhancements
+
+- Replaced interactive Pi adapter memory browser with custom TUI menu: `Status`, `All`, `Project`, and `Global` tabs switch with left/right arrows.
+- Publish the Pi adapter as `@openlines/nmnm-pi`.
+- Keep project memory indexing and default listing available on Windows, where global storage is unsupported.
+- Keep native and TUI memory browsers open after an invalid FTS search, reporting the validation error instead.
+
 ## 0.2.2 - Source filtering
 
 - Add core `retrieve({ source })` filtering.

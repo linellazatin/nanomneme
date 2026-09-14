@@ -6,11 +6,16 @@
 [![gh release](https://img.shields.io/github/v/release/linellazatin/nanomneme?label=release&logo=github&color=ffffe0)](https://github.com/linellazatin/nanomneme)
 [![license](https://img.shields.io/npm/l/@openlines/opl-pi-sht)](./LICENSE)
 
+### memory core
 [![nmnm-cli version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-cli?label=cli&logo=npm&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-cli)
 [![nmnm-cli downloads](https://img.shields.io/npm/dm/@openlines/nmnm-cli?label=cli&logo=npm&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-cli)
 
 [![nmnm-core version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-core?label=core&logo=npm&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-core)
 [![nmnm-core downloads](https://img.shields.io/npm/dm/@openlines/nmnm-core?label=core&logo=npm&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-core)
+
+### adapters
+[![nmnm-pi version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-pi?label=pi&logo=pi&color=ffffe0)](https://www.npmjs.com/package/@openlines/nmnm-pi)
+[![nmnm-claude version](https://img.shields.io/badge/claude-v0.1.2-orange?logo=claude)](https://github.com/linellazatin/nanomneme/tree/main/adapters/claude)
 
 </div>
 
@@ -96,11 +101,11 @@ are thin core clients: they never write SQLite directly or parse CLI output.
 |---|---|
 | `packages/nmnm-core` | Publishable `@openlines/nmnm-core` Node.js ESM storage API. |
 | `packages/nmnm-cli` | Publishable `@openlines/nmnm-cli` package providing the `nmnm` CLI. |
-| `adapters/pi` | Private Git-first Pi package for v0.1.5, including a model-free native-dialog memory browser. |
-| `adapters/claude` | Private Git-first Claude Code plugin v0.1.2: native MCP memory tools plus session-start index injection. |
+| `adapters/pi` | Publishable `@openlines/nmnm-pi` Pi package, including a model-free memory browser. |
+| `adapters/claude` | Private Git-first Claude Code plugin: native MCP memory tools plus session-start index injection. |
 
-Use Node.js 22.13+ with built-in `node:sqlite` and FTS5. Public npm publication of the
-Pi adapter is deferred; OpenCode is not included in this release.
+Use Node.js 22.13+ with built-in `node:sqlite` and FTS5. The Pi adapter is published as
+`@openlines/nmnm-pi`; OpenCode is not included in this release.
 
 ## Quick start
 
@@ -111,8 +116,13 @@ nmnm retrieve "SQLite"
 ```
 
 This one command installs the CLI and its exact `@openlines/nmnm-core` dependency. Install
-`@openlines/nmnm-core` directly only when writing a Node.js integration; Pi and Claude Code
-remain separately installed adapters.
+`@openlines/nmnm-core` directly only when writing a Node.js integration. Install Pi with:
+
+```sh
+pi install npm:@openlines/nmnm-pi
+```
+
+Claude Code remains a separately installed adapter.
 
 The CLI defaults to `./.nanomneme/memory.db`. `--global` uses
 `~/.local/share/nanomneme/memory.db` on Linux and macOS. Standard `retain` routes derive the

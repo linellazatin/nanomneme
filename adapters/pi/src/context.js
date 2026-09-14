@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { parse } from 'jsonc-parser';
-import { databasePath, runMemory } from './store.js';
+import { databasePath, runMemory, supportsGlobalStore } from './store.js';
 
 export const DEFAULT_INJECTION_BUDGET = 2000;
 export const DEFAULT_REINJECTION_PROMPTS = 5;
@@ -139,6 +139,7 @@ function autoretentionContent(project, global) {
 }
 
 function readStore({ cwd, home, platform, store, operation, input }) {
+  if (store === 'global' && !supportsGlobalStore(platform)) return null;
   if (!existsSync(databasePath({ cwd, home, platform, store }))) return null;
   return runMemory({ cwd, home, platform, store, operation, input, create: false, readOnly: true });
 }

@@ -1,6 +1,8 @@
 import { existsSync } from 'node:fs';
+import { Key, matchesKey, truncateToWidth } from '@earendil-works/pi-tui';
+
 import { buildMemoryIndex, pin, piAgentDir, pinsPath, readPins, readSettings, settingsPath, unpin, writePins } from './context.js';
-import { databasePath, runMemory } from './store.js';
+import { databasePath, runMemory, supportsGlobalStore } from './store.js';
 
 const DEFAULT_LIST_LIMIT = 20;
 const MAX_LIST_LIMIT = 100;
@@ -47,6 +49,7 @@ function listMessage(store, source, result, pins) {
 }
 
 function existingStoreMemory({ cwd, home, platform, store, operation, input }) {
+  if (store === 'global' && !supportsGlobalStore(platform)) return null;
   if (!existsSync(databasePath({ cwd, home, platform, store }))) return null;
   return runMemory({ cwd, home, platform, store, operation, input, create: false, readOnly: operation !== 'remove' });
 }
@@ -75,6 +78,19 @@ function listResult({ cwd, home, platform, target }) {
     items.push(...globalPage.items.map((memory) => ({ store: 'global', memory })));
   }
   return { store: 'both', total: project.total + global.total, items };
+}
+
+function setBrowserSearch({ ctx, home, platform, target, query }) {
+  const next = query.trim() || undefined;
+  try {
+    listResult({ cwd: ctx.cwd, home, platform, target: { ...target, query: next, offset: 0 } });
+  } catch (error) {
+    notify(ctx, `Nanomneme search unavailable: ${error.message}`);
+    return false;
+  }
+  target.query = next;
+  target.offset = 0;
+  return true;
 }
 
 function memoryIndexContent(memoryIndex) {
@@ -118,13 +134,105 @@ function browserPins({ cwd, home }) {
   };
 }
 
-async function browseMemory({ ctx, home, platform, refresh, showStatus }) {
-  if (ctx.hasUI === false) {
-    notify(ctx, 'Nanomneme interactive memory browser is unavailable in this mode. Use /memory list, status, pin, unpin, or remove.');
-    return;
+const BROWSER_TABS = ['status', 'both', 'project', 'global'];
+
+function browserTarget(state) {
+  return {
+    store: state.tab === 'status' ? 'both' : state.tab,
+    source: state.source,
+    limit: BROWSER_LIMIT,
+    offset: state.offsets[state.tab] ?? 0,
+    query: state.query,
+  };
+}
+
+class MemoryBrowser {
+  constructor({ tui, theme, state, page, status, done }) {
+    this.tui = tui;
+    this.theme = theme;
+    this.state = state;
+    this.page = page;
+    this.status = status;
+    this.done = done;
   }
 
-  showStatus(ctx);
+  items() {
+    if (this.state.tab === 'status') return [{ key: 'close', label: 'Close' }];
+    const { result, pins } = this.page();
+    return [
+      { key: 'search', label: 'Search' },
+      { key: 'source', label: `Source: ${this.state.source}` },
+      ...(this.state.query ? [{ key: 'clear-search', label: 'Clear search' }] : []),
+      ...result.items.map((item) => ({
+        key: `memory:${item.store}:${item.memory.id}`,
+        label: browserRow(item, pins[item.store].has(item.memory.id)),
+        item,
+      })),
+      ...(this.state.offsets[this.state.tab] > 0 ? [{ key: 'previous-page', label: 'Previous page' }] : []),
+      ...(this.state.offsets[this.state.tab] + result.items.length < result.total ? [{ key: 'next-page', label: 'Next page' }] : []),
+      { key: 'close', label: 'Close' },
+    ];
+  }
+
+  selected(items) {
+    const previous = this.state.focus[this.state.tab] ?? { key: 'search', index: 0 };
+    const match = items.findIndex((item) => item.key === previous.key);
+    const index = match < 0 ? Math.min(previous.index, items.length - 1) : match;
+    const selected = items[index];
+    this.state.focus[this.state.tab] = { key: selected.key, index };
+    return selected;
+  }
+
+  handleInput(data) {
+    if (matchesKey(data, Key.left) || matchesKey(data, 'h')) {
+      const index = BROWSER_TABS.indexOf(this.state.tab);
+      if (index > 0) this.state.tab = BROWSER_TABS[index - 1];
+    } else if (matchesKey(data, Key.right) || matchesKey(data, 'l')) {
+      const index = BROWSER_TABS.indexOf(this.state.tab);
+      if (index < BROWSER_TABS.length - 1) this.state.tab = BROWSER_TABS[index + 1];
+    } else if (matchesKey(data, Key.up) || matchesKey(data, 'k') || matchesKey(data, Key.down) || matchesKey(data, 'j')) {
+      const items = this.items();
+      const current = this.selected(items);
+      const delta = matchesKey(data, Key.up) || matchesKey(data, 'k') ? -1 : 1;
+      const index = Math.max(0, Math.min(items.indexOf(current) + delta, items.length - 1));
+      this.state.focus[this.state.tab] = { key: items[index].key, index };
+    } else if (matchesKey(data, Key.enter)) {
+      this.done({ type: 'select', item: this.selected(this.items()) });
+      return;
+    } else if (matchesKey(data, Key.escape)) {
+      this.done({ type: 'close' });
+      return;
+    } else {
+      return;
+    }
+    this.tui.requestRender();
+  }
+
+  render(width) {
+    const tabs = BROWSER_TABS.map((tab) => tab === this.state.tab
+      ? this.theme.fg('accent', this.theme.bold(`[${tab === 'both' ? 'All' : tab[0].toUpperCase() + tab.slice(1)}]`))
+      : tab === 'both' ? 'All' : tab[0].toUpperCase() + tab.slice(1));
+    const lines = [tabs.join('  ')];
+    if (this.state.tab === 'status') lines.push(...this.status().split('\n'), '', 'Enter or Esc to close');
+    else {
+      const { result } = this.page();
+      lines.push([
+        `Nanomneme memories [${this.state.tab}]`,
+        `source: ${this.state.source}`,
+        `showing ${result.items.length} of ${result.total}`,
+        this.state.query ? `search: ${this.state.query}` : undefined,
+      ].filter(Boolean).join(' · '), '');
+      const selected = this.selected(this.items());
+      for (const item of this.items()) lines.push(`${item.key === selected.key ? '> ' : '  '}${item.label}`);
+      lines.push('', '←→ tabs · ↑↓ navigate · enter select · esc close');
+    }
+    return lines.map((line) => truncateToWidth(line, width));
+  }
+
+  invalidate() {}
+}
+
+async function browseMemoryNative({ ctx, home, platform, refresh }) {
   const target = { store: 'both', source: 'all', limit: BROWSER_LIMIT, offset: 0, query: undefined };
   while (true) {
     const result = listResult({ cwd: ctx.cwd, home, platform, target });
@@ -133,69 +241,115 @@ async function browseMemory({ ctx, home, platform, refresh, showStatus }) {
       continue;
     }
     const pins = browserPins({ cwd: ctx.cwd, home });
-    const rows = result.items.map((item) => ({
-      item,
-      label: browserRow(item, pins[item.store].has(item.memory.id)),
-    }));
+    const rows = result.items.map((item) => ({ item, label: browserRow(item, pins[item.store].has(item.memory.id)) }));
     const title = [
-      `Nanomneme memories [${target.store}]`,
-      `source: ${target.source}`,
-      `showing ${result.items.length} of ${result.total}`,
-      target.query ? `search: ${target.query}` : undefined,
+      `Nanomneme memories [${target.store}]`, `source: ${target.source}`,
+      `showing ${result.items.length} of ${result.total}`, target.query ? `search: ${target.query}` : undefined,
     ].filter(Boolean).join(' · ');
-    const actions = [
-      'Search',
-      `Store: ${target.store}`,
-      `Source: ${target.source}`,
-      ...(target.query ? ['Clear search'] : []),
-      ...rows.map(({ label }) => label),
+    const choice = await ctx.ui.select(title, [
+      'Search', `Store: ${target.store}`, `Source: ${target.source}`,
+      ...(target.query ? ['Clear search'] : []), ...rows.map(({ label }) => label),
       ...(target.offset > 0 ? ['Previous page'] : []),
-      ...(target.offset + result.items.length < result.total ? ['Next page'] : []),
-      'Close',
-    ];
-    const choice = await ctx.ui.select(title, actions);
+      ...(target.offset + result.items.length < result.total ? ['Next page'] : []), 'Close',
+    ]);
     if (!choice || choice === 'Close') return;
-
     const selected = rows.find(({ label }) => label === choice)?.item;
     if (selected) {
       const pinned = pins[selected.store].has(selected.memory.id);
       const action = await ctx.ui.select(browserDetails(selected.store, selected.memory, pinned), [pinned ? 'Unpin' : 'Pin', 'Remove', 'Back']);
-      if (action && action !== 'Back') {
-        await applyBrowserAction({ ctx, home, platform, refresh, selected, pinned, action });
-      }
-      continue;
-    }
-    if (choice === 'Search') {
+      if (action && action !== 'Back') await applyBrowserAction({ ctx, home, platform, refresh, selected, pinned, action });
+    } else if (choice === 'Search') {
       const query = await ctx.ui.input('Search nanomneme memories', target.query ?? '');
-      if (query !== undefined) {
-        target.query = query.trim() || undefined;
-        target.offset = 0;
-      }
-      continue;
-    }
-    if (choice === 'Clear search') {
-      target.query = undefined;
-      target.offset = 0;
-      continue;
-    }
-    if (choice.startsWith('Store:')) {
+      if (query !== undefined) setBrowserSearch({ ctx, home, platform, target, query });
+    } else if (choice === 'Clear search') {
+      target.query = undefined; target.offset = 0;
+    } else if (choice.startsWith('Store:')) {
       const store = await ctx.ui.select('Nanomneme store', ['Both', 'Project', 'Global']);
-      if (store) {
-        target.store = store.toLowerCase();
-        target.offset = 0;
+      if (store) { target.store = store.toLowerCase(); target.offset = 0; }
+    } else if (choice.startsWith('Source:')) {
+      const source = await ctx.ui.select('Nanomneme source', ['All', 'Pi']);
+      if (source) { target.source = source.toLowerCase(); target.offset = 0; }
+    } else if (choice === 'Previous page') target.offset = Math.max(0, target.offset - target.limit);
+    else if (choice === 'Next page') target.offset += target.limit;
+  }
+}
+
+async function browseMemory({ ctx, home, platform, refresh, status }) {
+  if (ctx.hasUI === false) {
+    notify(ctx, 'Nanomneme interactive memory browser is unavailable in this mode. Use /memory list, status, pin, unpin, or remove.');
+    return;
+  }
+  if (ctx.mode !== 'tui') {
+    notify(ctx, status(ctx));
+    return browseMemoryNative({ ctx, home, platform, refresh });
+  }
+
+  const state = {
+    tab: 'status',
+    source: 'all',
+    query: undefined,
+    offsets: { both: 0, project: 0, global: 0 },
+    focus: {},
+  };
+  while (true) {
+    const choice = await ctx.ui.custom((tui, theme, _keybindings, done) => new MemoryBrowser({
+      tui,
+      theme,
+      state,
+      status: () => status(ctx),
+      page: () => {
+        const target = browserTarget(state);
+        const result = listResult({ cwd: ctx.cwd, home, platform, target });
+        if (result.items.length === 0 && target.offset > 0) {
+          state.offsets[state.tab] = Math.max(0, target.offset - target.limit);
+          return { result: listResult({ cwd: ctx.cwd, home, platform, target: browserTarget(state) }), pins: browserPins({ cwd: ctx.cwd, home }) };
+        }
+        return { result, pins: browserPins({ cwd: ctx.cwd, home }) };
+      },
+      done,
+    }));
+    if (!choice || choice.type === 'close' || choice.item.key === 'close') return;
+    const { item } = choice;
+    if (item.key === 'search') {
+      const query = await ctx.ui.input('Search nanomneme memories', state.query ?? '');
+      if (query !== undefined) {
+        const target = browserTarget(state);
+        if (setBrowserSearch({ ctx, home, platform, target, query })) {
+          state.query = target.query;
+          state.offsets[state.tab] = target.offset;
+        }
       }
       continue;
     }
-    if (choice.startsWith('Source:')) {
+    if (item.key === 'clear-search') {
+      state.query = undefined;
+      state.offsets[state.tab] = 0;
+      continue;
+    }
+    if (item.key === 'source') {
       const source = await ctx.ui.select('Nanomneme source', ['All', 'Pi']);
       if (source) {
-        target.source = source.toLowerCase();
-        target.offset = 0;
+        state.source = source.toLowerCase();
+        state.offsets[state.tab] = 0;
       }
       continue;
     }
-    if (choice === 'Previous page') target.offset = Math.max(0, target.offset - target.limit);
-    if (choice === 'Next page') target.offset += target.limit;
+    if (item.key === 'previous-page') {
+      state.offsets[state.tab] = Math.max(0, state.offsets[state.tab] - BROWSER_LIMIT);
+      state.focus[state.tab] = { key: 'next-page', index: state.focus[state.tab].index };
+      continue;
+    }
+    if (item.key === 'next-page') {
+      state.offsets[state.tab] += BROWSER_LIMIT;
+      state.focus[state.tab] = { key: 'previous-page', index: item.index };
+      continue;
+    }
+    if (!item.item) continue;
+    const selected = item.item;
+    const pins = browserPins({ cwd: ctx.cwd, home });
+    const pinned = pins[selected.store].has(selected.memory.id);
+    const action = await ctx.ui.select(browserDetails(selected.store, selected.memory, pinned), [pinned ? 'Unpin' : 'Pin', 'Remove', 'Back']);
+    if (action && action !== 'Back') await applyBrowserAction({ ctx, home, platform, refresh, selected, pinned, action });
   }
 }
 
@@ -272,7 +426,7 @@ export function registerPiMemory(pi, options = {}) {
   const agentDir = options.agentDir ?? piAgentDir({ home: options.home });
   const memoryOptions = { ...options, agentDir };
   const index = (cwd) => buildMemoryIndex({ cwd, ...memoryOptions });
-  const showStatus = (ctx) => {
+  const status = (ctx) => {
     let projectPins;
     let globalPins;
     let memoryIndex;
@@ -287,7 +441,7 @@ export function registerPiMemory(pi, options = {}) {
     const last = lastInjection
       ? `${lastInjection.reason} at ${lastInjection.injectedAt} · ${lastInjection.indexCount} ${lastInjection.indexCount === 1 ? 'entry' : 'entries'} · ${lastInjection.characterCount} characters · autoretention ${lastInjection.autoretentionEnabled ? 'enabled' : 'disabled'}`
       : 'none';
-    notify(ctx, [
+    return [
       'Nanomneme status',
       statusLine('Injection pending', pending ? 'yes' : 'no'),
       statusLine('Periodic reinjection', policy.enabled ? `every ${policy.every_n_prompts} prompts` : 'disabled'),
@@ -296,8 +450,9 @@ export function registerPiMemory(pi, options = {}) {
       statusLine('Pins', `project: ${projectPins?.length ?? 'unavailable'} · global: ${globalPins?.length ?? 'unavailable'}`),
       statusLine('Index', `budget: ${memoryIndex?.budget ?? 'unavailable'} · current: ${memoryIndex ? memoryIndexContent(memoryIndex).length : 'unavailable'} · unresolved: ${memoryIndex?.unresolved ?? 'unavailable'}`),
       statusLine('Error', lastError ? `${lastError.message} at ${lastError.occurredAt}` : 'none'),
-    ].join('\n'));
+    ].join('\n');
   };
+  const showStatus = (ctx) => notify(ctx, status(ctx));
 
   pi.on('session_start', (_event, ctx) => {
     refresh('session_start');
@@ -343,7 +498,7 @@ export function registerPiMemory(pi, options = {}) {
     handler: async (args, ctx) => {
       const [action, ...values] = commandInput(args);
       if ((action === undefined || action === 'browse') && values.length === 0) {
-        await browseMemory({ ctx, home: options.home, platform: options.platform, refresh, showStatus });
+        await browseMemory({ ctx, home: options.home, platform: options.platform, refresh, status });
         return;
       }
       if (action === 'refresh' && values.length === 0) {

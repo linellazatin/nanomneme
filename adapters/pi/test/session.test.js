@@ -36,6 +36,24 @@ function scriptedUi({ selections = [], inputs = [], confirmations = [] } = {}) {
   };
 }
 
+function customUi({ interactions = [], selections = [], inputs = [], confirmations = [] } = {}) {
+  const scripted = scriptedUi({ selections, inputs, confirmations });
+  const customCalls = [];
+  scripted.ui.custom = async (factory) => new Promise((done) => {
+    const component = factory(
+      { requestRender: () => {} },
+      { fg: (_color, text) => text, bold: (text) => text },
+      { matches: () => false },
+      done,
+    );
+    customCalls.push(component);
+    const interact = interactions.shift();
+    if (interact) interact(component);
+    else done(undefined);
+  });
+  return { ...scripted, customCalls };
+}
+
 test('injects a compact index once and refresh makes it pending again', async () => {
   const project = temporaryDirectory('nmnm-pi-session-project-');
   const home = temporaryDirectory('nmnm-pi-session-home-');
@@ -336,6 +354,79 @@ test('memory with no action and memory browse open the native dialog browser', a
     assert.equal(first.selectCalls.length, 1);
     assert.equal(second.selectCalls.length, 1);
     assert.match(first.selectCalls[0].title, /Nanomneme memories/);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('memory browser uses left and right arrows to switch between status and store tabs', async () => {
+  const project = temporaryDirectory('nmnm-pi-browser-tabs-project-');
+  const home = temporaryDirectory('nmnm-pi-browser-tabs-home-');
+  try {
+    const commands = new Map();
+    const globalMemory = runMemory({ cwd: project, home, platform: 'darwin', store: 'global', operation: 'retain', input: { content: 'Global tab browser memory' } });
+    const scripted = customUi({
+      interactions: [
+        (component) => {
+          assert.match(component.render(120).join('\n'), /Nanomneme status/);
+          component.handleInput('\x1b[C');
+          component.handleInput('\x1b[C');
+          component.handleInput('\x1b[C');
+          assert.match(component.render(120).join('\n'), new RegExp(`\\[global\\].*${globalMemory.id}`));
+          component.handleInput('\x1b[D');
+          component.handleInput('\x1b[D');
+          component.handleInput('\x1b[D');
+          component.handleInput('\r');
+        },
+      ],
+    });
+    registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, { home, platform: 'darwin' });
+
+    await commands.get('memory').handler('browse', { cwd: project, mode: 'tui', hasUI: true, ui: scripted.ui });
+
+    assert.equal(scripted.customCalls.length, 1);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('memory browser keeps the nearest row selected after removing the current row', async () => {
+  const project = temporaryDirectory('nmnm-pi-browser-focus-project-');
+  const home = temporaryDirectory('nmnm-pi-browser-focus-home-');
+  try {
+    const commands = new Map();
+    runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'First focus browser memory' } });
+    const removed = runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Removed focus browser memory' } });
+    runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Later focus browser memory' } });
+    let nearest;
+    const scripted = customUi({
+      selections: ['Remove'],
+      confirmations: [true],
+      interactions: [
+        (component) => {
+          component.handleInput('\x1b[C');
+          component.handleInput('\x1b[C');
+          const items = component.items();
+          const index = items.findIndex((item) => item.item?.memory.id === removed.id);
+          nearest = (items.slice(index + 1).find((item) => item.item) ?? items.slice(0, index).findLast((item) => item.item)).item.memory.id;
+          for (let step = 0; step < index; step += 1) component.handleInput('\x1b[B');
+          component.handleInput('\r');
+        },
+        (component) => {
+          const rendered = component.render(120).join('\n');
+          assert.match(rendered, new RegExp(`> \\[project\\].*${nearest}`));
+          assert.doesNotMatch(rendered, new RegExp(removed.id));
+          component.handleInput('\x1b');
+        },
+      ],
+    });
+    registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, { home, platform: 'darwin' });
+
+    await commands.get('memory').handler('browse', { cwd: project, mode: 'tui', hasUI: true, ui: scripted.ui });
+
+    assert.equal(runMemory({ cwd: project, store: 'project', operation: 'recall', input: { id: removed.id } }), null);
   } finally {
     rmSync(project, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });

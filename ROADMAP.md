@@ -6,10 +6,10 @@ when they preserve that model.
 
 ## Package versions
 
-- `nanomneme`: 0.2.2
+- `nanomneme`: 0.2.3
 - `@openlines/nmnm-core`: 0.1.0 (only bump version if modified/updated)
 - `@openlines/nmnm-cli`: 0.1.0 (only bump version if modified/updated)
-- `nmnm-pi`: 0.1.5 (pi coding agent adapter; only bump version if modified/updated; started 0.1.0)
+- `@openlines/nmnm-pi`: 0.1.6 (published Pi coding agent adapter; only bump version if modified/updated; started 0.1.0)
 - `nmnm-claude`: 0.1.2 (claude code adapter; only bump version if modified/updated; started 0.1.0)
 - `nmnm-opencode*`: 0.1.0 (opencode adapter; only bump version if modified/updated; started 0.1.0)
 - `nmnm-codex*`: 0.1.0 (Git-first Codex plugin; only bump version if modified/updated; started 0.1.0)
@@ -111,12 +111,12 @@ when they preserve that model.
 
 ## v0.1.0
 
-- [x] Connectivity: Git-first Pi adapter. Keep `nmnm-core` and `nmnm-cli` behavior
-  unchanged; Pi is a thin interface over the core. OpenCode remains deferred until its
-  own compatibility probe and plan.
-  - [x] Phase 0: confirm Pi local-path and Git-package installation, establish the
-    Git-first release route, and record that current OpenCode supports local and npm
-    plugins but is not in this release.
+- [x] Connectivity: public npm Pi adapter `@openlines/nmnm-pi`. Keep `nmnm-core` and
+  `nmnm-cli` behavior unchanged; Pi is a thin interface over the core. OpenCode remains deferred
+  until its own compatibility probe and plan.
+  - [x] Phase 0: confirm Pi local-path, Git-package, and npm-package installation; establish
+    public npm publication after a manual bootstrap and future CI releases; record that current
+    OpenCode supports local and npm plugins but is not in this release.
   - [x] Phase 1: add `adapters/pi` with the minimal Pi manifest and extension entrypoint;
     import `nmnm-core` directly rather than shelling out to the CLI; prove local loading
     and Git-package layout with a Pi smoke check.
@@ -132,8 +132,8 @@ when they preserve that model.
     than a duplicate manual; update changelog and roadmap; validate documentation and
     clean local/Git installation.
   - [x] Phase 5: run the v0.1.0 release checkpoint: full tests, Pi smoke tests,
-    package/layout and documentation checks, dependency audit, and diff checks. npm
-    publication remains deferred until Pi and OpenCode adapters are ready.
+    package/layout and documentation checks, dependency audit, and diff checks. The Pi adapter
+    subsequently ships as public `@openlines/nmnm-pi`; OpenCode remains deferred.
   - [x] Follow-up: split adapter settings from pins. JSONC `nmnm.jsonc` lives in the
     project `.nanomneme` directory or Pi agent directory; JSON `nmnm-pi.json` lives in
     the project `.nanomneme` directory or nanomneme global data directory. Maintain the

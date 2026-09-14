@@ -96,11 +96,11 @@ are thin core clients: they never write SQLite directly or parse CLI output.
 |---|---|
 | `packages/nmnm-core` | Publishable `@openlines/nmnm-core` Node.js ESM storage API. |
 | `packages/nmnm-cli` | Publishable `@openlines/nmnm-cli` package providing the `nmnm` CLI. |
-| `adapters/pi` | Private Git-first Pi package for v0.1.5, including a model-free native-dialog memory browser. |
-| `adapters/claude` | Private Git-first Claude Code plugin v0.1.2: native MCP memory tools plus session-start index injection. |
+| `adapters/pi` | Publishable `@openlines/nmnm-pi` Pi package, including a model-free memory browser. |
+| `adapters/claude` | Private Git-first Claude Code plugin: native MCP memory tools plus session-start index injection. |
 
-Use Node.js 22.13+ with built-in `node:sqlite` and FTS5. Public npm publication of the
-Pi adapter is deferred; OpenCode is not included in this release.
+Use Node.js 22.13+ with built-in `node:sqlite` and FTS5. The Pi adapter is published as
+`@openlines/nmnm-pi`; OpenCode is not included in this release.
 
 ## Quick start
 
@@ -111,8 +111,13 @@ nmnm retrieve "SQLite"
 ```
 
 This one command installs the CLI and its exact `@openlines/nmnm-core` dependency. Install
-`@openlines/nmnm-core` directly only when writing a Node.js integration; Pi and Claude Code
-remain separately installed adapters.
+`@openlines/nmnm-core` directly only when writing a Node.js integration. Install Pi with:
+
+```sh
+pi install npm:@openlines/nmnm-pi
+```
+
+Claude Code remains a separately installed adapter.
 
 The CLI defaults to `./.nanomneme/memory.db`. `--global` uses
 `~/.local/share/nanomneme/memory.db` on Linux and macOS. Standard `retain` routes derive the

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.3 - Pi adapter memory browser enhancements
+
+- Replaced interactive Pi adapter memory browser with custom TUI menu: `Status`, `All`, `Project`, and `Global` tabs switch with left/right arrows.
+- Publish the Pi adapter as `@openlines/nmnm-pi` 0.1.6.
+
 ## 0.2.2 - Source filtering
 
 - Add core `retrieve({ source })` filtering.

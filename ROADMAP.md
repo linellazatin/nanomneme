@@ -9,7 +9,7 @@ when they preserve that model.
 - `nanomneme`: 0.2.3
 - `@openlines/nmnm-core`: 0.1.0 (only bump version if modified/updated)
 - `@openlines/nmnm-cli`: 0.1.0 (only bump version if modified/updated)
-- `@openlines/nmnm-pi`: 0.1.6 (published Pi coding agent adapter; only bump version if modified/updated; started 0.1.0)
+- `@openlines/nmnm-pi`: 0.1.7 (published Pi coding agent adapter; only bump version if modified/updated; started 0.1.0)
 - `nmnm-claude`: 0.1.2 (claude code adapter; only bump version if modified/updated; started 0.1.0)
 - `nmnm-opencode*`: 0.1.0 (opencode adapter; only bump version if modified/updated; started 0.1.0)
 - `nmnm-codex*`: 0.1.0 (Git-first Codex plugin; only bump version if modified/updated; started 0.1.0)

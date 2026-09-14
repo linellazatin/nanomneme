@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { Key, matchesKey, truncateToWidth } from '@earendil-works/pi-tui';
 
 import { buildMemoryIndex, pin, piAgentDir, pinsPath, readPins, readSettings, settingsPath, unpin, writePins } from './context.js';
-import { databasePath, runMemory } from './store.js';
+import { databasePath, runMemory, supportsGlobalStore } from './store.js';
 
 const DEFAULT_LIST_LIMIT = 20;
 const MAX_LIST_LIMIT = 100;
@@ -49,6 +49,7 @@ function listMessage(store, source, result, pins) {
 }
 
 function existingStoreMemory({ cwd, home, platform, store, operation, input }) {
+  if (store === 'global' && !supportsGlobalStore(platform)) return null;
   if (!existsSync(databasePath({ cwd, home, platform, store }))) return null;
   return runMemory({ cwd, home, platform, store, operation, input, create: false, readOnly: operation !== 'remove' });
 }
@@ -77,6 +78,19 @@ function listResult({ cwd, home, platform, target }) {
     items.push(...globalPage.items.map((memory) => ({ store: 'global', memory })));
   }
   return { store: 'both', total: project.total + global.total, items };
+}
+
+function setBrowserSearch({ ctx, home, platform, target, query }) {
+  const next = query.trim() || undefined;
+  try {
+    listResult({ cwd: ctx.cwd, home, platform, target: { ...target, query: next, offset: 0 } });
+  } catch (error) {
+    notify(ctx, `Nanomneme search unavailable: ${error.message}`);
+    return false;
+  }
+  target.query = next;
+  target.offset = 0;
+  return true;
 }
 
 function memoryIndexContent(memoryIndex) {
@@ -246,7 +260,7 @@ async function browseMemoryNative({ ctx, home, platform, refresh }) {
       if (action && action !== 'Back') await applyBrowserAction({ ctx, home, platform, refresh, selected, pinned, action });
     } else if (choice === 'Search') {
       const query = await ctx.ui.input('Search nanomneme memories', target.query ?? '');
-      if (query !== undefined) { target.query = query.trim() || undefined; target.offset = 0; }
+      if (query !== undefined) setBrowserSearch({ ctx, home, platform, target, query });
     } else if (choice === 'Clear search') {
       target.query = undefined; target.offset = 0;
     } else if (choice.startsWith('Store:')) {
@@ -299,8 +313,11 @@ async function browseMemory({ ctx, home, platform, refresh, status }) {
     if (item.key === 'search') {
       const query = await ctx.ui.input('Search nanomneme memories', state.query ?? '');
       if (query !== undefined) {
-        state.query = query.trim() || undefined;
-        state.offsets[state.tab] = 0;
+        const target = browserTarget(state);
+        if (setBrowserSearch({ ctx, home, platform, target, query })) {
+          state.query = target.query;
+          state.offsets[state.tab] = target.offset;
+        }
       }
       continue;
     }

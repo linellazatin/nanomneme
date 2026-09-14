@@ -546,6 +546,54 @@ test('memory browser searches both stores and opens the selected record', async 
   }
 });
 
+test('memory browser reports an invalid native search without closing', async () => {
+  const project = temporaryDirectory('nmnm-pi-browser-invalid-native-project-');
+  const home = temporaryDirectory('nmnm-pi-browser-invalid-native-home-');
+  try {
+    const commands = new Map();
+    runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Native browser memory' } });
+    const scripted = scriptedUi({ selections: ['Search', undefined], inputs: ['"'] });
+    registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, { home, platform: 'darwin' });
+
+    await assert.doesNotReject(commands.get('memory').handler('', { cwd: project, hasUI: true, ui: scripted.ui }));
+
+    assert.match(scripted.notices.at(-1), /search unavailable: invalid FTS5 query/i);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('memory browser reports an invalid TUI search without closing', async () => {
+  const project = temporaryDirectory('nmnm-pi-browser-invalid-tui-project-');
+  const home = temporaryDirectory('nmnm-pi-browser-invalid-tui-home-');
+  try {
+    const commands = new Map();
+    runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'TUI browser memory' } });
+    const scripted = customUi({
+      inputs: ['"'],
+      interactions: [
+        (component) => {
+          component.handleInput('\x1b[C');
+          component.handleInput('\r');
+        },
+        (component) => {
+          assert.doesNotThrow(() => component.render(120));
+          component.handleInput('\x1b');
+        },
+      ],
+    });
+    registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, { home, platform: 'darwin' });
+
+    await assert.doesNotReject(commands.get('memory').handler('browse', { cwd: project, mode: 'tui', hasUI: true, ui: scripted.ui }));
+
+    assert.match(scripted.notices.at(-1), /search unavailable: invalid FTS5 query/i);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test('memory browser switches to the selected store', async () => {
   const project = temporaryDirectory('nmnm-pi-browser-store-project-');
   const home = temporaryDirectory('nmnm-pi-browser-store-home-');
@@ -711,6 +759,24 @@ test('memory browser refuses to mutate a record that became inactive', async () 
 
     assert.deepEqual(readPins(pinsPath({ cwd: project, home, store: 'project' })), []);
     assert.ok(scripted.notices.some((message) => /no longer active/.test(message)));
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('memory list keeps project records available when global storage is unsupported', async () => {
+  const project = temporaryDirectory('nmnm-pi-list-windows-project-');
+  const home = temporaryDirectory('nmnm-pi-list-windows-home-');
+  try {
+    const commands = new Map();
+    const retained = runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Windows list memory' } });
+    const notices = [];
+    registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, { home, platform: 'win32' });
+
+    await assert.doesNotReject(commands.get('memory').handler('list', { cwd: project, ui: { notify: (message) => notices.push(message) } }));
+
+    assert.match(notices.at(-1), new RegExp(`\\[project\\].*${retained.id}`));
   } finally {
     rmSync(project, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });

@@ -6,12 +6,12 @@ when they preserve that model.
 
 ## Package versions
 
-- `nanomneme`: 0.2.3
+- `nanomneme`: 0.3.0
 - `@openlines/nmnm-core`: 0.1.0 (only bump version if modified/updated)
 - `@openlines/nmnm-cli`: 0.1.0 (only bump version if modified/updated)
 - `@openlines/nmnm-pi`: 0.1.7 (published Pi coding agent adapter; only bump version if modified/updated; started 0.1.0)
 - `nmnm-claude`: 0.1.2 (claude code adapter; only bump version if modified/updated; started 0.1.0)
-- `nmnm-opencode*`: 0.1.0 (opencode adapter; only bump version if modified/updated; started 0.1.0)
+- `@openlines/nmnm-opencode`: 0.1.0 (OpenCode server-plugin adapter; only bump version if modified/updated; started 0.1.0)
 - `nmnm-codex*`: 0.1.0 (Git-first Codex plugin; only bump version if modified/updated; started 0.1.0)
 
 > `* upcoming feature developments`
@@ -112,7 +112,7 @@ when they preserve that model.
 ## v0.1.0
 
 - [x] Connectivity: public npm Pi adapter `@openlines/nmnm-pi`. Keep `nmnm-core` and
-  `nmnm-cli` behavior unchanged; Pi is a thin interface over the core. OpenCode remains deferred
+  `nmnm-cli` behavior unchanged; Pi is a thin interface over the core. OpenCode was deferred
   until its own compatibility probe and plan.
   - [x] Phase 0: confirm Pi local-path, Git-package, and npm-package installation; establish
     public npm publication after a manual bootstrap and future CI releases; record that current
@@ -277,6 +277,32 @@ native continuity or measured evidence that Pi's checkpoint loses required state
 - [x] Filter core retrieval by `metadata.source`; expose Pi `all`/`pi` browse/list controls and Claude Code `--source all|claude-code` list/search flags.
 - [x] Prepare scoped core/CLI packages, human bootstrap publishing, tag-driven npm Trusted Publishing, and changelog-backed GitHub Releases with audit and artifact validation; adapters remain Git/marketplace installs.
 - [x] Align standard retain routes so scope selects the matching project/global store; require explicit scope for CLI custom-database retains.
+
+## v0.3.0
+
+- [x] Connectivity: add the `@openlines/nmnm-opencode` OpenCode server-plugin adapter as a
+  publishable package, a thin client over the unchanged core.
+  - [x] Phase 0: probe the installed `@opencode-ai/plugin` server surface (local/npm plugin
+    discovery, `ToolContext.directory`, `experimental.chat.system.transform`) before building
+    session behavior. The probe found OpenCode loads server plugins under Bun 1.3.14, whose build
+    provides no `node:sqlite` (required by the core), and that it rebuilds the system prompt per
+    model request. Revised the design accordingly: core access is delegated to a short-lived
+    spawned `node` bridge, and the bounded index is appended per request rather than gated by a
+    session-once/cadence rule (so `reinjection` stays inert on OpenCode). Confirmed injection and
+    the tool write path with a live configured-provider smoke against OpenCode 1.18.31.
+  - [x] Phase 1: add `adapters/opencode` with a Bun-safe server-plugin entrypoint and the four
+    native tools (`retain_memory`, `recall_memory`, `retrieve_memory`, `remove_memory`) that route
+    through the Node bridge to `@openlines/nmnm-core`, record `"opencode"` source provenance, and
+    never create a missing store except on retain.
+  - [x] Phase 2: add shared `nmnm.jsonc` settings, adapter-owned `nmnm-opencode.json` pins, and
+    bounded transient index injection appended to every request with non-empty context, fail-safe
+    on any bridge or settings error, with nothing persisted to disk.
+  - [x] Phase 3: add the model-free `nmnm-memory` management CLI (`status`, `list`, `search`,
+    `show`, `pin`, `unpin`, soft-only `remove`) with project-first combined pagination and
+    `--source all|opencode`.
+  - [x] Phase 4: add `docs/OPENCODE_ADAPTER_MANUAL.md` and a package README; update the root
+    README, roadmap, and changelog; cover store routing, provenance, pins, budget, and the plugin
+    hooks with isolated-store tests.
 
 ## Not on the required path
 

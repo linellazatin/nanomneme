@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.0 - OpenCode adapter
+
+- Add `@openlines/nmnm-opencode`, a native OpenCode server-plugin adapter with parity to the Pi
+  and Claude Code adapters: the four `retain`/`recall`/`retrieve`/`remove` tools, adapter-owned
+  `nmnm-opencode.json` pins, and a model-free `nmnm-memory` CLI (soft-only `remove`,
+  project-first combined pagination, `--source all|opencode`). New retains record
+  `metadata.source: "opencode"`; only retain creates a store; removal stays soft.
+- OpenCode loads plugins under Bun (no `node:sqlite`), so each core call runs in a short-lived
+  spawned `node` bridge; the Bun-side plugin never imports the core. The CLI runs under Node.
+- Inject the bounded index via `experimental.chat.system.transform`, appended to the merged system
+  prompt per request (OpenCode rebuilds it each turn, so no cadence gating); fails safe on error.
+- Cover with docs, isolated-store/bridge/plugin tests, and a live configured-provider smoke against
+  OpenCode 1.18.31 confirming injection and the tool write path.
+
 ## 0.2.3 - Pi adapter memory browser enhancements
 
 - Replaced interactive Pi adapter memory browser with custom TUI menu: `Status`, `All`, `Project`, and `Global` tabs switch with left/right arrows.

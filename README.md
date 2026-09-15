@@ -16,7 +16,7 @@
 ### adapters
 [![nmnm-pi version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-pi?label=pi&logo=pi&color=ffffe0)](https://www.npmjs.com/package/@openlines/nmnm-pi)
 [![nmnm-claude version](https://img.shields.io/badge/claude-v0.1.2-orange?logo=claude)](https://github.com/linellazatin/nanomneme/tree/main/adapters/claude)
-[![nmnm-opencode version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-opencode?label=opencode&logo=opencode)](https://github.com/linellazatin/nanomneme/tree/main/adapters/opencode)
+[![nmnm-opencode version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-opencode?label=opencode&logo=opencode)](https://www.npmjs.com/package/@openlines/nmnm-opencode)
 
 </div>
 

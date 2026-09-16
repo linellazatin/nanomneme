@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Deterministic, model-free memory management entrypoint for the OpenCode adapter. Invoke
-// directly (e.g. `nmnm-memory status` after install, or `node adapters/opencode/bin/memory.js
+// directly (e.g. `nmnm-opencode status` after install, or `node adapters/opencode/bin/memory.js
 // status`). It imports nmnm-core through the shared helpers; no model, worker, or network is
 // involved. NMNM_PROJECT_DIR (or the OpenCode project directory env) selects the project store.
 import { opencodeGlobalDir } from '../src/context.js';

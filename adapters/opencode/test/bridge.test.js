@@ -17,15 +17,16 @@ test('Bun-loaded entry and client never import the core, SQLite, or jsonc', asyn
   const source = (file) => readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
   const indexSource = await source('index.js');
   const clientSource = await source('src/bridge-client.js');
+  const tuiSource = await source('tui.js');
   const forbidden = [
     /from ['"]@openlines\/nmnm-core['"]/,
     /from ['"]node:sqlite['"]/,
     /from ['"]jsonc-parser['"]/,
     /import\(['"]@openlines\/nmnm-core['"]\)/,
     /require\(['"]@openlines\/nmnm-core['"]\)/,
-    /from ['"]\.\/(?:src\/)?(?:operations|context|store)\.js['"]/,
+    /from ['"]\.\/(?:src\/)?(?:operations|context|store|cli|browse)\.js['"]/,
   ];
-  for (const text of [indexSource, clientSource]) {
+  for (const text of [indexSource, clientSource, tuiSource]) {
     for (const pattern of forbidden) {
       assert.doesNotMatch(text, pattern);
     }
@@ -57,6 +58,33 @@ test('the Node bridge builds the bounded index and reports reinjection', () => {
     assert.equal(result.total, 1);
     assert.match(result.context, /Indexed via bridge/);
     assert.deepEqual(result.reinjection, { enabled: false, every_n_prompts: 5 });
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('the Node bridge serves the TUI status, browse, and mutate ops', () => {
+  const project = temporaryDirectory('nmnm-opencode-bridge-browse-');
+  const home = temporaryDirectory('nmnm-opencode-bridge-browse-home-');
+  try {
+    const ctx = storeContext({ directory: project, home, platform: 'darwin' });
+    const retained = JSON.parse(runBridge({ op: 'tool', name: 'retain_memory', params: { content: 'browse via bridge' }, ctx }).text);
+    const status = runBridge({ op: 'status', ctx });
+    assert.equal(status.ok, true);
+    assert.match(status.status, /Nanomneme status/);
+    const page = runBridge({ op: 'browse', ctx, store: 'both', source: 'all', limit: 20, offset: 0 });
+    assert.equal(page.total, 1);
+    assert.equal(page.items[0].id, retained.id);
+    assert.equal(page.items[0].pinned, false);
+    const pinned = runBridge({ op: 'mutate', ctx, store: 'project', id: retained.id, mutation: 'pin' });
+    assert.equal(pinned.pinned, true);
+    const browsed = runBridge({ op: 'browse', ctx, store: 'project' });
+    assert.equal(browsed.items[0].pinned, true);
+    const detail = runBridge({ op: 'detail', ctx, store: 'project', id: retained.id });
+    assert.equal(detail.record.id, retained.id);
+    const removed = runBridge({ op: 'mutate', ctx, store: 'project', id: retained.id, mutation: 'remove' });
+    assert.equal(removed.removed, true);
   } finally {
     rmSync(project, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });

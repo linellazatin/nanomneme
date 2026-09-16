@@ -17,17 +17,21 @@
     },
     "./server": {
       "import": "./index.js"
+    },
+    "./tui": {
+      "import": "./tui.js"
     }
   },
   "files": [
     "index.js",
+    "tui.js",
     "bin",
     "src",
     "README.md",
     "LICENSE"
   ],
   "bin": {
-    "nmnm-memory": "./bin/memory.js"
+    "nmnm-opencode": "./bin/memory.js"
   },
   "dependencies": {
     "@opencode-ai/plugin": "1.18.15",

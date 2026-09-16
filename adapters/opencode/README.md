@@ -1,27 +1,30 @@
 # @openlines/nmnm-opencode
 
 OpenCode adapter for [nanomneme](../../README.md): a server plugin that gives OpenCode
-native, observable memory tools backed by the shared nanomneme SQLite store, plus bounded
-transient memory-index injection during the session. Memory is reusable across OpenCode,
-Pi, Claude Code, and other adapters; only the harness-facing surface differs.
+native, observable memory tools backed by the shared nanomneme SQLite store, bounded
+transient memory-index injection during the session, and a model-free TUI memory browser.
+Memory is reusable across OpenCode, Pi, Claude Code, and other adapters; only the
+harness-facing surface differs.
 
 ## What it provides
 
 - A native OpenCode **server plugin** (`index.js`) registering `retain_memory`,
   `recall_memory`, `retrieve_memory`, and `remove_memory` via the `@opencode-ai/plugin`
-  tool API, importing `@openlines/nmnm-core` directly. OpenCode loads plugins under Bun, which
-  has no `node:sqlite`, so each core call runs in a short-lived spawned `node` bridge
-  (`src/bridge.js`) rather than in the Bun host. No MCP server, daemon, or network. New retains
-  record `metadata.source` as `"opencode"`; ID-based patches preserve an existing source. Only
-  `retain_memory` creates a missing store; reads and soft removal never create one. Removal is
-  always soft; purge stays `nmnm`-CLI-only.
+  tool API. OpenCode loads plugins under Bun, which has no `node:sqlite`, so each core call
+  runs in a short-lived spawned `node` bridge (`src/bridge.js`) rather than in the Bun host.
+  No MCP server, daemon, or network. New retains record `metadata.source` as `"opencode"`;
+  ID-based patches preserve an existing source. Only `retain_memory` creates a missing store;
+  reads and soft removal never create one. Removal is always soft; purge stays `nmnm`-CLI-only.
 - **Bounded transient injection** through `experimental.chat.system.transform`: the project and
   global pin set and recent active memories (and optional autoretention guidance) are appended
   to the system prompt on every model request whose context is non-empty. OpenCode rebuilds the
   system prompt per request, so no cadence/compaction/mutation gating is needed and the
   `reinjection` setting stays inert. No context is ever written to disk.
-- A deterministic, model-free **management CLI** — `bin/memory.js` (`status`, `list`,
+- A deterministic, model-free **management CLI** — `nmnm-opencode` (`status`, `list`,
   `search`, `show`, `pin`, `unpin`, `remove`).
+- An optional model-free **TUI memory browser** (`tui.js`, registered via `tui.jsonc`) opened on
+  **ctrl+alt+m**: Status / All / Project / Global tabs, source cycling, pin/unpin, and confirmed
+  soft removal, all routed through the same Node bridge.
 
 ## Install
 
@@ -38,6 +41,13 @@ OpenCode config:
 ```
 
 OpenCode installs npm plugins (and their dependencies) via Bun at startup and caches them.
+To also enable the TUI memory browser, register the same package in the TUI config
+(`~/.config/opencode/tui.jsonc`), which resolves its `./tui` export:
+
+```jsonc
+{ "plugin": ["@openlines/nmnm-opencode"] }
+```
+
 For local development from this checkout, point the entry at the source instead:
 
 ```jsonc

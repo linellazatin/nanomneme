@@ -198,7 +198,7 @@ test('unknown commands return usage text and a non-ok result', () => {
   try {
     const { text, ok } = runCli({ argv: ['bogus'], ...f.ctx });
     assert.equal(ok, false);
-    assert.match(text, /Usage: nmnm-memory/);
+    assert.match(text, /Usage: nmnm-opencode/);
   } finally {
     cleanup(f);
   }

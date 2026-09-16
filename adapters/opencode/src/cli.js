@@ -21,7 +21,7 @@ const PREVIEW_LENGTH = 60;
 const STORES = ['project', 'global'];
 
 const USAGE = [
-  'Usage: nmnm-memory <command>',
+  'Usage: nmnm-opencode <command>',
   '  status                                   configuration and per-store totals',
   '  list [project|global] [limit] [offset] [--source all|opencode]',
   '  search <query> [project|global] [limit] [offset] [--source all|opencode]',
@@ -169,7 +169,7 @@ function formatShow(store, memory, pinned) {
   ].join('\n');
 }
 
-function status(ctx) {
+export function status(ctx) {
   const index = buildMemoryIndex({ cwd: ctx.cwd, home: ctx.home, globalDir: ctx.globalDir, platform: ctx.platform });
   const current = renderContext(index).length;
   const pins = pinSets(ctx);

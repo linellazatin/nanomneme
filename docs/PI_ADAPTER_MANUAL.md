@@ -83,7 +83,7 @@ comments or trailing commas.
 
 ### Complete settings template
 
-This is the complete supported `nmnm.jsonc` shape for v0.1.6. Copy it to either settings
+This is the complete supported `nmnm.jsonc` shape for v0.1.8. Copy it to either settings
 location above, then adjust the budget or opt in to autoretention. This template is the
 maintained place to add future adapter parameters.
 
@@ -212,7 +212,7 @@ not required.
 | Browser | In the Pi TUI, `/memory` and `/memory browse` open a custom menu with `Status`, `All`, `Project`, and `Global` tabs. Left/right selects tabs; up/down and `j`/`k` select controls and records. Status renders the shared read-only card. Store tabs contain search, source selection, records, paging, and Close. Text search uses FTS retrieval; changing search or source resets that tab’s pagination. Source `all` includes legacy records; `pi` matches `metadata.source: "pi"`. The selected row remains selected after tab changes, details, and pin/unpin; removal selects the nearest remaining row. Non-TUI UI modes retain the native dialog browser; non-UI modes should use explicit subcommands. |
 | Browser details | Selecting a row opens a native action dialog whose title contains full canonical content and fields, then offers exact-store pin/unpin, confirmed soft removal, or back. Closing it returns to the custom browser with the previous selection retained. |
 | List order | Unscoped list and browser `both` pages combine project entries before global entries; selected-store views read one store. |
-| List display | Rows include `[project]` or `[global]`; `*` after an ID means that exact `(store, id)` is pinned. Previews normalize whitespace, show 60 characters, and append `...` only when truncated. |
+| List display | Browser rows include `[project]` or `[global]`; `*` marks an exact `(store, id)` pin. They omit IDs; details show the selected record's ID. Previews normalize whitespace, show 60 characters, and append `...` only when truncated. |
 | List output | The notification reports `showing <n> of <total>` and is local command output, not a model request. |
 | Pin validation | An unscoped pin needs an active project memory. A global-only ID leaves pin files unchanged and reports `/memory pin global <id>`. Explicit scopes validate their selected store. |
 | Identity | UUID v4 collisions are unlikely, but explicit IDs and imports can duplicate IDs across stores; use `(store, id)`. |
@@ -228,7 +228,8 @@ not required.
 | `Injection pending` | `yes` means the next eligible agent start will rebuild and attempt transient context injection. Session start, compaction, refresh, cadence, and successful memory mutations can make it pending. |
 | `Periodic reinjection` | The effective periodic policy: `disabled` or the configured interval after which eligible prompts queue a rebuild. |
 | `Prompts since injection` | Eligible prompt count since the last successful injection while periodic reinjection is enabled. It resets after a successful injection. |
-| `Last` | The most recent successful transient-memory injection in this Pi session. `none` means no injection has succeeded. Otherwise it reports the trigger, timestamp, index-entry count, full injected character count, and whether autoretention guidance was included. It is not the last database write or browser action. |
+| `Last` | The most recent successful transient-memory injection in this Pi session. `none` means no injection has succeeded. Otherwise it reports the trigger, timestamp, index-entry count, and full injected character count. It is not the last database write or browser action. |
+| `Autoretention` | Whether effective autoretention guidance is enabled for the current index. |
 | `Pins` | Configured project and global pin counts, including pins whose targets are currently unresolved. |
 | `Index` | Effective character budget, the full current next-injection payload size (including its separator when both sections exist), and unresolved pin count. The card does not expose payload content. |
 | `Error` | The latest context-build or status-read error recorded in this session, with its timestamp; `none` means no error is currently recorded. A successful injection clears it. |

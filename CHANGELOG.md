@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.1 - Pi adapter browser UX updates
+
+- `Status` separates effective `autoretention` from last-injection metadata.
+- Omit IDs from Pi browser list rows; selected-record details retain the canonical ID.
+
 ## 0.3.0 - OpenCode adapter
 
 - Add `@openlines/nmnm-opencode` (`0.1.0`) with the four memory tools, adapter-owned pins, and

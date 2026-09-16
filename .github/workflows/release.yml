@@ -25,7 +25,7 @@ jobs:
           test "$GITHUB_REF_NAME" = "v$version"
       - run: npm test
       - run: git diff --check
-      - run: npm pack --dry-run --workspace @openlines/nmnm-core --workspace @openlines/nmnm-cli --workspace @openlines/nmnm-pi
+      - run: npm pack --dry-run --workspace @openlines/nmnm-core --workspace @openlines/nmnm-cli --workspace @openlines/nmnm-pi --workspace @openlines/nmnm-opencode
 
   publish:
     needs: validate
@@ -67,6 +67,14 @@ jobs:
           if npm view "@openlines/nmnm-cli@$version" version >/dev/null 2>error.log; then exit 0; fi
           if ! grep -q 'E404' error.log; then cat error.log; exit 1; fi
           npm publish --workspace @openlines/nmnm-cli --access public --provenance
+      - name: Publish OpenCode adapter when this version is new
+        env:
+          NODE_AUTH_TOKEN: ''
+        run: |
+          version=$(node -p "require('./adapters/opencode/package.json').version")
+          if npm view "@openlines/nmnm-opencode@$version" version >/dev/null 2>error.log; then exit 0; fi
+          if ! grep -q 'E404' error.log; then cat error.log; exit 1; fi
+          npm publish --workspace @openlines/nmnm-opencode --access public --provenance
       - name: Extract changelog for this version
         id: changelog
         run: |

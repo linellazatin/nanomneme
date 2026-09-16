@@ -2,17 +2,16 @@
 
 ## 0.3.0 - OpenCode adapter
 
-- Add `@openlines/nmnm-opencode`, a native OpenCode server-plugin adapter with parity to the Pi
-  and Claude Code adapters: the four `retain`/`recall`/`retrieve`/`remove` tools, adapter-owned
-  `nmnm-opencode.json` pins, and a model-free `nmnm-memory` CLI (soft-only `remove`,
-  project-first combined pagination, `--source all|opencode`). New retains record
-  `metadata.source: "opencode"`; only retain creates a store; removal stays soft.
-- OpenCode loads plugins under Bun (no `node:sqlite`), so each core call runs in a short-lived
-  spawned `node` bridge; the Bun-side plugin never imports the core. The CLI runs under Node.
-- Inject the bounded index via `experimental.chat.system.transform`, appended to the merged system
-  prompt per request (OpenCode rebuilds it each turn, so no cadence gating); fails safe on error.
-- Cover with docs, isolated-store/bridge/plugin tests, and a live configured-provider smoke against
-  OpenCode 1.18.31 confirming injection and the tool write path.
+- Add `@openlines/nmnm-opencode` (`0.1.0`) with the four memory tools, adapter-owned pins, and
+  the model-free `nmnm-opencode` CLI. New records carry `metadata.source: "opencode"`; reads do
+  not create stores and removal is soft-only.
+- Support Bun-hosted plugins through a short-lived Node bridge; inject the bounded memory index
+  per request via `experimental.chat.system.transform`, failing safe on errors.
+- Add the optional model-free TUI browser (`tui.js`, `tui.jsonc`, **ctrl+alt+m**) with
+  Status/All/Project/Global tabs, source filtering, pin/unpin, confirmed soft removal, and
+  project/global browsing. Detail rows show Tags, Namespace, Kind, Importance, and Updated;
+  Back stays in-browser and restores the prior list selection.
+- Document and test the adapter, bridge, CLI, tools, TUI, and OpenCode 1.18.31 provider smoke.
 
 ## 0.2.3 - Pi adapter memory browser enhancements
 

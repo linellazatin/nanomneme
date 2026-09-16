@@ -11,7 +11,7 @@ when they preserve that model.
 - `@openlines/nmnm-cli`: 0.1.0 (only bump version if modified/updated)
 - `@openlines/nmnm-pi`: 0.1.7 (published Pi coding agent adapter; only bump version if modified/updated; started 0.1.0)
 - `nmnm-claude`: 0.1.2 (claude code adapter; only bump version if modified/updated; started 0.1.0)
-- `@openlines/nmnm-opencode`: 0.1.0 (OpenCode server-plugin adapter; only bump version if modified/updated; started 0.1.0)
+- `@openlines/nmnm-opencode`: 0.1.0 (OpenCode server-plugin adapter + TUI memory browser; first release)
 - `nmnm-codex*`: 0.1.0 (Git-first Codex plugin; only bump version if modified/updated; started 0.1.0)
 
 > `* upcoming feature developments`
@@ -297,12 +297,19 @@ native continuity or measured evidence that Pi's checkpoint loses required state
   - [x] Phase 2: add shared `nmnm.jsonc` settings, adapter-owned `nmnm-opencode.json` pins, and
     bounded transient index injection appended to every request with non-empty context, fail-safe
     on any bridge or settings error, with nothing persisted to disk.
-  - [x] Phase 3: add the model-free `nmnm-memory` management CLI (`status`, `list`, `search`,
+  - [x] Phase 3: add the model-free `nmnm-opencode` management CLI (`status`, `list`, `search`,
     `show`, `pin`, `unpin`, soft-only `remove`) with project-first combined pagination and
     `--source all|opencode`.
   - [x] Phase 4: add `docs/OPENCODE_ADAPTER_MANUAL.md` and a package README; update the root
     README, roadmap, and changelog; cover store routing, provenance, pins, budget, and the plugin
     hooks with isolated-store tests.
+  - [x] Phase 5: add a model-free TUI memory browser (`tui.js`, exported `./tui`, registered via
+    `tui.jsonc`, opened on ctrl+alt+m) mirroring the Pi `/memory` browser: Status/All/Project/
+    Global tabs, `all → opencode` source cycling, pinned-row markers, and per-memory view /
+    pin / unpin / confirmed soft-remove, plus `xlarge` width, a one-row-per-line detail view,
+    in-browser Back navigation, and list-highlight restore. It runs under the same Bun host, so
+    it reuses the Node bridge (`status`/`browse`/`detail`/`mutate` ops in `src/browse.js`) and
+    never imports the core; covered by isolated TUI-mock, bridge, and source-graph-guard tests.
 
 ## Not on the required path
 

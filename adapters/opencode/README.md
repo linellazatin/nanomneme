@@ -1,6 +1,6 @@
 # @openlines/nmnm-opencode
 
-OpenCode adapter for [nanomneme](../../README.md): a server plugin that gives OpenCode
+OpenCode adapter for [nanomneme](https://github.com/linellazatin/nanomneme): a server plugin that gives OpenCode
 native, observable memory tools backed by the shared nanomneme SQLite store, bounded
 transient memory-index injection during the session, and a model-free TUI memory browser.
 Memory is reusable across OpenCode, Pi, Claude Code, and other adapters; only the
@@ -41,17 +41,29 @@ OpenCode config:
 ```
 
 OpenCode installs npm plugins (and their dependencies) via Bun at startup and caches them.
-To also enable the TUI memory browser, register the same package in the TUI config
-(`~/.config/opencode/tui.jsonc`), which resolves its `./tui` export:
+
+### Enable the TUI browser
+
+The TUI browser is a separate plugin entry from the server plugin. Register the same package in
+`~/.config/opencode/tui.jsonc`; OpenCode resolves the package's `./tui` export:
 
 ```jsonc
 { "plugin": ["@openlines/nmnm-opencode"] }
 ```
 
+Restart OpenCode, then press **ctrl+alt+m** to open the model-free browser. It provides Status,
+All, Project, and Global tabs plus source filtering, pin/unpin, and confirmed soft removal.
+
 For local development from this checkout, point the entry at the source instead:
 
 ```jsonc
 { "plugin": ["file:///absolute/path/to/nanomneme/adapters/opencode/index.js"] }
+```
+
+Register the TUI source separately in `~/.config/opencode/tui.jsonc`:
+
+```jsonc
+{ "plugin": ["file:///absolute/path/to/nanomneme/adapters/opencode/tui.js"] }
 ```
 
 The four memory tools then appear natively to the agent. See the

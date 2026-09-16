@@ -1,10 +1,11 @@
 # OpenCode Adapter Manual
 
 The OpenCode adapter (`@openlines/nmnm-opencode`) is a native OpenCode **server plugin**
-built on `@opencode-ai/plugin`. It gives the OpenCode agent the same four memory tools as the
-Pi and Claude Code adapters, injects a bounded transient memory index into every model request,
-keeps adapter-owned pins, and ships a model-free management CLI. It adds no MCP server,
-daemon, custom TUI, direct SQLite write, or core/CLI behavior change.
+built on `@opencode-ai/plugin`, plus an optional **TUI plugin** browser. It gives the OpenCode
+agent the same four memory tools as the Pi and Claude Code adapters, injects a bounded transient
+memory index into every model request, keeps adapter-owned pins, and offers two model-free
+management surfaces: a deterministic CLI and an interactive TUI memory browser. It adds no MCP
+server, daemon, direct SQLite write, or core/CLI behavior change.
 
 Runtime code and tests are authoritative if this manual disagrees with behavior.
 
@@ -33,6 +34,11 @@ experimental warning goes to stderr and never pollutes the result. This is a sta
 process-per-call, not a daemon or network service, so the "thin core client, no direct SQLite"
 rule holds: only `src/*` under Node ever touches `nmnm-core`.
 
+The TUI browser (`tui.js`, exported as `./tui`) is a separate OpenCode **TUI plugin** module that
+runs under the same Bun host, so it reuses the identical Node bridge (`status`/`browse`/`detail`/
+`mutate` ops) rather than importing the core. It only drives OpenCode's native dialog and keymap
+API and never performs an LLM turn.
+
 ## Install
 
 ### Option A: npm plugin
@@ -50,6 +56,19 @@ Bun at startup and caches them under `~/.cache/opencode/node_modules`.
 
 Pin a version for reproducibility: `"@openlines/nmnm-opencode@0.1.0"`.
 
+To also enable the TUI memory browser, register the same package in the **TUI** config; OpenCode
+resolves its `./tui` export:
+
+```jsonc
+// ~/.config/opencode/tui.jsonc
+{ "plugin": ["@openlines/nmnm-opencode"] }
+```
+
+Restart OpenCode after saving the TUI config, then press **ctrl+alt+m**. The browser is model-free
+and provides Status, All, Project, and Global tabs with source filtering, pin/unpin, and confirmed
+soft removal. The server plugin and TUI plugin are separate registrations: `opencode.json` enables
+the memory tools and `tui.jsonc` enables the browser.
+
 ### Option B: local development loading
 
 From this checkout, point the entry at the source. Plugins in a project `opencode.json`, or
@@ -57,6 +76,14 @@ files under `.opencode/plugins/`, are discovered automatically.
 
 ```jsonc
 { "plugin": ["file:///absolute/path/to/nanomneme/adapters/opencode/index.js"] }
+```
+
+For the TUI browser from a checkout, point the TUI config's `plugin` at the sibling
+`tui.js` file path instead:
+
+```jsonc
+// ~/.config/opencode/tui.jsonc
+{ "plugin": ["file:///absolute/path/to/nanomneme/adapters/opencode/tui.js"] }
 ```
 
 Run `npm install` at the monorepo root first so `@openlines/nmnm-core` resolves for the Node
@@ -108,18 +135,18 @@ block a chat. An empty index plus no guidance injects nothing.
 ## Memory management CLI
 
 A deterministic, model-free command backs human management. After an npm install it is on the
-`nmnm-memory` bin; from a checkout run the script directly. `NMNM_PROJECT_DIR` selects the
+`nmnm-opencode` bin; from a checkout run the script directly. `NMNM_PROJECT_DIR` selects the
 project store (otherwise the current directory). It runs under Node and uses `nmnm-core`
 directly (no bridge).
 
 ```sh
-nmnm-memory status
-nmnm-memory list [project|global] [limit] [offset] [--source all|opencode]
-nmnm-memory search <query> [project|global] [limit] [offset] [--source all|opencode]
-nmnm-memory show [project|global] <id>
-nmnm-memory pin [project|global] <id>      # defaults to project
-nmnm-memory unpin [project|global] <id>
-nmnm-memory remove [project|global] <id>   # reversible soft removal
+nmnm-opencode status
+nmnm-opencode list [project|global] [limit] [offset] [--source all|opencode]
+nmnm-opencode search <query> [project|global] [limit] [offset] [--source all|opencode]
+nmnm-opencode show [project|global] <id>
+nmnm-opencode pin [project|global] <id>      # defaults to project
+nmnm-opencode unpin [project|global] <id>
+nmnm-opencode remove [project|global] <id>   # reversible soft removal
 ```
 
 `list`/`search` with no store compose a project-then-global page (combined pagination, store
@@ -127,8 +154,37 @@ labels, `*` pin markers, compact previews) without comparing BM25 scores across 
 Unqualified `remove`/`show`/`pin` resolve a single match or refuse on ambiguity. Purge is not
 exposed; it stays `nmnm remove --purge`.
 
-There is no model-free OpenCode slash command in this release; the CLI is the management
-surface.
+There is no model-free OpenCode slash command; the CLI and the TUI browser below are the
+management surfaces.
+
+## TUI memory browser
+
+The optional TUI plugin (`tui.js`, registered via `tui.jsonc` as shown under Install) opens a
+model-free, dialog-driven browser on **ctrl+alt+m**, mirroring the Pi adapter's `/memory` browser
+and the openclaude-memory pattern. No LLM turn is involved.
+
+- Tabs: **Status**, **All** (project + global), **Project**, **Global**; `‹ / ›` nav rows page
+  between them. The source filter cycles **all → opencode** from a `Source:` row (the same
+  `--source` semantics as the CLI). Pinned rows are prefixed `* `.
+- A row opens a memory action menu: **View detail** (`Tags`, `Namespace`, `Kind`, `Importance`,
+  and `Updated` rows), **Pin**/**Unpin**, **Remove (soft)** (with a confirm), and **Back to list**.
+  Content is intentionally omitted because it is already visible in the memory list.
+  Removal stays soft and reversible; there is no purge path.
+- **Back** returns to the previous screen inside the browser (it never closes it), and returning
+  to a list restores the highlight on the record you last opened.
+- The detail view uses explicit single-line `Tags`, `Namespace`, `Kind`, `Importance`, and
+  `Updated` rows. The browser opens at the widest preset (`xlarge`) to reduce clipping;
+  OpenCode exposes only `medium`/`large`/`xlarge` presets, not a percentage or pixel width. The
+  non-list screens pass `renderFilter: false` to hide the dialog's search box (OpenCode's own
+  internal dialogs use this flag; `skipFilter` alone still shows the input).
+- Combined All/Global listing uses the same project-then-global pagination as the CLI and never
+  compares BM25 scores across databases.
+
+Because the TUI host runs under Bun (no `node:sqlite`), every read and mutation is dispatched to
+the same short-lived `node` bridge the server plugin uses; the browser module itself imports only
+`src/bridge-client.js` and OpenCode's `api.ui`/`api.keymap`. This is why `ctrl+alt+m` assumes a
+single active memory browser: bind it to only one of the Pi, Claude, or OpenCode adapters at a
+time.
 
 ## Configuration
 
@@ -181,7 +237,7 @@ JSON array of memory IDs, adapter-owned.
 
 Pinned memories are injected first, in store order (project then global). Missing, expired, or
 soft-removed pin targets remain configured and are counted as unresolved; they are not silently
-rewritten. Manage pins with `nmnm-memory pin`/`unpin` or by editing the files.
+rewritten. Manage pins with `nmnm-opencode pin`/`unpin` or by editing the files.
 
 ## Safety boundaries
 
@@ -210,6 +266,7 @@ finalizing the design:
 | `experimental.chat.system.transform` reaches the model | **Verified live** — appended to the last merged system entry; a seeded project memory was echoed by the model, and `--pure` correctly reported it missing |
 | Native tool write path | **Verified live** — the model called `retain_memory`; the record was written through the Node bridge with `metadata.source: "opencode"` |
 | System prompt persistence across requests | OpenCode rebuilds per request, so injection is per-request; no cadence/mutation/compaction gating is required and `reinjection` stays inert |
+| TUI plugin host | OpenCode loads the `./tui` export under the same Bun host (`tui.jsonc`); a TUI module default-exports `{ id, tui }` and uses `api.keymap.registerLayer` + `api.ui.dialog` |
 
 ## Manual smoke check
 
@@ -220,6 +277,18 @@ Confirmed against OpenCode 1.18.31 with a configured provider:
 2. A turn instructed to call `retain_memory` did so, and reading the project store confirmed a
    new record with `metadata.source: "opencode"` in the project store.
 3. Reads and soft removal left a missing store absent.
+
+Still to confirm interactively (requires a live TUI session):
+
+4. With `tui.jsonc` registering the package, ctrl+alt+m opens the Status tab at `xlarge` width;
+   All/Project/Global tabs list seeded memories, the source row cycles all → opencode, and the
+   action menu pins, unpins, and soft-removes (with a confirm) — with the store reflecting each
+    change. **View detail** shows the five selected fields without repeating content from the list,
+    then returns to the menu on Back without closing the browser; returning to a list re-highlights
+    the last-opened record.
+   Note: OpenCode exposes only `medium`/`large`/`xlarge` dialog presets (no percentage width), and
+   the list-filter dialog does not surface raw left/right arrow keys, so tab changes stay on the
+   `‹ / ›` nav rows.
 
 ```sh
 npm test

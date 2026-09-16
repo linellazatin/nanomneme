@@ -104,7 +104,7 @@ function statusLine(label, value) {
 }
 
 function browserRow({ store, memory }, pinned) {
-  return `[${store}]${pinned ? ' *' : ''} ${memory.id} ${preview(memory.content)}`;
+  return `[${store}]${pinned ? ' *' : ''} ${preview(memory.content)}`;
 }
 
 function browserDetails(store, memory, pinned) {
@@ -439,7 +439,7 @@ export function registerPiMemory(pi, options = {}) {
     }
     const policy = memoryIndex?.reinjection ?? periodicPolicy;
     const last = lastInjection
-      ? `${lastInjection.reason} at ${lastInjection.injectedAt} · ${lastInjection.indexCount} ${lastInjection.indexCount === 1 ? 'entry' : 'entries'} · ${lastInjection.characterCount} characters · autoretention ${lastInjection.autoretentionEnabled ? 'enabled' : 'disabled'}`
+      ? `${lastInjection.reason} at ${lastInjection.injectedAt} · ${lastInjection.indexCount} ${lastInjection.indexCount === 1 ? 'entry' : 'entries'} · ${lastInjection.characterCount} characters`
       : 'none';
     return [
       'Nanomneme status',
@@ -447,6 +447,7 @@ export function registerPiMemory(pi, options = {}) {
       statusLine('Periodic reinjection', policy.enabled ? `every ${policy.every_n_prompts} prompts` : 'disabled'),
       statusLine('Prompts since injection', promptCountSinceInjection),
       statusLine('Last', last),
+      statusLine('Autoretention', memoryIndex ? (memoryIndex.autoretention ? 'enabled' : 'disabled') : 'unavailable'),
       statusLine('Pins', `project: ${projectPins?.length ?? 'unavailable'} · global: ${globalPins?.length ?? 'unavailable'}`),
       statusLine('Index', `budget: ${memoryIndex?.budget ?? 'unavailable'} · current: ${memoryIndex ? memoryIndexContent(memoryIndex).length : 'unavailable'} · unresolved: ${memoryIndex?.unresolved ?? 'unavailable'}`),
       statusLine('Error', lastError ? `${lastError.message} at ${lastError.occurredAt}` : 'none'),
@@ -484,7 +485,6 @@ export function registerPiMemory(pi, options = {}) {
         characterCount: content.length,
         indexCount: memoryIndex.total,
         unresolvedPins: memoryIndex.unresolved,
-        autoretentionEnabled: Boolean(memoryIndex.autoretention),
       };
       return { systemPrompt: `${event.systemPrompt}\n\n${content}` };
     } catch (error) {

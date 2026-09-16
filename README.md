@@ -67,9 +67,9 @@ Nanomneme helps agents remember without pretending to be human memory.
 - **Bounded automatic context:** transient autoretention guidance and the first-prompt memory index share one configurable character budget; pinned entries come first, with recent active fallback, store and recorded-source labels, unresolved-pin reporting, and refresh after successful compaction or memory mutations.
 - **Opt-in autoretention:** project/global JSONC rules guide the active model's `retain_memory` calls without a nested model, worker, or direct adapter write.
 - **Adapter-owned configuration:** optional JSONC settings and separate JSON pin files, with project and global locations.
-- **Direct user controls:** `/memory refresh`, `status`, `list`, `remove`, `pin`, and `unpin` without model involvement; `status` reports the effective index budget, current full-payload character count, and transient injection lifecycle metadata without exposing memory content.
+- **Direct user controls:** `/memory refresh`, `status`, `list`, `remove`, `pin`, and `unpin` without model involvement; `status` reports injection state, autoretention, the effective index budget, current full-payload character count, and lifecycle metadata without exposing memory content.
 - **Native memory browser:** `/memory` and `/memory browse` show the shared status card before opening; record details stay inside a native action dialog, so the card remains visible on return. Search and store controls stay above each record page.
-- **Readable list UX:** project-first combined listing, pagination, `[project]` and `[global]` labels, exact-store `*` pin markers, and 60-character previews.
+- **Readable list UX:** project-first combined listing, pagination, `[project]` and `[global]` labels, exact-store `*` pin markers, and 60-character previews; browser rows omit IDs, which remain in details.
 - **Safety boundaries:** validated pin targets, ambiguity-safe removal, soft-only slash removal, non-creating native reads, and durable unresolved pins.
 
 #### Claude Code

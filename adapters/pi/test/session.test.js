@@ -197,7 +197,8 @@ test('memory status reports the full next-injection character count without expo
       'Injection pending         no',
       'Periodic reinjection      disabled',
       'Prompts since injection   0',
-      `Last                      session_start at .+ · 1 entry · ${expectedPayload.length} characters · autoretention enabled`,
+      `Last                      session_start at .+ · 1 entry · ${expectedPayload.length} characters`,
+      'Autoretention             enabled',
       'Pins                      project: 0 · global: 0',
       `Index                     budget: 2000 · current: ${expectedPayload.length} · unresolved: 0`,
       'Error                     none$',
@@ -373,7 +374,9 @@ test('memory browser uses left and right arrows to switch between status and sto
           component.handleInput('\x1b[C');
           component.handleInput('\x1b[C');
           component.handleInput('\x1b[C');
-          assert.match(component.render(120).join('\n'), new RegExp(`\\[global\\].*${globalMemory.id}`));
+          const rendered = component.render(120).join('\n');
+          assert.match(rendered, /\[global\] Global tab browser memory/);
+          assert.doesNotMatch(rendered, new RegExp(globalMemory.id));
           component.handleInput('\x1b[D');
           component.handleInput('\x1b[D');
           component.handleInput('\x1b[D');
@@ -400,7 +403,7 @@ test('memory browser keeps the nearest row selected after removing the current r
     runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'First focus browser memory' } });
     const removed = runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Removed focus browser memory' } });
     runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Later focus browser memory' } });
-    let nearest;
+    let nearestContent;
     const scripted = customUi({
       selections: ['Remove'],
       confirmations: [true],
@@ -410,13 +413,13 @@ test('memory browser keeps the nearest row selected after removing the current r
           component.handleInput('\x1b[C');
           const items = component.items();
           const index = items.findIndex((item) => item.item?.memory.id === removed.id);
-          nearest = (items.slice(index + 1).find((item) => item.item) ?? items.slice(0, index).findLast((item) => item.item)).item.memory.id;
+          nearestContent = (items.slice(index + 1).find((item) => item.item) ?? items.slice(0, index).findLast((item) => item.item)).item.memory.content;
           for (let step = 0; step < index; step += 1) component.handleInput('\x1b[B');
           component.handleInput('\r');
         },
         (component) => {
           const rendered = component.render(120).join('\n');
-          assert.match(rendered, new RegExp(`> \\[project\\].*${nearest}`));
+          assert.match(rendered, new RegExp(`> \\[project\\].*${nearestContent}`));
           assert.doesNotMatch(rendered, new RegExp(removed.id));
           component.handleInput('\x1b');
         },
@@ -488,7 +491,7 @@ test('memory browser shows record details in the native action dialog', async ()
     const commands = new Map();
     const retained = runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Browser detail should not persist above the browser' } });
     const scripted = scriptedUi({
-      selections: [(options) => options.find((option) => option.includes(retained.id)), 'Back', undefined],
+      selections: [(options) => options.find((option) => option.includes('Browser detail should not persist above the browser')), 'Back', undefined],
     });
     registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, { home, platform: 'darwin' });
 
@@ -521,7 +524,7 @@ test('memory browser searches both stores and opens the selected record', async 
     const scripted = scriptedUi({
       selections: [
         'Search',
-        (options) => options.find((option) => option.includes(retained.id)),
+        (options) => options.find((option) => option.includes('Needle browser memory')),
         'Back',
         undefined,
       ],
@@ -532,10 +535,11 @@ test('memory browser searches both stores and opens the selected record', async 
     await commands.get('memory').handler('', { cwd: project, hasUI: true, ui: scripted.ui });
 
     const searchPage = scripted.selectCalls.find(({ title }) => title.includes('search: Needle'));
-    assert.ok(searchPage.options.some((option) => option.includes(retained.id)));
-    assert.ok(searchPage.options.some((option) => option.includes(globalMatch.id)));
-    assert.ok(searchPage.options.every((option) => !option.includes(unrelatedProject.id)));
-    assert.ok(searchPage.options.every((option) => !option.includes(unrelatedGlobal.id)));
+    assert.ok(searchPage.options.some((option) => option.includes('Needle browser memory')));
+    assert.ok(searchPage.options.some((option) => option.includes('Global needle browser memory')));
+    assert.ok(searchPage.options.every((option) => !option.includes('Unrelated project browser memory')));
+    assert.ok(searchPage.options.every((option) => !option.includes('Unrelated global browser memory')));
+    assert.ok(searchPage.options.every((option) => !option.includes(retained.id) && !option.includes(globalMatch.id)));
     const detailDialog = scripted.selectCalls.find(({ title }) => title.includes('Needle browser memory'));
     assert.ok(detailDialog);
     assert.match(detailDialog.title, /browser-test/);
@@ -605,7 +609,7 @@ test('memory browser switches to the selected store', async () => {
       selections: [
         'Store: both',
         'Global',
-        (options) => options.find((option) => option.includes(globalMemory.id)),
+        (options) => options.find((option) => option.includes('Global browser memory')),
         'Back',
         undefined,
       ],
@@ -616,8 +620,9 @@ test('memory browser switches to the selected store', async () => {
 
     const globalPage = scripted.selectCalls.find(({ title }) => title.includes('[global]') && title.includes('showing'));
     assert.ok(globalPage);
-    assert.ok(globalPage.options.some((option) => option.includes(globalMemory.id)));
-    assert.ok(globalPage.options.every((option) => !option.includes(projectMemory.id)));
+    assert.ok(globalPage.options.some((option) => option.includes('Global browser memory')));
+    assert.ok(globalPage.options.every((option) => !option.includes('Project browser memory')));
+    assert.ok(globalPage.options.every((option) => !option.includes(globalMemory.id) && !option.includes(projectMemory.id)));
   } finally {
     rmSync(project, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });
@@ -638,8 +643,9 @@ test('memory browser switches to Pi source only', async () => {
 
     const sourcePage = scripted.selectCalls.find(({ title }) => title.includes('source: pi'));
     assert.ok(sourcePage);
-    assert.ok(sourcePage.options.some((option) => option.includes(pi.id)));
-    assert.ok(sourcePage.options.every((option) => !option.includes(claude.id)));
+    assert.ok(sourcePage.options.some((option) => option.includes('Pi source browser memory')));
+    assert.ok(sourcePage.options.every((option) => !option.includes('Claude source browser memory')));
+    assert.ok(sourcePage.options.every((option) => !option.includes(pi.id) && !option.includes(claude.id)));
   } finally {
     rmSync(project, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });
@@ -675,7 +681,7 @@ test('memory browser pins and unpins the exact selected store', async () => {
   try {
     const commands = new Map();
     const retained = runMemory({ cwd: project, home, platform: 'darwin', store: 'global', operation: 'retain', input: { content: 'Global browser pin' } });
-    const chooseMemory = (options) => options.find((option) => option.includes(retained.id));
+    const chooseMemory = (options) => options.find((option) => option.includes('Global browser pin'));
     const scripted = scriptedUi({ selections: [chooseMemory, 'Pin', chooseMemory, 'Unpin', undefined] });
     registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, { home, platform: 'darwin' });
 
@@ -697,7 +703,7 @@ test('memory browser cancellation leaves the selected memory active', async () =
     const commands = new Map();
     const retained = runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Do not remove browser memory' } });
     const scripted = scriptedUi({
-      selections: [(options) => options.find((option) => option.includes(retained.id)), 'Remove', undefined],
+      selections: [(options) => options.find((option) => option.includes('Do not remove browser memory')), 'Remove', undefined],
       confirmations: [false],
     });
     registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, { home, platform: 'darwin' });
@@ -721,7 +727,7 @@ test('memory browser confirms soft removal and preserves its pin', async () => {
     const pinFile = pinsPath({ cwd: project, home, store: 'project' });
     writePins(pinFile, [retained.id]);
     const scripted = scriptedUi({
-      selections: [(options) => options.find((option) => option.includes(retained.id)), 'Remove', undefined],
+      selections: [(options) => options.find((option) => option.includes('Confirmed browser removal')), 'Remove', undefined],
       confirmations: [true],
     });
     registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, { home, platform: 'darwin' });
@@ -745,7 +751,7 @@ test('memory browser refuses to mutate a record that became inactive', async () 
     const retained = runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Disappearing browser memory' } });
     const scripted = scriptedUi({
       selections: [
-        (options) => options.find((option) => option.includes(retained.id)),
+        (options) => options.find((option) => option.includes('Disappearing browser memory')),
         () => {
           runMemory({ cwd: project, store: 'project', operation: 'remove', input: { id: retained.id, mode: 'soft' } });
           return 'Pin';

@@ -16,6 +16,7 @@
 ### adapters
 [![nmnm-pi version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-pi?label=pi&logo=pi&color=ffffe0)](https://www.npmjs.com/package/@openlines/nmnm-pi)
 [![nmnm-claude version](https://img.shields.io/badge/claude-v0.1.2-orange?logo=claude)](https://github.com/linellazatin/nanomneme/tree/main/adapters/claude)
+[![nmnm-opencode version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-opencode?label=opencode&logo=opencode)](https://www.npmjs.com/package/@openlines/nmnm-opencode)
 
 </div>
 
@@ -42,7 +43,7 @@ Nanomneme helps agents remember without pretending to be human memory.
 ### Core memory handler
 
 - **Local and user-owned:** no required LLM calls, embeddings, vector database, daemon, ORM, or network service; operations are local and deterministic, SQLite is the source of truth, and JSONL portability preserves explicit project/global boundaries.
-- **Harness-agnostic foundation:** one shared memory contract supports Pi, Claude Code, OpenCode (soon), and future thin adapters.
+- **Harness-agnostic foundation:** one shared memory contract supports Pi, Claude Code, OpenCode, and future thin adapters.
 - **4Rs lifecycle:** retain, recall, retrieve, and remove; retrieval can filter recorded harness sources; soft removal is reversible and purge is explicit.
 - **Local SQLite storage:** transactional canonical records with derived tags and FTS5 indexes.
 - **Canonical validation:** UUID v4 IDs, UTC timestamps, supported kinds and scopes, kebab-case namespaces and tags, and JSON metadata.
@@ -79,6 +80,14 @@ Nanomneme helps agents remember without pretending to be human memory.
 - **Model guidance:** a `memory-guide` Skill (`/nanomneme:memory-guide`) teaches the 4Rs, project-versus-global scope, and safe capture.
 - **Model-free management command:** `bin/memory.js` (`status`, `list`, `search`, `show`, `pin`, `unpin`, `remove`) reuses the shared store/context helpers; `list` and `search` accept `--source all|claude-code`. A `/nanomneme:memory` slash command embeds it and relays output verbatim, or invoke the CLI with `!` for a fully model-free path.
 
+#### OpenCode
+
+- **Native plugin memory tools:** an OpenCode server plugin on `@opencode-ai/plugin` registers retain, recall, retrieve, and remove backed by `nmnm-core` with no MCP server, daemon, network, or CLI parsing. Because OpenCode loads plugins under Bun (no `node:sqlite`), each core call runs in a short-lived spawned `node` bridge. `retain_memory` records `"opencode"` source provenance on new entries and is the only operation that creates a missing store; `remove_memory` is soft-only.
+- **Bounded transient injection:** `experimental.chat.system.transform` appends the project/global index and optional autoretention guidance to the merged system prompt on every request with non-empty context (OpenCode rebuilds the prompt per request, so no cadence gating is needed). No context is written to disk.
+- **Shared and adapter-owned config:** project `nmnm.jsonc` settings shared with Pi and Claude, adapter-owned `nmnm-opencode.json` pins, and global settings under `${XDG_CONFIG_HOME:-~/.config}/opencode`.
+- **Model-free management CLI:** `nmnm-opencode` (`status`, `list`, `search`, `show`, `pin`, `unpin`, `remove`) with project-first combined pagination and `--source all|opencode`; purge stays CLI-only.
+- **Model-free TUI memory browser:** an optional `tui.js` plugin (registered via `tui.jsonc`) opened on **ctrl+alt+m** with Status/All/Project/Global tabs, source cycling, and pin/unpin/soft-remove, routed through the same Node bridge.
+
 ## Architecture
 
 ```text
@@ -103,9 +112,11 @@ are thin core clients: they never write SQLite directly or parse CLI output.
 | `packages/nmnm-cli` | Publishable `@openlines/nmnm-cli` package providing the `nmnm` CLI. |
 | `adapters/pi` | Publishable `@openlines/nmnm-pi` Pi package, including a model-free memory browser. |
 | `adapters/claude` | Private Git-first Claude Code plugin: native MCP memory tools plus session-start index injection. |
+| `adapters/opencode` | Publishable `@openlines/nmnm-opencode` OpenCode server plugin: native memory tools plus bounded transient index injection. |
 
 Use Node.js 22.13+ with built-in `node:sqlite` and FTS5. The Pi adapter is published as
-`@openlines/nmnm-pi`; OpenCode is not included in this release.
+`@openlines/nmnm-pi` and the OpenCode adapter as `@openlines/nmnm-opencode`; Claude Code is a
+separately installed Git-first plugin.
 
 ## Quick start
 
@@ -155,6 +166,8 @@ Pi manual for the full lifecycle.
 | [Pi Adapter Manual](docs/PI_ADAPTER_MANUAL.md) | Pi installation, tools, pins, configuration, and automatic index behavior. |
 | [Claude quick start](adapters/claude/README.md) | Package-local Claude Code plugin entry point. |
 | [Claude Adapter Manual](docs/CLAUDE_ADAPTER_MANUAL.md) | Claude Code plugin install, MCP tools, hooks, the `/nanomneme:memory` management command, pins, and configuration. |
+| [OpenCode quick start](adapters/opencode/README.md) | Package-local OpenCode server plugin entry point. |
+| [OpenCode Adapter Manual](docs/OPENCODE_ADAPTER_MANUAL.md) | OpenCode plugin install, native tools, transient injection, the `nmnm-opencode` CLI, the TUI memory browser, pins, configuration, and compatibility probes. |
 | [Roadmap](ROADMAP.md) | Phased delivery and deferred work. |
 | [Changelog](CHANGELOG.md) | Released and unreleased changes. |
 

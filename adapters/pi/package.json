@@ -21,6 +21,7 @@
   "files": [
     "extensions/index.js",
     "src",
+    "docs",
     "docs/img",
     "README.md",
     "LICENSE"

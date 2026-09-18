@@ -40,7 +40,7 @@ npm install
 ```
 
 The MCP server auto-enables; its tools appear as `mcp__plugin_nanomneme_memory__<tool>`. See
-the [Claude Adapter Manual](../../docs/CLAUDE_ADAPTER_MANUAL.md) for the full step-by-step
+the [Claude Adapter Manual](docs/CLAUDE_ADAPTER_MANUAL.md) for the full step-by-step
 guide, including local development loading.
 
 ## Configuration
@@ -54,7 +54,7 @@ guide, including local development loading.
 - Pins (adapter-owned): `<repo>/.nanomneme/nmnm-claude.json` and
   `~/.local/share/nanomneme/nmnm-claude.json`.
 
-See the [Claude Adapter Manual](../../docs/CLAUDE_ADAPTER_MANUAL.md) for the full config
+See the [Claude Adapter Manual](docs/CLAUDE_ADAPTER_MANUAL.md) for the full config
 schema, tool reference, and behavior.
 
 ## Develop

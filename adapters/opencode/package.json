@@ -27,6 +27,7 @@
     "tui.js",
     "bin",
     "src",
+    "docs",
     "README.md",
     "LICENSE"
   ],

@@ -265,5 +265,5 @@ usage is provider-reported and is the authoritative token and cost measurement.
 
 This adapter has no Markdown memory storage, consolidation, separate compaction handoff,
 or auto-resume. Those capabilities are not implied by configuration, pins, or the browser.
-See the [Core and CLI Manual](CORE_CLI_MANUAL.md) for the core and CLI, and the
-[adapter quick start](../adapters/pi/README.md) for the package-local entry point.
+See the [Core and CLI Manual](../../../docs/CORE_CLI_MANUAL.md) for the core and CLI, and the
+[adapter quick start](../README.md) for the package-local entry point.

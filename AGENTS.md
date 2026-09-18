@@ -44,8 +44,8 @@ Removal is soft and reversible by default; purge is irreversible. Validate canon
 
 - `README.md`: project overview and quick start.
 - `docs/CORE_CLI_MANUAL.md`: core, CLI, data contract, and recovery details.
-- `docs/PI_ADAPTER_MANUAL.md`: Pi setup, configuration, pins, and context behavior.
-- `docs/CLAUDE_ADAPTER_MANUAL.md`: Claude Code setup and behavior.
-- `docs/OPENCODE_ADAPTER_MANUAL.md`: OpenCode setup and behavior.
+- `adapters/pi/docs/PI_ADAPTER_MANUAL.md`: Pi setup, configuration, pins, and context behavior.
+- `adapters/claude/docs/CLAUDE_ADAPTER_MANUAL.md`: Claude Code setup and behavior.
+- `adapters/opencode/docs/OPENCODE_ADAPTER_MANUAL.md`: OpenCode setup and behavior.
 - `ROADMAP.md` and `CHANGELOG.md`: planned and released behavior.
 <!-- opl-init:fp 1dc870c284c9de41 -->

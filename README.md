@@ -163,11 +163,11 @@ Pi manual for the full lifecycle.
 | [Core README](packages/nmnm-core/README.md) | Core package installation and API discovery. |
 | [CLI README](packages/nmnm-cli/README.md) | CLI package installation and command discovery. |
 | [Pi quick start](adapters/pi/README.md) | Package-local Pi entry point. |
-| [Pi Adapter Manual](docs/PI_ADAPTER_MANUAL.md) | Pi installation, tools, pins, configuration, and automatic index behavior. |
+| [Pi Adapter Manual](adapters/pi/docs/PI_ADAPTER_MANUAL.md) | Pi installation, tools, pins, configuration, and automatic index behavior. |
 | [Claude quick start](adapters/claude/README.md) | Package-local Claude Code plugin entry point. |
-| [Claude Adapter Manual](docs/CLAUDE_ADAPTER_MANUAL.md) | Claude Code plugin install, MCP tools, hooks, the `/nanomneme:memory` management command, pins, and configuration. |
+| [Claude Adapter Manual](adapters/claude/docs/CLAUDE_ADAPTER_MANUAL.md) | Claude Code plugin install, MCP tools, hooks, the `/nanomneme:memory` management command, pins, and configuration. |
 | [OpenCode quick start](adapters/opencode/README.md) | Package-local OpenCode server plugin entry point. |
-| [OpenCode Adapter Manual](docs/OPENCODE_ADAPTER_MANUAL.md) | OpenCode plugin install, native tools, transient injection, the `nmnm-opencode` CLI, the TUI memory browser, pins, configuration, and compatibility probes. |
+| [OpenCode Adapter Manual](adapters/opencode/docs/OPENCODE_ADAPTER_MANUAL.md) | OpenCode plugin install, native tools, transient injection, the `nmnm-opencode` CLI, the TUI memory browser, pins, configuration, and compatibility probes. |
 | [Roadmap](ROADMAP.md) | Phased delivery and deferred work. |
 | [Changelog](CHANGELOG.md) | Released and unreleased changes. |
 

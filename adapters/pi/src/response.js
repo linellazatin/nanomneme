@@ -43,6 +43,7 @@ function boundedSummary(result, originalBytes) {
       items: result.items.map(memorySummary),
     });
     while (base.items.length && bytes(JSON.stringify(base)) > MAX_TOOL_RESULT_BYTES) base.items.pop();
+    base.returned_items = base.items.length;
     return base;
   }
   if (result && typeof result === 'object' && typeof result.id === 'string') {

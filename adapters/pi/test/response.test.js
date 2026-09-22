@@ -37,7 +37,7 @@ test('summarizes an oversized memory as bounded valid JSON', () => {
 });
 
 test('summarizes oversized retrieval pages and preserves totals', () => {
-  const items = Array.from({ length: 100 }, (_, index) => ({
+  const items = Array.from({ length: 200 }, (_, index) => ({
     id: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
     content: 'result '.repeat(2000), kind: 'fact', scope: 'project',
     namespace: 'retrieval-page', updated_at: '2026-09-22T00:00:00.000Z', metadata: {},
@@ -46,9 +46,9 @@ test('summarizes oversized retrieval pages and preserves totals', () => {
   const parsed = JSON.parse(visibleText(response));
   assert.equal(parsed.truncated, true);
   assert.equal(parsed.total, 250);
-  assert.equal(parsed.returned_items, 100);
+  assert.equal(parsed.returned_items, parsed.items.length);
   assert.ok(parsed.items.length > 0);
-  assert.ok(parsed.items.length <= 100);
+  assert.ok(parsed.items.length < 200);
   assert.ok(Buffer.byteLength(visibleText(response), 'utf8') <= MAX_TOOL_RESULT_BYTES);
 });
 

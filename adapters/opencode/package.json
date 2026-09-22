@@ -28,6 +28,7 @@
     "bin",
     "src",
     "docs",
+    "docs/img",
     "README.md",
     "LICENSE"
   ],

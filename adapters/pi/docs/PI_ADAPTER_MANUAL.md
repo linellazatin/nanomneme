@@ -1,7 +1,6 @@
 # Pi Adapter Manual
 
-`@openlines/nmnm-pi` is the Pi harness adapter for nanomneme. It calls `@openlines/nmnm-core`
-directly, keeps SQLite as the storage authority, and does not invoke or parse the CLI.
+`@openlines/nmnm-pi` is the Pi harness adapter for nanomneme. It calls `@openlines/nmnm-core` directly, keeps SQLite as the storage authority, and does not invoke or parse the CLI.
 
 ## Install
 
@@ -23,26 +22,19 @@ To add the checkout to this project's Pi settings, use an absolute package path:
 pi install -l "$(pwd)/adapters/pi"
 ```
 
-For a Git installation, replace the placeholder with an existing release tag or commit.
-Do not treat the placeholder as an executable version:
+For a Git installation, replace the placeholder with an existing release tag or commit. Do not treat the placeholder as an executable version:
 
 ```sh
 pi install git:github.com/linellazatin/nanomneme@<released-tag-or-commit>
 ```
 
-Pi runs package extensions with full local-system access. Review package, checked-out, or Git
-source before installing it.
+Pi runs package extensions with full local-system access. Review package, checked-out, or Git source before installing it.
 
 ## Native memory tools
 
-Pi exposes four tools to the model. Model-facing project operations require the current project to be
-trusted by Pi. In an untrusted project, use explicit global scope/store operations; user-invoked
-`/memory` commands remain available for explicit local project management.
+Pi exposes four tools to the model. Model-facing project operations require the current project to be trusted by Pi. In an untrusted project, use explicit global scope/store operations; user-invoked `/memory` commands remain available for explicit local project management.
 
-Successful model-visible tool JSON is limited to 50 KiB (51,200 UTF-8 bytes). Results that fit retain
-their existing canonical JSON. Oversized results return valid JSON with `truncated: true`, byte-count
-diagnostics, stable record or page identifiers, bounded content previews, and guidance to narrow the
-request or use the CLI. This summary does not modify or truncate the canonical stored memory.
+Successful model-visible tool JSON is limited to 50 KiB (51,200 UTF-8 bytes). Results that fit retain their existing canonical JSON. Oversized results return valid JSON with `truncated: true`, byte-count diagnostics, stable record or page identifiers, bounded content previews, and guidance to narrow the request or use the CLI. This summary does not modify or truncate the canonical stored memory.
 
 | Tool | Input | Description | Notes |
 |---|---|---|---|
@@ -51,32 +43,15 @@ request or use the CLI. This summary does not modify or truncate the canonical s
 | `retrieve_memory` | Optional query, filters, ordering, pagination, `store` | Search or list active memories. | One store only; missing stores return `{ total: 0, items: [] }`. Punctuation query terms are matched literally. |
 | `remove_memory` | `id`; optional `store` | Soft-remove an active memory. | Reversible through an explicit retain patch; irreversible purge is CLI-only; missing stores return `null`. |
 
-For `retain_memory`, scope selects the matching write store: omitted scope means project and
-`scope: "global"` means global. The other tools use optional `store` (`"project"` or
-`"global"`) to choose a physical database. Project data is `./.nanomneme/memory.db`; global
-data is `~/.local/share/nanomneme/memory.db` on Linux and macOS. Results are canonical core JSON
-records. The adapter does not parse CLI flags or support custom database paths. Only
-`retain_memory` creates a missing store.
+For `retain_memory`, scope selects the matching write store: omitted scope means project and `scope: "global"` means global. The other tools use optional `store` (`"project"` or `"global"`) to choose a physical database. Project data is `./.nanomneme/memory.db`; global data is `~/.local/share/nanomneme/memory.db` on Linux and macOS. Results are canonical core JSON records. The adapter does not parse CLI flags or support custom database paths. Only `retain_memory` creates a missing store.
 
 ## Automatic memory index
 
-At the first user prompt in each trusted Pi session, the adapter appends bounded Nanomneme context to
-that prompt's system prompt. In an untrusted project, this automatic context is global-only: the adapter
-does not read project settings, project pins, or the project database. Enabled global autoretention
-guidance takes priority, followed by a compact index. In a trusted project, project and global settings
-and memories compose as described below. Pinned entries come first, with recent active records after
-them.
-Rows contain `store`, a `[source]` label when recorded, ID, and a short content preview. It is not a transfer of complete records;
-use `recall_memory` or `retrieve_memory` for full content.
+At the first user prompt in each trusted Pi session, the adapter appends bounded Nanomneme context to that prompt's system prompt. In an untrusted project, this automatic context is global-only: the adapter does not read project settings, project pins, or the project database. Enabled global autoretention guidance takes priority, followed by a compact index. In a trusted project, project and global settings and memories compose as described below. Pinned entries come first, with recent active records after them. Rows contain `store`, a `[source]` label when recorded, ID, and a short content preview. It is not a transfer of complete records; use `recall_memory` or `retrieve_memory` for full content.
 
 New Pi retains record `metadata.source` as `"pi"`. **Note:** ID-based patches preserve the existing source automatically; older or externally created records have no source label unless they already carry one.
 
-The index is transient, not a session message. It is rebuilt for the next user prompt after
-`/memory refresh`, successful Pi compaction, or a successful retain, remove, pin, or unpin
-mutation. Read operations and no-op removals do not trigger it. Missing databases are empty.
-Missing, removed, expired, or otherwise unreadable pins are skipped and counted as unresolved.
-The pin remains configured until explicitly unpinned. Index reads are read-only and never create
-or migrate a SQLite database.
+The index is transient, not a session message. It is rebuilt for the next user prompt after `/memory refresh`, successful Pi compaction, or a successful retain, remove, pin, or unpin mutation. Read operations and no-op removals do not trigger it. Missing databases are empty. Missing, removed, expired, or otherwise unreadable pins are skipped and counted as unresolved. The pin remains configured until explicitly unpinned. Index reads are read-only and never create or migrate a SQLite database.
 
 ## Pins and configuration
 
@@ -87,15 +62,11 @@ Settings and pins are separate adapter files outside SQLite.
 | Project | `.nanomneme/nmnm.jsonc` | `.nanomneme/nmnm-pi.json` |
 | Global | `<Pi agent directory>/nmnm.jsonc` | `~/.local/share/nanomneme/nmnm-pi.json` |
 
-Pi's agent directory defaults to `~/.pi/agent`; current Pi uses
-`PI_CODING_AGENT_DIR` to override it. Settings are read-only to the adapter and may use
-comments or trailing commas.
+Pi's agent directory defaults to `~/.pi/agent`; current Pi uses `PI_CODING_AGENT_DIR` to override it. Settings are read-only to the adapter and may use comments or trailing commas.
 
 ### Complete settings template
 
-This is the complete supported `nmnm.jsonc` shape for v0.1.9. Copy it to either settings
-location above, then adjust the budget or opt in to autoretention. This template is the
-maintained place to add future adapter parameters.
+This is the complete supported `nmnm.jsonc` shape for v0.1.9. Copy it to either settings location above, then adjust the budget or opt in to autoretention. This template is the maintained place to add future adapter parameters.
 
 ```jsonc
 {
@@ -133,8 +104,7 @@ maintained place to add future adapter parameters.
 }
 ```
 
-Use concise, scope-appropriate natural-language rules. Global rules provide baseline safeguards
-across projects; project rules add project-specific guidance.
+Use concise, scope-appropriate natural-language rules. Global rules provide baseline safeguards across projects; project rules add project-specific guidance.
 
 Pin files are plain JSON arrays, written only by `/memory pin` and `/memory unpin`:
 
@@ -142,35 +112,13 @@ Pin files are plain JSON arrays, written only by `/memory pin` and `/memory unpi
 ["<memory-id>"]
 ```
 
-`injection_budget` is a non-negative total character limit for all transient Nanomneme context.
-The project value overrides the global value; the default is 2,000. Complete autoretention
-guidance is included before index rows; individual rules are never truncated. If enabled guidance
-alone exceeds the budget, no Nanomneme context is injected until the rules are shortened or the
-budget is raised. `autoretention` is inactive unless its effective `enabled` value is `true`
-(project overrides global). Rule arrays from both scopes combine with global entries first;
-`never_persist` takes precedence, `always_ask` requires user confirmation, and `always_persist`
-guides the active model when applicable. The adapter never writes memory directly for
-autoretention: the active model decides whether to call `retain_memory`.
+`injection_budget` is a non-negative total character limit for all transient Nanomneme context. The project value overrides the global value; the default is 2,000. Complete autoretention guidance is included before index rows; individual rules are never truncated. If enabled guidance alone exceeds the budget, no Nanomneme context is injected until the rules are shortened or the budget is raised. `autoretention` is inactive unless its effective `enabled` value is `true` (project overrides global). Rule arrays from both scopes combine with global entries first; `never_persist` takes precedence, `always_ask` requires user confirmation, and `always_persist` guides the active model when applicable. The adapter never writes memory directly for autoretention: the active model decides whether to call `retain_memory`.
 
-`reinjection` is disabled unless its effective `enabled` value is `true` (project overrides global).
-When enabled, `every_n_prompts` is a positive safe integer that resolves project, then global,
-then `5`. After a successful context build, each eligible user prompt increments a session-local
-counter; the configured prompt queues a transient `cadence` rebuild in that same prompt. A
-successful build resets the counter, while a failed build leaves it pending. Slash commands do not
-count. The adapter caches the effective policy after a successful build, so ordinary prompts do not
-reread settings or stores; change settings with `/memory refresh` or reload the session. Cadence
-uses the existing total `injection_budget`, increases recurring provider input/cache activity, and
-creates no timer, worker, session record, memory, or SQLite write. A project pin and a global pin
-use the same ID format but remain distinct `(store, id)` references. The unreleased combined
-`nmnm-memory.json` layout is not migrated automatically.
+`reinjection` is disabled unless its effective `enabled` value is `true` (project overrides global). When enabled, `every_n_prompts` is a positive safe integer that resolves project, then global, then `5`. After a successful context build, each eligible user prompt increments a session-local counter; the configured prompt queues a transient `cadence` rebuild in that same prompt. A successful build resets the counter, while a failed build leaves it pending. Slash commands do not count. The adapter caches the effective policy after a successful build, so ordinary prompts do not reread settings or stores; change settings with `/memory refresh` or reload the session. Cadence uses the existing total `injection_budget`, increases recurring provider input/cache activity, and creates no timer, worker, session record, memory, or SQLite write. A project pin and a global pin use the same ID format but remain distinct `(store, id)` references. The unreleased combined `nmnm-memory.json` layout is not migrated automatically.
 
 ### Normal file lifecycle
 
-On extension load and session start, the adapter registers its tools and hooks only. It
-does not create a settings file, a pin file, or a database. `nmnm.jsonc` is optional and
-user-authored: create it only to override the default index budget, opt into autoretention, or
-opt into periodic reinjection. If it is absent, the adapter uses the defaults. The adapter never
-rewrites it.
+On extension load and session start, the adapter registers its tools and hooks only. It does not create a settings file, a pin file, or a database. `nmnm.jsonc` is optional and user-authored: create it only to override the default index budget, opt into autoretention, or opt into periodic reinjection. If it is absent, the adapter uses the defaults. The adapter never rewrites it.
 
 | Event or action | Reads | Writes | What to expect |
 |---|---|---|---|
@@ -189,18 +137,13 @@ rewrites it.
 | `/memory pin ...` | Selected active `memory.db` and pin file when present | Selected `nmnm-pi.json` | Validates the selected store before creating the pin-file parent directory and file, then queues next-prompt index rebuild; settings remain untouched. |
 | `/memory unpin ...` | Selected pin file when present | Selected `nmnm-pi.json` | Removes the configured reference even when its memory is unresolved, then queues next-prompt index rebuild. |
 
-To create project settings manually before starting Pi or between prompts, create the
-directory, then copy the complete template above into `.nanomneme/nmnm.jsonc` and adjust
-`injection_budget`, autoretention, or reinjection if needed:
+To create project settings manually before starting Pi or between prompts, create the directory, then copy the complete template above into `.nanomneme/nmnm.jsonc` and adjust `injection_budget`, autoretention, or reinjection if needed:
 
 ```sh
 mkdir -p .nanomneme
 ```
 
-An invalid settings or pin file leaves the file unchanged. Session start reports the
-configuration issue without preventing Pi startup. The next-prompt injection remains pending,
-so after correcting the file the following prompt retries automatically; `/memory refresh` is
-not required.
+An invalid settings or pin file leaves the file unchanged. Session start reports the configuration issue without preventing Pi startup. The next-prompt injection remains pending, so after correcting the file the following prompt retries automatically; `/memory refresh` is not required.
 
 ## Slash command reference
 
@@ -246,38 +189,19 @@ not required.
 
 ### Pi token overhead
 
-`nmnm-pi` 0.2.1 adds four model-visible tool definitions: `retain_memory`, `recall_memory`,
-`retrieve_memory`, and `remove_memory`. Their JSON schemas total `1,190 characters`
-(`retain_memory` 440, `recall_memory` 164, `retrieve_memory` 422, `remove_memory` 164).
-This is a schema-only reference, not a token or cost estimate: Pi adds tool names,
-descriptions, and provider request structure, while each provider uses its own tokenizer.
+`nmnm-pi` 0.2.1 adds four model-visible tool definitions: `retain_memory`, `recall_memory`, `retrieve_memory`, and `remove_memory`. Their JSON schemas total `1,190 characters` (`retain_memory` 440, `recall_memory` 164, `retrieve_memory` 422, `remove_memory` 164). This is a schema-only reference, not a token or cost estimate: Pi adds tool names, descriptions, and provider request structure, while each provider uses its own tokenizer.
 
-The transient memory context is separately bounded. On the first prompt and each queued
-refresh, Pi appends at most `injection_budget + 2` characters to the system prompt: the
-configured context plus its two newline separator characters. With the default budget, that
-is at most 2,002 characters. Autoretention guidance and index rows share that limit. Ordinary
-prompts without a queued refresh append no memory context unless opt-in periodic `reinjection`
-queues a rebuild.
+The transient memory context is separately bounded. On the first prompt and each queued refresh, Pi appends at most `injection_budget + 2` characters to the system prompt: the configured context plus its two newline separator characters. With the default budget, that is at most 2,002 characters. Autoretention guidance and index rows share that limit. Ordinary prompts without a queued refresh append no memory context unless opt-in periodic `reinjection` queues a rebuild.
 
 ```text
 first or queued-turn adapter overhead =
   provider-tokenized memory tool definitions + provider-tokenized injected context (0 to injection_budget + 2 characters)
 ```
 
-To measure exact overhead for a chosen model and provider, compare equivalent first-turn
-sessions with identical prompt, project context, and enabled non-nanomneme tools: run once
-with `nmnm-pi` enabled and once without it, then subtract the first assistant response's
-`usage.input` values in the Pi session JSONL. For later turns, report `usage.cacheRead` and
-`usage.cacheWrite` separately rather than treating cached input as fresh overhead. Session
-usage is provider-reported and is the authoritative token and cost measurement.
+To measure exact overhead for a chosen model and provider, compare equivalent first-turn sessions with identical prompt, project context, and enabled non-nanomneme tools: run once with `nmnm-pi` enabled and once without it, then subtract the first assistant response's `usage.input` values in the Pi session JSONL. For later turns, report `usage.cacheRead` and `usage.cacheWrite` separately rather than treating cached input as fresh overhead. Session usage is provider-reported and is the authoritative token and cost measurement.
 
 ## Boundaries
 
-The current production adapter injects transient context through the `before_agent_start` system-prompt
-return. Pi 0.87 structured prompt sections remain under a separate behavior and cache probe; this release
-does not claim a cache improvement or change the injection lifecycle.
+The current production adapter injects transient context through the `before_agent_start` system-prompt return. Pi 0.87 structured prompt sections remain under a separate behavior and cache probe; this release does not claim a cache improvement or change the injection lifecycle.
 
-This adapter has no Markdown memory storage, consolidation, separate compaction handoff,
-or auto-resume. Those capabilities are not implied by configuration, pins, or the browser.
-See the [Core and CLI Manual](../../../docs/CORE_CLI_MANUAL.md) for the core and CLI, and the
-[adapter quick start](../README.md) for the package-local entry point.
+This adapter has no Markdown memory storage, consolidation, separate compaction handoff, or auto-resume. Those capabilities are not implied by configuration, pins, or the browser. See the [Core and CLI Manual](../../../docs/CORE_CLI_MANUAL.md) for the core and CLI, and the [adapter quick start](../README.md) for the package-local entry point.

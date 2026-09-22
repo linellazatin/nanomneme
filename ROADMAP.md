@@ -6,10 +6,10 @@ when they preserve that model.
 
 ## Package versions
 
-- `nanomneme`: 0.3.0
+- `nanomneme`: 0.3.2
 - `@openlines/nmnm-core`: 0.1.0 (only bump version if modified/updated)
 - `@openlines/nmnm-cli`: 0.1.0 (only bump version if modified/updated)
-- `@openlines/nmnm-pi`: 0.1.7 (published Pi coding agent adapter; only bump version if modified/updated; started 0.1.0)
+- `@openlines/nmnm-pi`: 0.1.9 (published Pi coding agent adapter; only bump version if modified/updated; started 0.1.0)
 - `nmnm-claude`: 0.1.2 (claude code adapter; only bump version if modified/updated; started 0.1.0)
 - `@openlines/nmnm-opencode`: 0.1.0 (OpenCode server-plugin adapter + TUI memory browser; first release)
 - `nmnm-codex*`: 0.1.0 (Git-first Codex plugin; only bump version if modified/updated; started 0.1.0)

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.2 - Pi adapter agent release 0.87.0 compatibility hardening
+
+- Re-verified `@openlines/nmnm-pi` (0.1.9) against Pi 0.87.0; the 0.87 lifecycle, session, context,
+  and `shouldStopAfterTurn` changes did not intersect the adapter surface.
+- Aligned the Pi adapter dev/test baseline to `@earendil-works/pi-tui` 0.87.0 and added a host-surface
+  smoke test that floors the loader-provided `pi-tui`/`typebox` surface at 0.87.0.
+
 ## 0.3.1 - Pi adapter browser UX updates
 
 - `Status` separates effective `autoretention` from last-injection metadata.

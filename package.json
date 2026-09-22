@@ -1,8 +1,22 @@
 {
   "name": "nanomneme",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "private": true,
   "type": "module",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "claude-code-plugin",
+    "opencode-plugin",
+    "coding-agent",
+    "extension",
+    "memory",
+    "memory-system",
+    "sqlite",
+    "sqlite-fts5",
+    "bm25-search",
+    "adapter"
+  ],
   "engines": {
     "node": ">=22.13.0"
   },

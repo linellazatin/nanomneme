@@ -405,8 +405,13 @@ function notify(ctx, message) {
   ctx.ui.notify(message, 'info');
 }
 
-function validateConfiguration({ cwd, home, agentDir }) {
-  for (const store of ['project', 'global']) {
+function projectIsTrusted(ctx) {
+  return typeof ctx?.isProjectTrusted === 'function' && ctx.isProjectTrusted() === true;
+}
+
+function validateConfiguration({ cwd, home, agentDir, includeProject = true }) {
+  const stores = includeProject ? ['project', 'global'] : ['global'];
+  for (const store of stores) {
     readSettings(settingsPath({ cwd, home, agentDir, store }));
     readPins(pinsPath({ cwd, home, store }));
   }
@@ -425,7 +430,11 @@ export function registerPiMemory(pi, options = {}) {
   };
   const agentDir = options.agentDir ?? piAgentDir({ home: options.home });
   const memoryOptions = { ...options, agentDir };
-  const index = (cwd) => buildMemoryIndex({ cwd, ...memoryOptions });
+  const index = (cwd, { includeProject = true } = {}) => buildMemoryIndex({
+    cwd,
+    ...memoryOptions,
+    includeProject,
+  });
   const status = (ctx) => {
     let projectPins;
     let globalPins;
@@ -459,7 +468,11 @@ export function registerPiMemory(pi, options = {}) {
     refresh('session_start');
     if (!ctx) return;
     try {
-      validateConfiguration({ cwd: ctx.cwd, ...memoryOptions });
+      validateConfiguration({
+        cwd: ctx.cwd,
+        ...memoryOptions,
+        includeProject: projectIsTrusted(ctx),
+      });
     } catch (error) {
       notify(ctx, `Nanomneme configuration unavailable: ${error.message}`);
     }
@@ -472,7 +485,7 @@ export function registerPiMemory(pi, options = {}) {
     }
     if (!pending) return undefined;
     try {
-      const memoryIndex = index(ctx.cwd);
+      const memoryIndex = index(ctx.cwd, { includeProject: projectIsTrusted(ctx) });
       periodicPolicy = memoryIndex.reinjection;
       const content = memoryIndexContent(memoryIndex);
       pending = false;

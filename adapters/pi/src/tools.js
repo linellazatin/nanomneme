@@ -32,6 +32,12 @@ function retainStore(params) {
   return params.scope === 'global' ? 'global' : 'project';
 }
 
+function requireTrustedProject(ctx, store) {
+  if (store !== 'project') return;
+  if (typeof ctx?.isProjectTrusted === 'function' && ctx.isProjectTrusted() === true) return;
+  throw new Error('Nanomneme project memory requires a trusted project; use global scope/store while this project is untrusted.');
+}
+
 export function registerPiTools(pi, Type, options = {}) {
   pi.registerTool({
     name: 'retain_memory',
@@ -44,7 +50,9 @@ export function registerPiTools(pi, Type, options = {}) {
       expires_at: Type.Optional(Type.Union([Type.String(), Type.Null()])), metadata: Type.Optional(Type.Any()),
     }),
     async execute(_id, params, _signal, _update, ctx) {
-      const result = runMemory({ cwd: ctx.cwd, store: retainStore(params), operation: 'retain', input: retainInput(params) });
+      const selectedStore = retainStore(params);
+      requireTrustedProject(ctx, selectedStore);
+      const result = runMemory({ cwd: ctx.cwd, store: selectedStore, operation: 'retain', input: retainInput(params) });
       options.onMutation?.('retain');
       return response(result);
     },
@@ -55,8 +63,10 @@ export function registerPiTools(pi, Type, options = {}) {
     description: 'Read one active nanomneme memory by ID.',
     parameters: Type.Object({ id: Type.String(), store: store(Type) }),
     async execute(_id, params, _signal, _update, ctx) {
-      if (!hasStore(ctx, params.store)) return response(null);
-      return response(runMemory({ cwd: ctx.cwd, store: params.store, operation: 'recall', input: { id: params.id }, create: false, readOnly: true }));
+      const selectedStore = params.store ?? 'project';
+      requireTrustedProject(ctx, selectedStore);
+      if (!hasStore(ctx, selectedStore)) return response(null);
+      return response(runMemory({ cwd: ctx.cwd, store: selectedStore, operation: 'recall', input: { id: params.id }, create: false, readOnly: true }));
     },
   });
   pi.registerTool({
@@ -70,8 +80,10 @@ export function registerPiTools(pi, Type, options = {}) {
       limit: Type.Optional(Type.Number()), offset: Type.Optional(Type.Number()),
     }),
     async execute(_id, params, _signal, _update, ctx) {
-      if (!hasStore(ctx, params.store)) return response({ total: 0, items: [] });
-      return response(runMemory({ cwd: ctx.cwd, store: params.store, operation: 'retrieve', input: input(params, ['query', 'kind', 'scope', 'namespace', 'tags', 'expires', 'importance', 'confidence', 'order_by', 'limit', 'offset']), create: false, readOnly: true }));
+      const selectedStore = params.store ?? 'project';
+      requireTrustedProject(ctx, selectedStore);
+      if (!hasStore(ctx, selectedStore)) return response({ total: 0, items: [] });
+      return response(runMemory({ cwd: ctx.cwd, store: selectedStore, operation: 'retrieve', input: input(params, ['query', 'kind', 'scope', 'namespace', 'tags', 'expires', 'importance', 'confidence', 'order_by', 'limit', 'offset']), create: false, readOnly: true }));
     },
   });
   pi.registerTool({
@@ -80,8 +92,10 @@ export function registerPiTools(pi, Type, options = {}) {
     description: 'Soft-remove a nanomneme memory by ID.',
     parameters: Type.Object({ id: Type.String(), store: store(Type) }),
     async execute(_id, params, _signal, _update, ctx) {
-      if (!hasStore(ctx, params.store)) return response(null);
-      const result = runMemory({ cwd: ctx.cwd, store: params.store, operation: 'remove', input: { id: params.id, mode: 'soft' }, create: false });
+      const selectedStore = params.store ?? 'project';
+      requireTrustedProject(ctx, selectedStore);
+      if (!hasStore(ctx, selectedStore)) return response(null);
+      const result = runMemory({ cwd: ctx.cwd, store: selectedStore, operation: 'remove', input: { id: params.id, mode: 'soft' }, create: false });
       if (result) options.onMutation?.('remove');
       return response(result);
     },

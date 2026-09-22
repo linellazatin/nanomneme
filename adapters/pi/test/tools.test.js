@@ -17,8 +17,11 @@ function registeredTools(options) {
   return new Map(tools.map((tool) => [tool.name, tool]));
 }
 
-async function execute(tool, params, cwd) {
-  const output = await tool.execute('call', params, null, null, { cwd });
+async function execute(tool, params, cwd, { trusted = true } = {}) {
+  const output = await tool.execute('call', params, undefined, undefined, {
+    cwd,
+    isProjectTrusted: () => trusted,
+  });
   return JSON.parse(output.content[0].text);
 }
 
@@ -98,6 +101,34 @@ test('Pi mutation tools notify the adapter, while reads do not', async () => {
     await execute(tools.get('remove_memory'), { id: '00000000-0000-4000-8000-000000000001' }, cwd);
     assert.deepEqual(mutations, ['retain', 'remove']);
   } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('Pi project tools reject untrusted or missing trust contexts while global tools remain available', async () => {
+  const cwd = temporaryDirectory('nmnm-pi-tools-untrusted-');
+  const previousHome = process.env.HOME;
+  process.env.HOME = cwd;
+  try {
+    const tools = registeredTools();
+    const id = '00000000-0000-4000-8000-000000000001';
+    const denied = { trusted: false };
+
+    await assert.rejects(execute(tools.get('retain_memory'), { content: 'blocked' }, cwd, denied), /trusted project.*global/i);
+    await assert.rejects(execute(tools.get('recall_memory'), { id }, cwd, denied), /trusted project.*global/i);
+    await assert.rejects(execute(tools.get('retrieve_memory'), {}, cwd, denied), /trusted project.*global/i);
+    await assert.rejects(execute(tools.get('remove_memory'), { id }, cwd, denied), /trusted project.*global/i);
+    await assert.rejects(
+      tools.get('retrieve_memory').execute('call', {}, undefined, undefined, { cwd }),
+      /trusted project.*global/i,
+    );
+
+    const retained = await execute(tools.get('retain_memory'), { content: 'Allowed global memory', scope: 'global' }, cwd, denied);
+    assert.equal((await execute(tools.get('recall_memory'), { id: retained.id, store: 'global' }, cwd, denied)).content, 'Allowed global memory');
+    assert.equal((await execute(tools.get('retrieve_memory'), { store: 'global' }, cwd, denied)).total, 1);
+    assert.equal((await execute(tools.get('remove_memory'), { id: retained.id, store: 'global' }, cwd, denied)).mode, 'soft');
+  } finally {
+    process.env.HOME = previousHome;
     rmSync(cwd, { recursive: true, force: true });
   }
 });

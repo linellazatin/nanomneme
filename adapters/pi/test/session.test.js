@@ -374,6 +374,33 @@ test('missing project trust capability fails closed for automatic context', asyn
   }
 });
 
+test('throwing project trust capability fails closed to global-only automatic context', async () => {
+  const project = temporaryDirectory('nmnm-pi-session-throwing-trust-project-');
+  const home = temporaryDirectory('nmnm-pi-session-throwing-trust-home-');
+  try {
+    const handlers = new Map();
+    const notices = [];
+    runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Project throwing-trust memory' } });
+    runMemory({ cwd: project, home, platform: 'darwin', store: 'global', operation: 'retain', input: { content: 'Global throwing-trust memory' } });
+    registerPiMemory({ on: (event, handler) => handlers.set(event, handler), registerCommand: () => {} }, { home, platform: 'darwin' });
+    const ctx = {
+      cwd: project,
+      isProjectTrusted: () => { throw new Error('trust unavailable'); },
+      ui: { notify: (message) => notices.push(message) },
+    };
+
+    await handlers.get('session_start')({}, ctx);
+    const result = await handlers.get('before_agent_start')({ systemPrompt: 'Base prompt' }, ctx);
+
+    assert.deepEqual(notices, []);
+    assert.doesNotMatch(result.systemPrompt, /Project throwing-trust memory/);
+    assert.match(result.systemPrompt, /Global throwing-trust memory/);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test('untrusted session still reports malformed global configuration', async () => {
   const project = temporaryDirectory('nmnm-pi-session-untrusted-global-error-project-');
   const home = temporaryDirectory('nmnm-pi-session-untrusted-global-error-home-');

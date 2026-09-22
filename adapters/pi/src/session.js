@@ -418,7 +418,12 @@ function notify(ctx, message) {
 }
 
 function projectIsTrusted(ctx) {
-  return typeof ctx?.isProjectTrusted === 'function' && ctx.isProjectTrusted() === true;
+  if (typeof ctx?.isProjectTrusted !== 'function') return false;
+  try {
+    return ctx.isProjectTrusted() === true;
+  } catch {
+    return false;
+  }
 }
 
 function validateConfiguration({ cwd, home, agentDir, includeProject = true }) {

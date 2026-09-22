@@ -41,6 +41,14 @@ function text(value, name) {
   return value.trim();
 }
 
+// Quote hyphenated terms so FTS5 reads them as literal phrases instead of
+// column filters (`a-b` parses as "phrase a in column b", which does not exist).
+function fts5Query(value) {
+  return value.split(/\s+/).map((term) => (
+    term.includes('"') || !/[A-Za-z0-9]-[A-Za-z0-9]/.test(term) ? term : `"${term}"`
+  )).join(' ');
+}
+
 function kind(value) {
   const normalized = text(value, 'kind');
   if (!KINDS.has(normalized)) throw new TypeError('kind must be note, decision, preference, fact, or instruction');
@@ -301,7 +309,7 @@ export function open(path, { create = true, readOnly = false } = {}) {
 
     retrieve(selector = {}) {
       if (!selector || typeof selector !== 'object' || Array.isArray(selector)) throw new TypeError('retrieve selector must be an object');
-      const query = selector.query == null ? null : text(selector.query, 'query');
+      const query = selector.query == null ? null : fts5Query(text(selector.query, 'query'));
       const source = selector.source == null ? null : text(selector.source, 'source');
       const limit = integer(selector.limit, 'limit', 20, 1);
       const offset = integer(selector.offset, 'offset', 0, 0);

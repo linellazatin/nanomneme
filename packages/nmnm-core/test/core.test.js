@@ -345,6 +345,18 @@ test('retrieve combines FTS, field filters, and all requested tags', async (t) =
   assert.equal(typeof result.items[0].score, 'number');
 });
 
+test('retrieve treats hyphenated query terms as literal phrases', async (t) => {
+  const store = await createStore(t);
+  const both = store.retain({ content: 'pi-adapter trust-store combined' });
+  const piOnly = store.retain({ content: 'pi-adapter only' });
+  const trustOnly = store.retain({ content: 'trust-store only' });
+
+  assert.deepEqual(store.retrieve({ query: 'pi-adapter' }).items.map(({ id }) => id).sort(), [both.id, piOnly.id].sort());
+  assert.deepEqual(store.retrieve({ query: 'pi-adapter trust-store' }).items.map(({ id }) => id), [both.id]);
+  assert.deepEqual(store.retrieve({ query: 'pi-adapter OR trust-store' }).items.map(({ id }) => id).sort(), [both.id, piOnly.id, trustOnly.id].sort());
+  assert.deepEqual(store.retrieve({ query: '"pi-adapter"' }).items.map(({ id }) => id).sort(), [both.id, piOnly.id].sort());
+});
+
 test('retrieve filters memories by metadata source', async (t) => {
   const store = await createStore(t);
   const pi = store.retain({ content: 'Pi source memory', metadata: { source: 'pi' } });

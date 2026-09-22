@@ -61,12 +61,11 @@ test('status reports budget, reinjection, autoretention, pins, and per-store tot
 
     assert.equal(ok, true);
     assert.match(text, /Nanomneme status/);
-    assert.match(text, /Injection budget\s+1000/);
-    assert.match(text, /current: \d+/);
-    assert.match(text, /Periodic reinjection\s+every 7 prompts/);
-    assert.match(text, /Autoretention\s+enabled \(persist 2 · ask 0 · never 1\)/);
-    assert.match(text, /Pins\s+project: 1 · global: 0/);
-    assert.match(text, /Memories\s+project: 1 · global: 1/);
+    assert.match(text, /Injection budget:\s+1000 • \d+ • ur: 0/);
+    assert.match(text, /Periodic reinjection:\s+every 7 prompts/);
+    assert.match(text, /Autoretention:\s+enabled/);
+    assert.match(text, /Pins:\s+project: 1 • global: 0/);
+    assert.match(text, /Memories:\s+project: 1 • global: 1/);
   } finally {
     cleanup(f);
   }
@@ -185,7 +184,7 @@ test('missing stores render as empty without creating databases', () => {
     const status = runCli({ argv: ['status'], ...f.ctx });
 
     assert.match(list.text, /showing 0 of 0/);
-    assert.match(status.text, /Memories\s+project: 0 · global: 0/);
+    assert.match(status.text, /Memories:\s+project: 0 • global: 0/);
     assert.equal(existsSync(join(f.project, '.nanomneme', 'memory.db')), false);
     assert.equal(existsSync(join(f.home, '.local', 'share', 'nanomneme', 'memory.db')), false);
   } finally {

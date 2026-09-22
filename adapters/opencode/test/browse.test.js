@@ -82,5 +82,5 @@ test('status reports configuration and per-store counts without creating stores'
   retain(ctx, { content: 'status memory' });
   const { status } = statusText({ ctx });
   assert.match(status, /^Nanomneme status$/m);
-  assert.match(status, /Memories\s+project: 1 · global: 0/);
+  assert.match(status, /Memories:\s+project: 1 • global: 0/);
 });

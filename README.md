@@ -62,13 +62,13 @@ Nanomneme helps agents remember without pretending to be human memory.
 
 #### Pi coding agent
 
-- **Native memory tools:** model-invoked retain, recall, retrieve, and remove operations over `nmnm-core`; the browser and `/memory list` can show all or Pi-source records.
+- **Native memory tools:** model-invoked retain, recall, retrieve, and remove operations over `nmnm-core`; project operations require Pi project trust, while global operations remain available in untrusted projects. Model-visible JSON is bounded to 50 KiB, with explicit summaries for oversized results.
 - **Project and global memory:** explicit store selection with canonical records and no custom database-path parsing.
 - **Bounded automatic context:** transient autoretention guidance and the first-prompt memory index share one configurable character budget; pinned entries come first, with recent active fallback, store and recorded-source labels, unresolved-pin reporting, and refresh after successful compaction or memory mutations.
 - **Opt-in autoretention:** project/global JSONC rules guide the active model's `retain_memory` calls without a nested model, worker, or direct adapter write.
 - **Adapter-owned configuration:** optional JSONC settings and separate JSON pin files, with project and global locations.
 - **Direct user controls:** `/memory refresh`, `status`, `list`, `remove`, `pin`, and `unpin` without model involvement; `status` reports injection state, autoretention, the effective index budget, current full-payload character count, and lifecycle metadata without exposing memory content.
-- **Native memory browser:** `/memory` and `/memory browse` show the shared status card before opening; record details stay inside a native action dialog, so the card remains visible on return. Search and store controls stay above each record page.
+- **Native memory browser:** `/memory` and `/memory browse` show the shared status card before opening; record details stay inside a native action dialog, so the card remains visible on return. Search and store controls stay above each record page. Standard selection keys honor Pi's configured `tui.select.*` bindings; `h/j/k/l` remain available.
 - **Readable list UX:** project-first combined listing, pagination, `[project]` and `[global]` labels, exact-store `*` pin markers, and 60-character previews; browser rows omit IDs, which remain in details.
 - **Safety boundaries:** validated pin targets, ambiguity-safe removal, soft-only slash removal, non-creating native reads, and durable unresolved pins.
 
@@ -114,7 +114,7 @@ are thin core clients: they never write SQLite directly or parse CLI output.
 | `adapters/claude` | Private Git-first Claude Code plugin: native MCP memory tools plus session-start index injection. |
 | `adapters/opencode` | Publishable `@openlines/nmnm-opencode` OpenCode server plugin: native memory tools plus bounded transient index injection. |
 
-Use Node.js 22.13+ with built-in `node:sqlite` and FTS5. The Pi adapter is published as
+Use Node.js 22.19+ with built-in `node:sqlite` and FTS5. The Pi adapter is published as
 `@openlines/nmnm-pi` and the OpenCode adapter as `@openlines/nmnm-opencode`; Claude Code is a
 separately installed Git-first plugin.
 
@@ -149,7 +149,9 @@ pi -e ./adapters/pi/extensions/index.js
 Pi settings and pins are adapter-owned files outside SQLite. First load creates neither:
 `nmnm.jsonc` is optional and user-authored, and `nmnm-pi.json` appears only after a pin change.
 The first prompt receives a bounded transient index, rebuilt after successful compaction or memory
-mutations. Optional `autoretention` only guides the active model's `retain_memory`; disabled-by-default
+mutations. In an untrusted Pi project, automatic context is global-only and project files are not read;
+project model tools are refused, while explicit user `/memory` commands remain available. Optional
+`autoretention` only guides the active model's `retain_memory`; disabled-by-default
 `reinjection` can rebuild the same context every five user prompts. Direct controls provide a project-first
 `/memory list`, reversible ambiguity-safe `/memory remove`, and store-validated `/memory pin`. Only
 `retain_memory` creates a missing database; native reads and removal leave missing stores absent. See the

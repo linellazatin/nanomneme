@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.3 - Pi adapter trust and host hardening
+
+- Release bumped adapter and dependency version `@openlines/nmnm-pi 0.2.0` for `Pi 0.87.0` and `Node.js 22.19+`.
+- **Limit automatic context to global memory in untrusted projects** without reading project settings,
+- Load the adapter through Pi's real extension loader in an isolated regression test.
+  pins, or SQLite data; reject model-facing project operations while keeping global tools and explicit
+  user `/memory` project commands available.
+- Bound model-visible Pi tool JSON to `50 KiB`; oversized successful results return valid summaries
+  without truncating canonical stored memories.
+- Honor configured `tui.select.*` browser keybindings while retaining `h/j/k/l` navigation aliases.
+- Keep structured prompt-section migration deferred pending a separate behavior and cache probe.
+
 ## 0.3.2 - Pi adapter agent release 0.87.0 compatibility hardening
 
 - Re-verified `@openlines/nmnm-pi` (0.1.9) against Pi 0.87.0; the 0.87 lifecycle, session, context,

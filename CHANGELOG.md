@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.4 - Literal search-term hardening
+
+- `@openlines/nmnm-core` 0.1.1: `retrieve` search terms are normalized so ordinary text — hyphenated
+  names, `key:value` pairs, URLs, `node.js`, `v1.2.3`, `C++`, `C#`, `50%`, and other punctuation — is
+  matched literally instead of raising `invalid FTS5 query` or being misread as FTS5 column filters.
+  `AND`/`OR`/`NOT`/`NEAR` still work in infix position, quoted phrases and balanced parentheses are
+  preserved, a trailing `*` acts as a prefix, and dangling operators, stray quotes, or punctuation-only
+  queries degrade to literal text or an empty result rather than erroring.
+- `@openlines/nmnm-cli` `retrieve` joins unquoted words into a single query, so `nmnm retrieve node js`
+  is read as `node js`.
+- `@openlines/nmnm-cli` 0.1.1, `nmnm-claude` 0.1.3, `@openlines/nmnm-opencode` 0.1.1, and
+  `@openlines/nmnm-pi` 0.2.1 all repin `@openlines/nmnm-core` to 0.1.1, carrying the fix through their
+  model-visible `retrieve_memory` tools.
+
 ## 0.3.3 - Pi adapter trust and host hardening
 
 - Release bumped adapter and dependency version `@openlines/nmnm-pi 0.2.0` for `Pi 0.87.0` and `Node.js 22.19+`.

@@ -104,7 +104,7 @@ For a custom `--db` retain, `scope` is an explicit record label; standard projec
 |---|---|---|---|
 | `retain` | `[content]` | Create a UUID v4 record, or patch and restore an explicit ID. | New records need content. |
 | `recall` | `<id>` | Read one active, unexpired record. | Returns no result when absent, removed, or expired. |
-| `retrieve` | `[query]` | Return filtered, ordered, paginated records. | `--both` is retrieval-only. |
+| `retrieve` | `[query words...]` | Return filtered, ordered, paginated records. | `--both` is retrieval-only. |
 | `remove` | `<id>` | Soft-remove a record. | `--purge` permanently deletes it. |
 | `verify` | None | Report schema, integrity, tag, and FTS defects. | Read-only. |
 | `export` | None | Write canonical JSONL. | `--out` uses atomic replacement; no `--json`. |
@@ -205,7 +205,13 @@ content-based deduplication.
 
 Retrieve selectors support `query`; `source` matching `metadata.source`; scalar or array
 `kind`, `scope`, and `namespace`; an array of `tags`; numeric `importance` and `confidence`
-values or `{ gt, gte, lt, lte }` ranges; `expires`; `order_by`; `limit`; and `offset`. Text retrieval uses FTS5/BM25.
+values or `{ gt, gte, lt, lte }` ranges; `expires`; `order_by`; `limit`; and `offset`. Text retrieval uses FTS5/BM25 with a literal-first query normalizer.
+Terms containing punctuation are quoted and matched as phrases: `node.js`, `v1.2.3`, `C++`, `key:value`,
+`https://example.com`, `50%`, and `pi-adapter` all search literally instead of raising `invalid FTS5 query`
+or being read as column filters. Space-separated terms imply AND; `AND`/`OR`/`NOT`/`NEAR` in infix position,
+quoted `"phrases"`, balanced parentheses, and a trailing `*` prefix are preserved. Dangling operators, stray
+quotes or parentheses, and punctuation-only queries never error: unbalanced syntax degrades to literal terms,
+and a query that reduces to no tokens returns zero matches.
 Equal lexical scores prefer higher importance, then ID. Without a query, the default is
 newest `updated_at` first.
 
@@ -379,7 +385,7 @@ export preserves their removed state instead of silently reactivating them.
 | `nmnm:` argument error | Command help and option spelling | Correct the command; parsing fails before storage opens. |
 | Database does not exist | Selected project, global, or custom path | Use the intended path. Read-only commands do not create stores. |
 | Recall returns `null` | Store, ID, expiry, and removal state | Retrieve with `--expires any`; restore a soft removal with `retain --id`. |
-| Retrieval misses expected text | FTS5 query syntax and filters | Simplify the query, then run `verify` if canonical records should match. |
+| Retrieval misses expected text | FTS5 query syntax and filters | Punctuation terms are already literal; simplify or quote operators explicitly, then run `verify` if canonical records should match. |
 | Import is rejected | Header, canonical fields, duplicate IDs, and destination conflicts | Correct the complete JSONL input; imports never partially commit. |
 | Verification reports only FTS issues | `fts_*` issue groups | Run `repair --rebuild-fts`, then verify again. |
 | Verification reports other issues | Schema, integrity, fields, foreign keys, or tags | Stop writes and restore a verified backup or export. |

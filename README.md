@@ -47,7 +47,7 @@ Nanomneme helps agents remember without pretending to be human memory.
 - **4Rs lifecycle:** retain, recall, retrieve, and remove; retrieval can filter recorded harness sources; soft removal is reversible and purge is explicit.
 - **Local SQLite storage:** transactional canonical records with derived tags and FTS5 indexes.
 - **Canonical validation:** UUID v4 IDs, UTC timestamps, supported kinds and scopes, kebab-case namespaces and tags, and JSON metadata.
-- **Deterministic retrieval:** lexical FTS5/BM25 search, structured filters, expiry handling, pagination, and stable relevance, importance, recency, and ID ordering.
+- **Deterministic retrieval:** lexical FTS5/BM25 search with literal punctuation terms, structured filters, expiry handling, pagination, and stable relevance, importance, recency, and ID ordering.
 - **Multi-store selection:** project, global, or custom databases; `retrieve --both` returns project-first results with store provenance and preserves duplicate IDs.
 - **Portable data:** canonical JSONL export/import with validation, conflict safety, atomic file replacement, and exact closed SQLite backups.
 - **Integrity tools:** report-only verification, schema lifecycle checks, read-only access, and explicit FTS rebuild repair.

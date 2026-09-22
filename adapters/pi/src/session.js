@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { Key, matchesKey, truncateToWidth } from '@earendil-works/pi-tui';
+import { matchesKey, truncateToWidth } from '@earendil-works/pi-tui';
 
 import { buildMemoryIndex, pin, piAgentDir, pinsPath, readPins, readSettings, settingsPath, unpin, writePins } from './context.js';
 import { databasePath, runMemory, supportsGlobalStore } from './store.js';
@@ -147,9 +147,10 @@ function browserTarget(state) {
 }
 
 class MemoryBrowser {
-  constructor({ tui, theme, state, page, status, done }) {
+  constructor({ tui, theme, keybindings, state, page, status, done }) {
     this.tui = tui;
     this.theme = theme;
+    this.keybindings = keybindings;
     this.state = state;
     this.page = page;
     this.status = status;
@@ -177,35 +178,45 @@ class MemoryBrowser {
   selected(items) {
     const previous = this.state.focus[this.state.tab] ?? { key: 'search', index: 0 };
     const match = items.findIndex((item) => item.key === previous.key);
-    const index = match < 0 ? Math.min(previous.index, items.length - 1) : match;
+    let index;
+    if (match >= 0) index = match;
+    else if (previous.key.startsWith('memory:')) {
+      const lastMemory = items.findLastIndex((item) => item.item);
+      index = lastMemory >= 0 ? Math.min(previous.index, lastMemory) : Math.min(previous.index, items.length - 1);
+    } else index = Math.min(previous.index, items.length - 1);
     const selected = items[index];
     this.state.focus[this.state.tab] = { key: selected.key, index };
     return selected;
   }
 
   handleInput(data) {
-    if (matchesKey(data, Key.left) || matchesKey(data, 'h')) {
+    const up = this.keybindings.matches(data, 'tui.select.up');
+    const down = this.keybindings.matches(data, 'tui.select.down');
+    const confirm = this.keybindings.matches(data, 'tui.select.confirm');
+    const cancel = this.keybindings.matches(data, 'tui.select.cancel');
+    if (matchesKey(data, 'left') || matchesKey(data, 'h')) {
       const index = BROWSER_TABS.indexOf(this.state.tab);
       if (index > 0) this.state.tab = BROWSER_TABS[index - 1];
-    } else if (matchesKey(data, Key.right) || matchesKey(data, 'l')) {
+    } else if (matchesKey(data, 'right') || matchesKey(data, 'l')) {
       const index = BROWSER_TABS.indexOf(this.state.tab);
       if (index < BROWSER_TABS.length - 1) this.state.tab = BROWSER_TABS[index + 1];
-    } else if (matchesKey(data, Key.up) || matchesKey(data, 'k') || matchesKey(data, Key.down) || matchesKey(data, 'j')) {
+    } else if (up || matchesKey(data, 'k') || down || matchesKey(data, 'j')) {
       const items = this.items();
       const current = this.selected(items);
-      const delta = matchesKey(data, Key.up) || matchesKey(data, 'k') ? -1 : 1;
+      const delta = up || matchesKey(data, 'k') ? -1 : 1;
       const index = Math.max(0, Math.min(items.indexOf(current) + delta, items.length - 1));
       this.state.focus[this.state.tab] = { key: items[index].key, index };
-    } else if (matchesKey(data, Key.enter)) {
+    } else if (confirm) {
       this.done({ type: 'select', item: this.selected(this.items()) });
-      return;
-    } else if (matchesKey(data, Key.escape)) {
+      return true;
+    } else if (cancel) {
       this.done({ type: 'close' });
-      return;
+      return true;
     } else {
-      return;
+      return false;
     }
     this.tui.requestRender();
+    return true;
   }
 
   render(width) {
@@ -292,9 +303,10 @@ async function browseMemory({ ctx, home, platform, refresh, status }) {
     focus: {},
   };
   while (true) {
-    const choice = await ctx.ui.custom((tui, theme, _keybindings, done) => new MemoryBrowser({
+    const choice = await ctx.ui.custom((tui, theme, keybindings, done) => new MemoryBrowser({
       tui,
       theme,
+      keybindings,
       state,
       status: () => status(ctx),
       page: () => {

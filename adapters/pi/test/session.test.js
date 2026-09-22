@@ -40,14 +40,23 @@ function scriptedUi({ selections = [], inputs = [], confirmations = [] } = {}) {
   };
 }
 
-function customUi({ interactions = [], selections = [], inputs = [], confirmations = [] } = {}) {
+function customUi({ interactions = [], selections = [], inputs = [], confirmations = [], keybindings } = {}) {
   const scripted = scriptedUi({ selections, inputs, confirmations });
   const customCalls = [];
+  const defaults = {
+    'tui.select.up': '\x1b[A',
+    'tui.select.down': '\x1b[B',
+    'tui.select.confirm': '\r',
+    'tui.select.cancel': '\x1b',
+  };
+  const manager = keybindings ?? {
+    matches: (data, action) => defaults[action] === data,
+  };
   scripted.ui.custom = async (factory) => new Promise((done) => {
     const component = factory(
       { requestRender: () => {} },
       { fg: (_color, text) => text, bold: (text) => text },
-      { matches: () => false },
+      manager,
       done,
     );
     customCalls.push(component);
@@ -473,6 +482,54 @@ test('memory browser uses left and right arrows to switch between status and sto
     await commands.get('memory').handler('browse', { cwd: project, mode: 'tui', hasUI: true, ui: scripted.ui });
 
     assert.equal(scripted.customCalls.length, 1);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('memory browser honors configured keybindings and keeps raw navigation aliases', async () => {
+  const project = temporaryDirectory('nmnm-pi-browser-configured-keybindings-project-');
+  const home = temporaryDirectory('nmnm-pi-browser-configured-keybindings-home-');
+  try {
+    const commands = new Map();
+    runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Configured keybinding memory' } });
+    const bindings = new Map([
+      ['U', 'tui.select.up'],
+      ['D', 'tui.select.down'],
+      ['C', 'tui.select.confirm'],
+      ['X', 'tui.select.cancel'],
+    ]);
+    const scripted = customUi({
+      keybindings: { matches: (data, action) => bindings.get(data) === action },
+      interactions: [
+        (component) => {
+          assert.equal(component.handleInput('l'), true);
+          assert.match(component.render(120).join('\n'), /\[All\]/);
+          assert.equal(component.handleInput('D'), true);
+          assert.match(component.render(120).join('\n'), /> Source: all/);
+          assert.equal(component.handleInput('U'), true);
+          assert.match(component.render(120).join('\n'), /> Search/);
+          assert.equal(component.handleInput('j'), true);
+          assert.match(component.render(120).join('\n'), /> Source: all/);
+          assert.equal(component.handleInput('k'), true);
+          assert.match(component.render(120).join('\n'), /> Search/);
+          assert.equal(component.handleInput('h'), true);
+          assert.match(component.render(120).join('\n'), /\[Status\]/);
+          const before = component.render(120);
+          assert.equal(component.handleInput('?'), false);
+          assert.deepEqual(component.render(120), before);
+          assert.equal(component.handleInput('l'), true);
+          assert.equal(component.handleInput('C'), true);
+        },
+        (component) => assert.equal(component.handleInput('X'), true),
+      ],
+    });
+    registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, { home, platform: 'darwin' });
+
+    await commands.get('memory').handler('browse', { cwd: project, mode: 'tui', hasUI: true, ui: scripted.ui });
+
+    assert.equal(scripted.customCalls.length, 2);
   } finally {
     rmSync(project, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });

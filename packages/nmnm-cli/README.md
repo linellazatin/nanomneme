@@ -2,8 +2,7 @@
 
 <div align="center">
 
-[![nmnm-cli version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-cli?label=cli&logo=npm&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-cli)
-[![nmnm-cli downloads](https://img.shields.io/npm/dm/@openlines/nmnm-cli?label=cli&logo=npm&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-cli)
+[![nmnm-cli version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-cli?label=cli&logo=npm&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-cli) [![nmnm-cli downloads](https://img.shields.io/npm/dt/@openlines/nmnm-cli?label=downloads&logo=npm&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-cli)
 
 </div>
 
@@ -21,9 +20,4 @@ nmnm retain "Prefer concise operator documentation" --tags preference
 nmnm retrieve "operator documentation" --both
 ```
 
-Installing this package also installs its exact `@openlines/nmnm-core` dependency. The CLI defaults to `./.nanomneme/memory.db`. Use `--global` for the standard global
-database or `--db <path> --scope project|global` for a custom database. See the
-[Core and CLI Manual](../../docs/CORE_CLI_MANUAL.md)
-for commands and recovery workflows. `export --out <file>` replaces its destination
-atomically after the complete JSONL file is written. `verify` and `export` open their
-source databases read-only; `repair` remains writable.
+Installing this package also installs its exact `@openlines/nmnm-core` dependency. The CLI defaults to `./.nanomneme/memory.db`. Use `--global` for the standard global database or `--db <path> --scope project|global` for a custom database. See the [Core and CLI Manual](../../docs/CORE_CLI_MANUAL.md) for commands and recovery workflows. `export --out <file>` replaces its destination atomically after the complete JSONL file is written. `verify` and `export` open their source databases read-only; `repair` remains writable.

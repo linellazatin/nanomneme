@@ -1,6 +1,6 @@
 {
   "name": "@openlines/nmnm-opencode",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "OpenCode adapter for nanomneme local SQLite memory",
   "type": "module",
   "keywords": [
@@ -28,6 +28,7 @@
     "bin",
     "src",
     "docs",
+    "docs/img",
     "README.md",
     "LICENSE"
   ],
@@ -37,7 +38,7 @@
   "dependencies": {
     "@opencode-ai/plugin": "1.18.15",
     "jsonc-parser": "3.3.1",
-    "@openlines/nmnm-core": "0.1.0"
+    "@openlines/nmnm-core": "0.1.1"
   },
   "engines": {
     "node": ">=22.13.0"

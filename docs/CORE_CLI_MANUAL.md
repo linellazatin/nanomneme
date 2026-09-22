@@ -1,34 +1,25 @@
 # nanomneme Core and CLI Manual
 
-This manual is the task-oriented guide for nanomneme. It serves developers who embed
-`nmnm-core` and agents or operators that call the `nmnm` CLI. Pi users should pair it
-with the [Pi Adapter Manual](../adapters/pi/docs/PI_ADAPTER_MANUAL.md). nanomneme remains a local,
-deterministic SQLite memory store without required models, services, or network access.
+This manual is the task-oriented guide for nanomneme. It serves developers who embed `nmnm-core` and agents or operators that call the `nmnm` CLI. Pi users should pair it with the [Pi Adapter Manual](../adapters/pi/docs/PI_ADAPTER_MANUAL.md). nanomneme remains a local, deterministic SQLite memory store without required models, services, or network access.
 
 ## Audiences
 
 ### Developers
 
-Use the developer path to install the workspace packages, open and close stores safely,
-call the 4Rs, inspect the schema, and use portability and verification APIs. Examples use
-Node.js ESM and the built-in `node:sqlite` runtime required by the project.
+Use the developer path to install the workspace packages, open and close stores safely, call the 4Rs, inspect the schema, and use portability and verification APIs. Examples use Node.js ESM and the built-in `node:sqlite` runtime required by the project.
 
 ### Agents and operators
 
-Use the agent path for deterministic CLI calls, stable JSON responses, explicit store
-selection, ID-based updates, and actionable error handling. Human-readable output is for
-interactive use; automated callers should request `--json`.
+Use the agent path for deterministic CLI calls, stable JSON responses, explicit store selection, ID-based updates, and actionable error handling. Human-readable output is for interactive use; automated callers should request `--json`.
 
 ## Operating contract
 
 - The core operates on one SQLite database at a time.
-- The CLI selects project, global, or custom storage. Retrieval alone can compose project
-  then global results with `--both`.
+- The CLI selects project, global, or custom storage. Retrieval alone can compose project then global results with `--both`.
 - `(store, id)` is the effective identity of a retrieval result.
 - Canonical records live in `memories`; tags and FTS rows are derived.
 - Retrieval is lexical and deterministic. Separate database scores are never compared.
-- Canonical JSONL is the portable interchange format. Exact backups are closed SQLite
-  file copies.
+- Canonical JSONL is the portable interchange format. Exact backups are closed SQLite file copies.
 
 ## Manual map
 
@@ -47,8 +38,7 @@ The tracked delivery phases are maintained in [ROADMAP.md](../ROADMAP.md).
 
 ### Requirements and installation
 
-Use Node.js 22.13 or later with FTS5 available in the built-in `node:sqlite` module.
-Install the CLI for terminal or agent use:
+Use Node.js 22.13 or later with FTS5 available in the built-in `node:sqlite` module. Install the CLI for terminal or agent use:
 
 ```sh
 npm install --global @openlines/nmnm-cli
@@ -68,8 +58,7 @@ npm install
 node packages/nmnm-cli/bin/nmnm.js --help
 ```
 
-Node may print an experimental warning for `node:sqlite`; supported Node versions do not
-need an experimental runtime flag.
+Node may print an experimental warning for `node:sqlite`; supported Node versions do not need an experimental runtime flag.
 
 ### First CLI workflow
 
@@ -83,8 +72,7 @@ nmnm recall <memory-id> --db ./memory.db --json
 nmnm remove <memory-id> --db ./memory.db --json
 ```
 
-The retain response supplies `<memory-id>`. Removal is soft by default. A later
-`retain --id <memory-id>` patches and restores that row; `remove --purge` is irreversible.
+The retain response supplies `<memory-id>`. Removal is soft by default. A later `retain --id <memory-id>` patches and restores that row; `remove --purge` is irreversible.
 
 ### Select a store
 
@@ -95,8 +83,7 @@ The retain response supplies `<memory-id>`. Removal is soft by default. A later
 | `--db <path>` | Exact supplied path | Custom store for scripts, tests, or isolation. |
 | `retrieve --both` | Project, then global | Retrieval only; missing stores remain absent. |
 
-`--global` cannot be combined with `--db`. `--both` cannot be combined with either.
-For a custom `--db` retain, `scope` is an explicit record label; standard project and global retains derive the matching scope and reject mismatches.
+`--global` cannot be combined with `--db`. `--both` cannot be combined with either. For a custom `--db` retain, `scope` is an explicit record label; standard project and global retains derive the matching scope and reject mismatches.
 
 ## CLI reference
 
@@ -104,7 +91,7 @@ For a custom `--db` retain, `scope` is an explicit record label; standard projec
 |---|---|---|---|
 | `retain` | `[content]` | Create a UUID v4 record, or patch and restore an explicit ID. | New records need content. |
 | `recall` | `<id>` | Read one active, unexpired record. | Returns no result when absent, removed, or expired. |
-| `retrieve` | `[query]` | Return filtered, ordered, paginated records. | `--both` is retrieval-only. |
+| `retrieve` | `[query words...]` | Return filtered, ordered, paginated records. | `--both` is retrieval-only. |
 | `remove` | `<id>` | Soft-remove a record. | `--purge` permanently deletes it. |
 | `verify` | None | Report schema, integrity, tag, and FTS defects. | Read-only. |
 | `export` | None | Write canonical JSONL. | `--out` uses atomic replacement; no `--json`. |
@@ -147,15 +134,13 @@ For a custom `--db` retain, `scope` is an explicit record label; standard projec
 | `--limit` | `1..1000` | Limit returned rows. | Default is core-defined. |
 | `--offset` | `0..1000` | Skip returned rows. | Applied across the combined `--both` sequence. |
 
-`remove` also accepts `--purge`; `export` accepts `--out <file>`; `repair` requires
-`--rebuild-fts`. Run `nmnm --help` for exact current syntax.
+`remove` also accepts `--purge`; `export` accepts `--out <file>`; `repair` requires `--rebuild-fts`. Run `nmnm --help` for exact current syntax.
 
 ## Developer guide
 
 ### Store lifecycle
 
-Always close the store. Use `try`/`finally` so validation, SQLite, or application errors
-cannot leave a connection open:
+Always close the store. Use `try`/`finally` so validation, SQLite, or application errors cannot leave a connection open:
 
 ```js
 import { open } from '@openlines/nmnm-core';
@@ -179,10 +164,7 @@ try {
 }
 ```
 
-`open(path)` creates a missing database and applies registered forward migrations.
-`open(path, { create: false })` requires an existing database. Use
-`open(path, { readOnly: true })` for reads that must neither create nor migrate storage;
-SQLite rejects mutation methods on that connection.
+`open(path)` creates a missing database and applies registered forward migrations. `open(path, { create: false })` requires an existing database. Use `open(path, { readOnly: true })` for reads that must neither create nor migrate storage; SQLite rejects mutation methods on that connection.
 
 ### Core API
 
@@ -198,16 +180,9 @@ SQLite rejects mutation methods on that connection.
 | `rebuildFts()` | None | `{ mode: 'rebuild-fts', rebuilt }`. |
 | `close()` | None | Closes the SQLite connection. |
 
-New `retain` inputs require `content`. Optional fields are `kind`, `scope`, `namespace`,
-`importance`, `confidence`, `expires_at`, `metadata`, and `tags`. The core generates the
-ID and timestamps. Passing `id` switches retain to patch/restore mode and never performs
-content-based deduplication.
+New `retain` inputs require `content`. Optional fields are `kind`, `scope`, `namespace`, `importance`, `confidence`, `expires_at`, `metadata`, and `tags`. The core generates the ID and timestamps. Passing `id` switches retain to patch/restore mode and never performs content-based deduplication.
 
-Retrieve selectors support `query`; `source` matching `metadata.source`; scalar or array
-`kind`, `scope`, and `namespace`; an array of `tags`; numeric `importance` and `confidence`
-values or `{ gt, gte, lt, lte }` ranges; `expires`; `order_by`; `limit`; and `offset`. Text retrieval uses FTS5/BM25.
-Equal lexical scores prefer higher importance, then ID. Without a query, the default is
-newest `updated_at` first.
+Retrieve selectors support `query`; `source` matching `metadata.source`; scalar or array `kind`, `scope`, and `namespace`; an array of `tags`; numeric `importance` and `confidence` values or `{ gt, gte, lt, lte }` ranges; `expires`; `order_by`; `limit`; and `offset`. Text retrieval uses FTS5/BM25 with a literal-first query normalizer. Terms containing punctuation are quoted and matched as phrases: `node.js`, `v1.2.3`, `C++`, `key:value`, `https://example.com`, `50%`, and `pi-adapter` all search literally instead of raising `invalid FTS5 query` or being read as column filters. Space-separated terms imply AND; `AND`/`OR`/`NOT`/`NEAR` in infix position, quoted `"phrases"`, balanced parentheses, and a trailing `*` prefix are preserved. Dangling operators, stray quotes or parentheses, and punctuation-only queries never error: unbalanced syntax degrades to literal terms, and a query that reduces to no tokens returns zero matches. Equal lexical scores prefer higher importance, then ID. Without a query, the default is newest `updated_at` first.
 
 ### Schema ownership
 
@@ -218,12 +193,9 @@ newest `updated_at` first.
 | `memories_fts` | Core-maintained FTS5 index for non-removed records, including expired rows. |
 | `nmnm_meta` | Core-maintained schema version. |
 
-Do not write these tables directly. Core transactions keep canonical rows, tags, and FTS
-synchronized. The core API and CLI flag tables above define accepted public values.
+Do not write these tables directly. Core transactions keep canonical rows, tags, and FTS synchronized. The core API and CLI flag tables above define accepted public values.
 
-Public reads and exports project the canonical memory columns explicitly. If schema drift
-adds a column, `verify` reports it but recall, retrieval, and canonical JSONL do not expose
-the unexpected value.
+Public reads and exports project the canonical memory columns explicitly. If schema drift adds a column, `verify` reports it but recall, retrieval, and canonical JSONL do not expose the unexpected value.
 
 ### Errors
 
@@ -254,10 +226,7 @@ For discovery across defaults, request both stores and preserve provenance:
 nmnm retrieve "release decision" --both --limit 20 --offset 0 --json
 ```
 
-Follow-up commands must select the result's store. Use no selector for `project`,
-`--global` for `global`, and the original `--db <path>` for `custom`. A custom result says
-`"store": "custom"`; it does not repeat the database path, so the caller must retain that
-path. `--both` is retrieval-only.
+Follow-up commands must select the result's store. Use no selector for `project`, `--global` for `global`, and the original `--db <path>` for `custom`. A custom result says `"store": "custom"`; it does not repeat the database path, so the caller must retain that path. `--both` is retrieval-only.
 
 ### Consume JSON output
 
@@ -272,10 +241,7 @@ path. `--both` is retrieval-only.
 | `repair` | Rebuild result plus nested `verification`. |
 | `export` | Canonical JSONL on stdout, or a file with `--out`; not `--json`. |
 
-`score` appears only for text retrieval and is transient. Lower values rank first within
-one database. Do not compare scores between project and global results. With `--both`,
-project items always precede global items; `total` is summed before `--offset` and
-`--limit` are applied to that combined sequence.
+`score` appears only for text retrieval and is transient. Lower values rank first within one database. Do not compare scores between project and global results. With `--both`, project items always precede global items; `total` is summed before `--offset` and `--limit` are applied to that combined sequence.
 
 ### Handle status and errors
 
@@ -288,10 +254,7 @@ Capture the exit status, stdout, and stderr separately:
 | `1` with `repair --json` stdout | Rebuild finished but verification still found issues. | Parse nested `verification` and stop mutation attempts. |
 | `1` with `nmnm:` on stderr | Argument, validation, storage, or SQLite failure. | Report stderr and classify before retrying. |
 
-Do not retry invalid options, malformed values, missing mutation targets, import
-conflicts, or missing read-only databases without changing the command or state. Retry an
-operational SQLite failure only with a bounded policy after inspecting stderr. Never
-silently redirect a failed command to another store.
+Do not retry invalid options, malformed values, missing mutation targets, import conflicts, or missing read-only databases without changing the command or state. Retry an operational SQLite failure only with a bounded policy after inspecting stderr. Never silently redirect a failed command to another store.
 
 ## Portability and recovery
 
@@ -314,16 +277,9 @@ nmnm import ./memory.jsonl --db ./restored.db --json
 nmnm verify --db ./restored.db --json
 ```
 
-The export contains active, expired, and soft-removed canonical records. It excludes
-retrieval-only `store`, transient `score`, tags tables, and FTS rows. File export uses a
-same-directory temporary file and atomic replacement. The output must not be the source
-database or a symlink or hardlink to it.
+The export contains active, expired, and soft-removed canonical records. It excludes retrieval-only `store`, transient `score`, tags tables, and FTS rows. File export uses a same-directory temporary file and atomic replacement. The output must not be the source database or a symlink or hardlink to it.
 
-Import validates the header and every record before opening the destination, then applies
-all records in one transaction. Importing into an existing store is a conflict-safe merge,
-not an overwrite: duplicate IDs within the file or IDs already present in the destination
-reject the complete import. Resolve conflicts by producing a new canonical file; do not
-edit the database directly.
+Import validates the header and every record before opening the destination, then applies all records in one transaction. Importing into an existing store is a conflict-safe merge, not an overwrite: duplicate IDs within the file or IDs already present in the destination reject the complete import. Resolve conflicts by producing a new canonical file; do not edit the database directly.
 
 ### Make and restore an exact backup
 
@@ -335,17 +291,11 @@ cp ./source.db ./memory-backup.db
 nmnm verify --db ./memory-backup.db --json
 ```
 
-Restore only while the destination is closed, and preserve the current file separately
-until the restored copy verifies. Plain copying is not an online-backup mechanism; use
-JSONL export when writers cannot be stopped.
+Restore only while the destination is closed, and preserve the current file separately until the restored copy verifies. Plain copying is not an online-backup mechanism; use JSONL export when writers cannot be stopped.
 
 ### Verify and repair
 
-Run `verify` before transfer, after import or restore, and whenever direct inspection or
-an interrupted filesystem operation makes integrity uncertain. Verification is read-only
-and reports exact schema-column, SQLite integrity, foreign-key, canonical-field and
-timestamp-ordering, tag, and FTS issues. It skips unsafe table queries when required
-columns are missing, so malformed schemas remain structured diagnostic results.
+Run `verify` before transfer, after import or restore, and whenever direct inspection or an interrupted filesystem operation makes integrity uncertain. Verification is read-only and reports exact schema-column, SQLite integrity, foreign-key, canonical-field and timestamp-ordering, tag, and FTS issues. It skips unsafe table queries when required columns are missing, so malformed schemas remain structured diagnostic results.
 
 Use repair only for derived full-text drift:
 
@@ -354,11 +304,7 @@ nmnm repair --rebuild-fts --db ./memory.db --json
 nmnm verify --db ./memory.db --json
 ```
 
-Repair rebuilds FTS rows from non-removed canonical memories, including expired rows, and
-then verifies the store. It
-does not change memories, tags, metadata, or schema. If canonical, schema, integrity, or
-tag issues remain, stop writes and restore a verified backup or export rather than trying
-manual SQL changes.
+Repair rebuilds FTS rows from non-removed canonical memories, including expired rows, and then verifies the store. It does not change memories, tags, metadata, or schema. If canonical, schema, integrity, or tag issues remain, stop writes and restore a verified backup or export rather than trying manual SQL changes.
 
 ### Recover removed data
 
@@ -368,9 +314,7 @@ A default remove is reversible. Restore the same ID with an explicit retain patc
 nmnm retain "Restored content" --id <memory-id> --db ./memory.db --scope project --json
 ```
 
-`remove --purge` is irreversible within the live store. Recovery then requires a prior
-SQLite backup or JSONL export. Because exports include soft-removed records, importing an
-export preserves their removed state instead of silently reactivating them.
+`remove --purge` is irreversible within the live store. Recovery then requires a prior SQLite backup or JSONL export. Because exports include soft-removed records, importing an export preserves their removed state instead of silently reactivating them.
 
 ## Troubleshooting
 
@@ -379,27 +323,20 @@ export preserves their removed state instead of silently reactivating them.
 | `nmnm:` argument error | Command help and option spelling | Correct the command; parsing fails before storage opens. |
 | Database does not exist | Selected project, global, or custom path | Use the intended path. Read-only commands do not create stores. |
 | Recall returns `null` | Store, ID, expiry, and removal state | Retrieve with `--expires any`; restore a soft removal with `retain --id`. |
-| Retrieval misses expected text | FTS5 query syntax and filters | Simplify the query, then run `verify` if canonical records should match. |
+| Retrieval misses expected text | FTS5 query syntax and filters | Punctuation terms are already literal; simplify or quote operators explicitly, then run `verify` if canonical records should match. |
 | Import is rejected | Header, canonical fields, duplicate IDs, and destination conflicts | Correct the complete JSONL input; imports never partially commit. |
 | Verification reports only FTS issues | `fts_*` issue groups | Run `repair --rebuild-fts`, then verify again. |
 | Verification reports other issues | Schema, integrity, fields, foreign keys, or tags | Stop writes and restore a verified backup or export. |
 
-The `node:sqlite` experimental warning can appear on supported Node versions and does not
-by itself indicate command failure. Use the process exit status and documented output
-instead. On platforms where `--global` is unsupported, use an explicit `--db <path>`.
+The `node:sqlite` experimental warning can appear on supported Node versions and does not by itself indicate command failure. Use the process exit status and documented output instead. On platforms where `--global` is unsupported, use an explicit `--db <path>`.
 
 ## Documentation ownership
 
-- [README.md](../README.md) defines product scope, architecture, and the documentation
-  index.
+- [README.md](../README.md) defines product scope, architecture, and the documentation index.
 - This manual owns task sequences, operational guidance, and audience-specific examples.
-- [Pi Adapter Manual](../adapters/pi/docs/PI_ADAPTER_MANUAL.md) owns Pi installation, tools, configuration,
-  pins, and automatic index behavior.
+- [Pi Adapter Manual](../adapters/pi/docs/PI_ADAPTER_MANUAL.md) owns Pi installation, tools, configuration, pins, and automatic index behavior.
 - Package READMEs own package installation and discovery.
 - `nmnm --help` is authoritative for available CLI flags.
-- Runtime code and tests are authoritative when documentation and behavior disagree; fix
-  the documentation in the same change.
+- Runtime code and tests are authoritative when documentation and behavior disagree; fix the documentation in the same change.
 
-Examples use `nmnm` for an installed CLI and explicit placeholders such as `<memory-id>`
-and `<path>`. Commands that modify storage state their target store. Destructive examples
-identify irreversible operations before showing them.
+Examples use `nmnm` for an installed CLI and explicit placeholders such as `<memory-id>` and `<path>`. Commands that modify storage state their target store. Destructive examples identify irreversible operations before showing them.

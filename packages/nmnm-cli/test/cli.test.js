@@ -16,8 +16,8 @@ test('CLI reports its package version without opening a database', async () => {
 
   assert.equal(long.status, 0, long.stderr);
   assert.equal(short.status, 0, short.stderr);
-  assert.equal(long.stdout, '0.1.0\n');
-  assert.equal(short.stdout, '0.1.0\n');
+  assert.equal(long.stdout, '0.1.1\n');
+  assert.equal(short.stdout, '0.1.1\n');
   await assert.rejects(access(join(directory, '.nanomneme', 'memory.db')));
 });
 
@@ -59,7 +59,6 @@ test('CLI validates commands and positional arguments before creating a database
     [['--limit', '1'], /command is required/],
     [['unknown'], /unknown command: unknown/],
     [['recall'], /recall requires an id/],
-    [['retrieve', 'one', 'two'], /retrieve accepts one query argument/],
     [['verify', 'unexpected'], /verify does not accept arguments/],
   ]) {
     const result = runIn(directory, ...args);
@@ -77,8 +76,23 @@ test('CLI accepts -- before content or a query that starts with --', async () =>
   assert.equal(retained.status, 0, retained.stderr);
   assert.equal(JSON.parse(retained.stdout).content, '--leading content');
   const query = run('retrieve', '--db', db, '--json', '--', '--leading');
-  assert.notEqual(query.status, 0);
-  assert.match(query.stderr, /invalid FTS5 query/);
+  assert.equal(query.status, 0, query.stderr);
+  const retrieved = JSON.parse(query.stdout);
+  assert.equal(retrieved.total, 1);
+  assert.equal(retrieved.items[0].content, '--leading content');
+});
+
+test('CLI joins unquoted retrieve words into a single query', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-multiword-'));
+  const db = join(directory, 'memory.db');
+  run('retain', 'embedded SQLite storage engine', '--db', db, '--scope', 'project');
+  run('retain', 'unrelated duckdb note', '--db', db, '--scope', 'project');
+
+  const combined = run('retrieve', 'SQLite', 'storage', '--db', db, '--json');
+  assert.equal(combined.status, 0, combined.stderr);
+  const result = JSON.parse(combined.stdout);
+  assert.equal(result.total, 1);
+  assert.equal(result.items[0].content, 'embedded SQLite storage engine');
 });
 
 test('CLI exports canonical JSONL and imports it atomically', async () => {
@@ -454,7 +468,6 @@ test('CLI validates --both selectors when both databases are missing', async () 
     [['--limit', '0'], /limit must be an integer between 1 and 1000/],
     [['--offset', '-1'], /offset must be an integer between 0 and 1000/],
     [['--kind', 'summary'], /kind must be/],
-    [['"'], /invalid FTS5 query/],
   ]) {
     const result = runIn(directory, 'retrieve', ...args, '--both');
     assert.notEqual(result.status, 0);

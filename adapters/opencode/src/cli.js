@@ -94,7 +94,7 @@ function preview(content) {
 }
 
 function statusLine(label, value) {
-  return `${label.padEnd(26)}${value}`;
+  return `${`${label}:`.padEnd(24)}${value}`;
 }
 
 function existingStoreMemory({ ctx, store, operation, input, readOnly = true }) {
@@ -175,30 +175,14 @@ export function status(ctx) {
   const pins = pinSets(ctx);
   const totals = Object.fromEntries(STORES.map((store) =>
     [store, (existingStoreMemory({ ctx, store, operation: 'retrieve', input: { limit: 1, offset: 0 } }) ?? { total: 0 }).total]));
-  const autoretention = index.autoretention
-    ? `enabled (persist ${count(index.autoretention, 'Automatically retain')} · ask ${count(index.autoretention, 'Ask the user')} · never ${count(index.autoretention, 'Never automatically')})`
-    : 'disabled';
   return [
     'Nanomneme status',
-    statusLine('Injection budget', `${index.budget} · current: ${current} · unresolved: ${index.unresolved}`),
+    statusLine('Injection budget', `${index.budget} • ${current} • ur: ${index.unresolved}`),
     statusLine('Periodic reinjection', index.reinjection.enabled ? `every ${index.reinjection.every_n_prompts} prompts` : 'disabled'),
-    statusLine('Autoretention', autoretention),
-    statusLine('Pins', `project: ${pins.project.size} · global: ${pins.global.size}`),
-    statusLine('Memories', `project: ${totals.project} · global: ${totals.global}`),
+    statusLine('Autoretention', index.autoretention ? 'enabled' : 'disabled'),
+    statusLine('Pins', `project: ${pins.project.size} • global: ${pins.global.size}`),
+    statusLine('Memories', `project: ${totals.project} • global: ${totals.global}`),
   ].join('\n');
-}
-
-// Count the bullet rules under one autoretention heading in the rendered guidance block.
-function count(autoretention, heading) {
-  const lines = autoretention.split('\n');
-  const start = lines.findIndex((line) => line.startsWith(heading));
-  if (start === -1) return 0;
-  let total = 0;
-  for (const line of lines.slice(start + 1)) {
-    if (line.startsWith('- ')) total += 1;
-    else break;
-  }
-  return total;
 }
 
 function resolveStore(ctx, requested, id) {

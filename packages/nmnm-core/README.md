@@ -2,8 +2,7 @@
 
 <div align="center">
 
-[![nmnm-core version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-core?label=core&logo=npm&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-core)
-[![nmnm-core downloads](https://img.shields.io/npm/dm/@openlines/nmnm-core?label=core&logo=npm&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-core)
+[![nmnm-core version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-core?label=core&logo=npm&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-core) [![nmnm-core downloads](https://img.shields.io/npm/dt/@openlines/nmnm-core?label=downloads&logo=npm&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-core)
 
 </div>
 
@@ -27,13 +26,6 @@ try {
 }
 ```
 
-The public API provides `open(path)`, the 4Rs, source-filtered retrieval through
-`retrieve({ source })`, canonical portability records, integrity verification, and FTS repair. See the
-[Core and CLI Manual](../../docs/CORE_CLI_MANUAL.md)
-for task-based guidance and the repository README for the complete data contract.
-Imports reject unknown fields, values that require normalization, and `updated_at`
-values earlier than `created_at`. Public reads and exports return only canonical memory
-fields, even when verification detects unexpected database columns.
+The public API provides `open(path)`, the 4Rs, source-filtered retrieval through `retrieve({ source })`, canonical portability records, integrity verification, and FTS repair. See the [Core and CLI Manual](../../docs/CORE_CLI_MANUAL.md) for task-based guidance and the repository README for the complete data contract. Imports reject unknown fields, values that require normalization, and `updated_at` values earlier than `created_at`. Public reads and exports return only canonical memory fields, even when verification detects unexpected database columns.
 
-Use `open(path, { readOnly: true })` for diagnostics and exports that must not create,
-migrate, or modify a database.
+Use `open(path, { readOnly: true })` for diagnostics and exports that must not create, migrate, or modify a database.

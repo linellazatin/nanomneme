@@ -13,6 +13,7 @@
 - `@openlines/nmnm-cli` 0.1.1, `nmnm-claude` 0.1.3, `@openlines/nmnm-opencode` 0.1.1, and
   `@openlines/nmnm-pi` 0.2.1 all repin `@openlines/nmnm-core` to 0.1.1, carrying the fix through their
   model-visible `retrieve_memory` tools.
+- `@openlines/nmnm-opencode` text clutter clean-up in memory browser status view
 
 ## 0.3.3 - Pi adapter trust and host hardening
 

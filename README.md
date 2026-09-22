@@ -2,21 +2,15 @@
 
 # nanomneme (nmnm)
 
-[![gh stars](https://img.shields.io/github/stars/linellazatin/nanomneme?logo=github&color=ffffe0)](https://github.com/linellazatin/nanomneme)
-[![gh release](https://img.shields.io/github/v/release/linellazatin/nanomneme?label=release&logo=github&color=ffffe0)](https://github.com/linellazatin/nanomneme)
-[![license](https://img.shields.io/npm/l/@openlines/opl-pi-sht)](./LICENSE)
+[![gh stars](https://img.shields.io/github/stars/linellazatin/nanomneme?logo=github&color=ffffe0)](https://github.com/linellazatin/nanomneme) [![gh release](https://img.shields.io/github/v/release/linellazatin/nanomneme?label=release&logo=github&color=ffffe0)](https://github.com/linellazatin/nanomneme) [![license](https://img.shields.io/npm/l/@openlines/opl-pi-sht)](./LICENSE)
 
 ### memory core
-[![nmnm-cli version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-cli?label=cli&logo=npm&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-cli)
-[![nmnm-cli downloads](https://img.shields.io/npm/dm/@openlines/nmnm-cli?label=cli&logo=npm&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-cli)
+[![nmnm-cli version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-cli?label=cli&logo=npm&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-cli) [![nmnm-cli downloads](https://img.shields.io/npm/dt/@openlines/nmnm-cli?label=cli&logo=npm&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-cli)
 
-[![nmnm-core version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-core?label=core&logo=npm&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-core)
-[![nmnm-core downloads](https://img.shields.io/npm/dm/@openlines/nmnm-core?label=core&logo=npm&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-core)
+[![nmnm-core version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-core?label=core&logo=npm&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-core) [![nmnm-core downloads](https://img.shields.io/npm/dt/@openlines/nmnm-core?label=core&logo=npm&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-core)
 
 ### adapters
-[![nmnm-pi version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-pi?label=pi&logo=pi&color=ffffe0)](https://www.npmjs.com/package/@openlines/nmnm-pi)
-[![nmnm-claude version](https://img.shields.io/badge/claude-v0.1.2-orange?logo=claude)](https://github.com/linellazatin/nanomneme/tree/main/adapters/claude)
-[![nmnm-opencode version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-opencode?label=opencode&logo=opencode)](https://www.npmjs.com/package/@openlines/nmnm-opencode)
+[![nmnm-pi version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-pi?label=pi&logo=pi&color=ffffe0)](https://www.npmjs.com/package/@openlines/nmnm-pi) [![nmnm-claude version](https://img.shields.io/badge/claude-v0.1.2-orange?logo=claude)](https://github.com/linellazatin/nanomneme/tree/main/adapters/claude) [![nmnm-opencode version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-opencode?label=opencode&logo=opencode)](https://www.npmjs.com/package/@openlines/nmnm-opencode)
 
 </div>
 
@@ -100,9 +94,7 @@ chosen adapter or nmnm CLI
 node:sqlite + SQLite FTS5
 ```
 
-`nmnm-core` owns the schema, validation, transactional writes, tags, FTS synchronization,
-portability, verification, and repair. The CLI is the operator interface. Harness adapters
-are thin core clients: they never write SQLite directly or parse CLI output.
+`nmnm-core` owns the schema, validation, transactional writes, tags, FTS synchronization, portability, verification, and repair. The CLI is the operator interface. Harness adapters are thin core clients: they never write SQLite directly or parse CLI output.
 
 ## Packages
 
@@ -114,9 +106,7 @@ are thin core clients: they never write SQLite directly or parse CLI output.
 | `adapters/claude` | Private Git-first Claude Code plugin: native MCP memory tools plus session-start index injection. |
 | `adapters/opencode` | Publishable `@openlines/nmnm-opencode` OpenCode server plugin: native memory tools plus bounded transient index injection. |
 
-Use Node.js 22.19+ with built-in `node:sqlite` and FTS5. The Pi adapter is published as
-`@openlines/nmnm-pi` and the OpenCode adapter as `@openlines/nmnm-opencode`; Claude Code is a
-separately installed Git-first plugin.
+Use Node.js 22.19+ with built-in `node:sqlite` and FTS5. The Pi adapter is published as `@openlines/nmnm-pi` and the OpenCode adapter as `@openlines/nmnm-opencode`; Claude Code is a separately installed Git-first plugin.
 
 ## Quick start
 
@@ -126,8 +116,7 @@ nmnm retain "Use SQLite for storage" --kind decision --tags architecture,storage
 nmnm retrieve "SQLite"
 ```
 
-This one command installs the CLI and its exact `@openlines/nmnm-core` dependency. Install
-`@openlines/nmnm-core` directly only when writing a Node.js integration. Install Pi with:
+This one command installs the CLI and its exact `@openlines/nmnm-core` dependency. Install `@openlines/nmnm-core` directly only when writing a Node.js integration. Install Pi with:
 
 ```sh
 pi install npm:@openlines/nmnm-pi
@@ -135,10 +124,7 @@ pi install npm:@openlines/nmnm-pi
 
 Claude Code remains a separately installed adapter.
 
-The CLI defaults to `./.nanomneme/memory.db`. `--global` uses
-`~/.local/share/nanomneme/memory.db` on Linux and macOS. Standard `retain` routes derive the
-matching scope; custom `--db` retains require `--scope project|global`. `retrieve --both`
-composes project results before global results; `(store, id)` identifies a retrieval item.
+The CLI defaults to `./.nanomneme/memory.db`. `--global` uses `~/.local/share/nanomneme/memory.db` on Linux and macOS. Standard `retain` routes derive the matching scope; custom `--db` retains require `--scope project|global`. `retrieve --both` composes project results before global results; `(store, id)` identifies a retrieval item.
 
 Try the Pi adapter directly from a checkout:
 
@@ -146,16 +132,7 @@ Try the Pi adapter directly from a checkout:
 pi -e ./adapters/pi/extensions/index.js
 ```
 
-Pi settings and pins are adapter-owned files outside SQLite. First load creates neither:
-`nmnm.jsonc` is optional and user-authored, and `nmnm-pi.json` appears only after a pin change.
-The first prompt receives a bounded transient index, rebuilt after successful compaction or memory
-mutations. In an untrusted Pi project, automatic context is global-only and project files are not read;
-project model tools are refused, while explicit user `/memory` commands remain available. Optional
-`autoretention` only guides the active model's `retain_memory`; disabled-by-default
-`reinjection` can rebuild the same context every five user prompts. Direct controls provide a project-first
-`/memory list`, reversible ambiguity-safe `/memory remove`, and store-validated `/memory pin`. Only
-`retain_memory` creates a missing database; native reads and removal leave missing stores absent. See the
-Pi manual for the full lifecycle.
+Pi settings and pins are adapter-owned files outside SQLite. First load creates neither: `nmnm.jsonc` is optional and user-authored, and `nmnm-pi.json` appears only after a pin change. The first prompt receives a bounded transient index, rebuilt after successful compaction or memory mutations. In an untrusted Pi project, automatic context is global-only and project files are not read; project model tools are refused, while explicit user `/memory` commands remain available. Optional `autoretention` only guides the active model's `retain_memory`; disabled-by-default `reinjection` can rebuild the same context every five user prompts. Direct controls provide a project-first `/memory list`, reversible ambiguity-safe `/memory remove`, and store-validated `/memory pin`. Only `retain_memory` creates a missing database; native reads and removal leave missing stores absent. See the Pi manual for the full lifecycle.
 
 ## Documentation
 
@@ -173,8 +150,7 @@ Pi manual for the full lifecycle.
 | [Roadmap](ROADMAP.md) | Phased delivery and deferred work. |
 | [Changelog](CHANGELOG.md) | Released and unreleased changes. |
 
-`nmnm --help` is authoritative for CLI flags. Runtime code and tests are authoritative
-when documentation disagrees with behavior.
+`nmnm --help` is authoritative for CLI flags. Runtime code and tests are authoritative when documentation disagrees with behavior.
 
 ## Development
 
@@ -184,7 +160,4 @@ pi -e ./adapters/pi/extensions/index.js --help
 npm pack --dry-run --workspace @openlines/nmnm-core --workspace @openlines/nmnm-cli
 ```
 
-Run `npm test` before submitting changes. Do not commit `.nanomneme/`, personal global
-databases, or Pi settings and pin files containing local data. Use canonical JSONL for transfer and
-closed SQLite copies for exact backups. See the manuals for validation, recovery, and
-adapter-specific safety boundaries.
+Run `npm test` before submitting changes. Do not commit `.nanomneme/`, personal global databases, or Pi settings and pin files containing local data. Use canonical JSONL for transfer and closed SQLite copies for exact backups. See the manuals for validation, recovery, and adapter-specific safety boundaries.

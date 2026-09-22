@@ -18,7 +18,7 @@
     "adapter"
   ],
   "engines": {
-    "node": ">=22.13.0"
+    "node": ">=22.19.0"
   },
   "workspaces": [
     "packages/*",
@@ -31,5 +31,8 @@
   },
   "scripts": {
     "test": "node --test packages/*/test/*.test.js adapters/*/test/*.test.js"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.87.0"
   }
 }

@@ -1,12 +1,7 @@
 import { existsSync } from 'node:fs';
-import { databasePath, runMemory } from './store.js';
 
-function response(result) {
-  return {
-    content: [{ type: 'text', text: JSON.stringify(result) }],
-    details: result ?? {},
-  };
-}
+import { toolResponse } from './response.js';
+import { databasePath, runMemory } from './store.js';
 
 function store(Type) {
   return Type.Optional(Type.Union([Type.Literal('project'), Type.Literal('global')]));
@@ -54,7 +49,7 @@ export function registerPiTools(pi, Type, options = {}) {
       requireTrustedProject(ctx, selectedStore);
       const result = runMemory({ cwd: ctx.cwd, store: selectedStore, operation: 'retain', input: retainInput(params) });
       options.onMutation?.('retain');
-      return response(result);
+      return toolResponse(result);
     },
   });
   pi.registerTool({
@@ -65,8 +60,8 @@ export function registerPiTools(pi, Type, options = {}) {
     async execute(_id, params, _signal, _update, ctx) {
       const selectedStore = params.store ?? 'project';
       requireTrustedProject(ctx, selectedStore);
-      if (!hasStore(ctx, selectedStore)) return response(null);
-      return response(runMemory({ cwd: ctx.cwd, store: selectedStore, operation: 'recall', input: { id: params.id }, create: false, readOnly: true }));
+      if (!hasStore(ctx, selectedStore)) return toolResponse(null);
+      return toolResponse(runMemory({ cwd: ctx.cwd, store: selectedStore, operation: 'recall', input: { id: params.id }, create: false, readOnly: true }));
     },
   });
   pi.registerTool({
@@ -82,8 +77,8 @@ export function registerPiTools(pi, Type, options = {}) {
     async execute(_id, params, _signal, _update, ctx) {
       const selectedStore = params.store ?? 'project';
       requireTrustedProject(ctx, selectedStore);
-      if (!hasStore(ctx, selectedStore)) return response({ total: 0, items: [] });
-      return response(runMemory({ cwd: ctx.cwd, store: selectedStore, operation: 'retrieve', input: input(params, ['query', 'kind', 'scope', 'namespace', 'tags', 'expires', 'importance', 'confidence', 'order_by', 'limit', 'offset']), create: false, readOnly: true }));
+      if (!hasStore(ctx, selectedStore)) return toolResponse({ total: 0, items: [] });
+      return toolResponse(runMemory({ cwd: ctx.cwd, store: selectedStore, operation: 'retrieve', input: input(params, ['query', 'kind', 'scope', 'namespace', 'tags', 'expires', 'importance', 'confidence', 'order_by', 'limit', 'offset']), create: false, readOnly: true }));
     },
   });
   pi.registerTool({
@@ -94,10 +89,10 @@ export function registerPiTools(pi, Type, options = {}) {
     async execute(_id, params, _signal, _update, ctx) {
       const selectedStore = params.store ?? 'project';
       requireTrustedProject(ctx, selectedStore);
-      if (!hasStore(ctx, selectedStore)) return response(null);
+      if (!hasStore(ctx, selectedStore)) return toolResponse(null);
       const result = runMemory({ cwd: ctx.cwd, store: selectedStore, operation: 'remove', input: { id: params.id, mode: 'soft' }, create: false });
       if (result) options.onMutation?.('remove');
-      return response(result);
+      return toolResponse(result);
     },
   });
 }

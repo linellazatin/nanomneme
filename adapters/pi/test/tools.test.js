@@ -4,6 +4,7 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Type } from 'typebox';
+import { MAX_TOOL_RESULT_BYTES } from '../src/response.js';
 import { databasePath, runMemory } from '../src/store.js';
 import { registerPiTools } from '../src/tools.js';
 
@@ -17,11 +18,15 @@ function registeredTools(options) {
   return new Map(tools.map((tool) => [tool.name, tool]));
 }
 
-async function execute(tool, params, cwd, { trusted = true } = {}) {
-  const output = await tool.execute('call', params, undefined, undefined, {
+async function executeRaw(tool, params, cwd, { trusted = true } = {}) {
+  return tool.execute('call', params, undefined, undefined, {
     cwd,
     isProjectTrusted: () => trusted,
   });
+}
+
+async function execute(tool, params, cwd, options) {
+  const output = await executeRaw(tool, params, cwd, options);
   return JSON.parse(output.content[0].text);
 }
 
@@ -100,6 +105,31 @@ test('Pi mutation tools notify the adapter, while reads do not', async () => {
     assert.deepEqual(mutations, ['retain', 'remove']);
     await execute(tools.get('remove_memory'), { id: '00000000-0000-4000-8000-000000000001' }, cwd);
     assert.deepEqual(mutations, ['retain', 'remove']);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('Pi tools return bounded valid JSON for oversized memory results', async () => {
+  const cwd = temporaryDirectory('nmnm-pi-tools-bounded-');
+  try {
+    const tools = registeredTools();
+    const content = 'large memory '.repeat(5000);
+    const retained = await executeRaw(tools.get('retain_memory'), { content }, cwd);
+    const retainedResult = JSON.parse(retained.content[0].text);
+    assert.equal(retainedResult.truncated, true);
+    assert.ok(Buffer.byteLength(retained.content[0].text, 'utf8') <= MAX_TOOL_RESULT_BYTES);
+    assert.equal(Object.hasOwn(retained.details, 'result'), false);
+
+    const id = retainedResult.memory.id;
+    for (const output of [
+      await executeRaw(tools.get('recall_memory'), { id }, cwd),
+      await executeRaw(tools.get('retrieve_memory'), {}, cwd),
+    ]) {
+      assert.equal(JSON.parse(output.content[0].text).truncated, true);
+      assert.ok(Buffer.byteLength(output.content[0].text, 'utf8') <= MAX_TOOL_RESULT_BYTES);
+      assert.equal(Object.hasOwn(output.details, 'result'), false);
+    }
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

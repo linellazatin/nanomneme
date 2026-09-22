@@ -55,6 +55,6 @@ a native action dialog; search and source controls remain in each store tab. `/m
 remains available for an on-demand card. Explicit list, refresh, pin, unpin, and soft-remove
 subcommands remain available.
 
-See the [Pi Adapter Manual](https://github.com/linellazatin/nanomneme/blob/main/docs/PI_ADAPTER_MANUAL.md) for npm, Git, and local installation, tools, JSONC
+See the [Pi Adapter Manual](docs/PI_ADAPTER_MANUAL.md) for npm, Git, and local installation, tools, JSONC
 settings, pins, list and removal controls, native-read behavior, reinjection, and transient
 index lifecycle.

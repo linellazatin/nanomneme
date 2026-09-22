@@ -2,7 +2,7 @@
 
 This manual is the task-oriented guide for nanomneme. It serves developers who embed
 `nmnm-core` and agents or operators that call the `nmnm` CLI. Pi users should pair it
-with the [Pi Adapter Manual](PI_ADAPTER_MANUAL.md). nanomneme remains a local,
+with the [Pi Adapter Manual](../adapters/pi/docs/PI_ADAPTER_MANUAL.md). nanomneme remains a local,
 deterministic SQLite memory store without required models, services, or network access.
 
 ## Audiences
@@ -393,7 +393,7 @@ instead. On platforms where `--global` is unsupported, use an explicit `--db <pa
 - [README.md](../README.md) defines product scope, architecture, and the documentation
   index.
 - This manual owns task sequences, operational guidance, and audience-specific examples.
-- [PI_ADAPTER_MANUAL.md](PI_ADAPTER_MANUAL.md) owns Pi installation, tools, configuration,
+- [Pi Adapter Manual](../adapters/pi/docs/PI_ADAPTER_MANUAL.md) owns Pi installation, tools, configuration,
   pins, and automatic index behavior.
 - Package READMEs own package installation and discovery.
 - `nmnm --help` is authoritative for available CLI flags.

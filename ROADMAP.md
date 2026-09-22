@@ -6,10 +6,10 @@ when they preserve that model.
 
 ## Package versions
 
-- `nanomneme`: 0.3.0
+- `nanomneme`: 0.3.2
 - `@openlines/nmnm-core`: 0.1.0 (only bump version if modified/updated)
 - `@openlines/nmnm-cli`: 0.1.0 (only bump version if modified/updated)
-- `@openlines/nmnm-pi`: 0.1.7 (published Pi coding agent adapter; only bump version if modified/updated; started 0.1.0)
+- `@openlines/nmnm-pi`: 0.1.9 (published Pi coding agent adapter; only bump version if modified/updated; started 0.1.0)
 - `nmnm-claude`: 0.1.2 (claude code adapter; only bump version if modified/updated; started 0.1.0)
 - `@openlines/nmnm-opencode`: 0.1.0 (OpenCode server-plugin adapter + TUI memory browser; first release)
 - `nmnm-codex*`: 0.1.0 (Git-first Codex plugin; only bump version if modified/updated; started 0.1.0)
@@ -127,7 +127,7 @@ when they preserve that model.
     bounded compact memory-index injection on the first prompt, recent-memory fallback,
     and `/memory refresh`, `pin`, `unpin`, and `status`. Exclude Markdown storage,
     consolidation, compaction handoffs, and a browser.
-  - [x] Phase 4: add `docs/PI_ADAPTER_MANUAL.md` and an adapter quick-start README;
+  - [x] Phase 4: add `adapters/pi/docs/PI_ADAPTER_MANUAL.md` and an adapter quick-start README;
     rework the root README as a concise project reference and documentation index rather
     than a duplicate manual; update changelog and roadmap; validate documentation and
     clean local/Git installation.
@@ -255,7 +255,7 @@ native continuity or measured evidence that Pi's checkpoint loses required state
     project `nmnm.jsonc` settings; global settings under `${CLAUDE_PLUGIN_DATA}`. A
     model-facing `memory-guide` skill (`/nanomneme:memory-guide`) teaches the 4Rs,
     project/global scope, and autoretention.
-  - [x] Phase 5: `docs/CLAUDE_ADAPTER_MANUAL.md`, adapter README, root README/changelog
+  - [x] Phase 5: `adapters/claude/docs/CLAUDE_ADAPTER_MANUAL.md`, adapter README, root README/changelog
     updates, full test suite, and a real MCP-client + hook smoke check.
   - [x] Phase 6: a deterministic, model-free memory management surface. A `bin/memory.js`
     CLI (`status`, `list`, `search`, `show`, `pin`, `unpin`, `remove`) reuses the shared
@@ -300,7 +300,7 @@ native continuity or measured evidence that Pi's checkpoint loses required state
   - [x] Phase 3: add the model-free `nmnm-opencode` management CLI (`status`, `list`, `search`,
     `show`, `pin`, `unpin`, soft-only `remove`) with project-first combined pagination and
     `--source all|opencode`.
-  - [x] Phase 4: add `docs/OPENCODE_ADAPTER_MANUAL.md` and a package README; update the root
+  - [x] Phase 4: add `adapters/opencode/docs/OPENCODE_ADAPTER_MANUAL.md` and a package README; update the root
     README, roadmap, and changelog; cover store routing, provenance, pins, budget, and the plugin
     hooks with isolated-store tests.
   - [x] Phase 5: add a model-free TUI memory browser (`tui.js`, exported `./tui`, registered via

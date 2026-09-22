@@ -5,7 +5,7 @@ directly, keeps SQLite as the storage authority, and does not invoke or parse th
 
 ## Install
 
-Use Node.js 22.13+ and Pi. Install the public package:
+Use Node.js 22.13+ and Pi. The adapter is verified against Pi 0.87.0. Install the public package:
 
 ```sh
 pi install npm:@openlines/nmnm-pi
@@ -83,7 +83,7 @@ comments or trailing commas.
 
 ### Complete settings template
 
-This is the complete supported `nmnm.jsonc` shape for v0.1.8. Copy it to either settings
+This is the complete supported `nmnm.jsonc` shape for v0.1.9. Copy it to either settings
 location above, then adjust the budget or opt in to autoretention. This template is the
 maintained place to add future adapter parameters.
 
@@ -265,5 +265,5 @@ usage is provider-reported and is the authoritative token and cost measurement.
 
 This adapter has no Markdown memory storage, consolidation, separate compaction handoff,
 or auto-resume. Those capabilities are not implied by configuration, pins, or the browser.
-See the [Core and CLI Manual](CORE_CLI_MANUAL.md) for the core and CLI, and the
-[adapter quick start](../adapters/pi/README.md) for the package-local entry point.
+See the [Core and CLI Manual](../../../docs/CORE_CLI_MANUAL.md) for the core and CLI, and the
+[adapter quick start](../README.md) for the package-local entry point.

@@ -67,7 +67,7 @@ Register the TUI source separately in `~/.config/opencode/tui.jsonc`:
 ```
 
 The four memory tools then appear natively to the agent. See the
-[OpenCode Adapter Manual](../../docs/OPENCODE_ADAPTER_MANUAL.md) for the full guide,
+[OpenCode Adapter Manual](docs/OPENCODE_ADAPTER_MANUAL.md) for the full guide,
 including the compatibility probes and the manual smoke check.
 
 ## Configuration
@@ -77,7 +77,7 @@ including the compatibility probes and the manual smoke check.
 - Pins (adapter-owned): `<repo>/.nanomneme/nmnm-opencode.json` and
   `~/.local/share/nanomneme/nmnm-opencode.json`.
 
-See the [OpenCode Adapter Manual](../../docs/OPENCODE_ADAPTER_MANUAL.md) for the config
+See the [OpenCode Adapter Manual](docs/OPENCODE_ADAPTER_MANUAL.md) for the config
 schema, tool reference, and injection lifecycle.
 
 ## Develop

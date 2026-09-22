@@ -203,6 +203,35 @@ test('buildMemoryIndex keeps project memory available when global storage is uns
   }
 });
 
+test('buildMemoryIndex global-only mode does not read project settings, pins, or memory', () => {
+  const project = temporaryDirectory('nmnm-pi-context-global-only-project-');
+  const home = temporaryDirectory('nmnm-pi-context-global-only-home-');
+  try {
+    const agentDir = join(home, 'pi-agent');
+    runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Project trust-hidden memory' } });
+    runMemory({ cwd: project, home, platform: 'darwin', store: 'global', operation: 'retain', input: { content: 'Global trust-visible memory' } });
+    mkdirSync(agentDir, { recursive: true });
+    writeFileSync(settingsPath({ cwd: project, agentDir, store: 'project' }), '{ invalid project jsonc');
+    writeFileSync(settingsPath({ cwd: project, agentDir, store: 'global' }), '{ "injection_budget": 1000 }\n');
+    writeFileSync(pinsPath({ cwd: project, home, store: 'project' }), '{ invalid project pins');
+
+    const result = buildMemoryIndex({
+      cwd: project,
+      home,
+      agentDir,
+      platform: 'darwin',
+      includeProject: false,
+    });
+
+    assert.doesNotMatch(result.content, /Project trust-hidden memory/);
+    assert.match(result.content, /Global trust-visible memory/);
+    assert.equal(result.total, 1);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test('buildMemoryIndex treats missing stores as empty without creating databases', () => {
   const project = temporaryDirectory('nmnm-pi-context-project-');
   const home = temporaryDirectory('nmnm-pi-context-home-');

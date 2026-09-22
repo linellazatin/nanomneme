@@ -144,10 +144,15 @@ function readStore({ cwd, home, platform, store, operation, input }) {
   return runMemory({ cwd, home, platform, store, operation, input, create: false, readOnly: true });
 }
 
-export function buildMemoryIndex({ cwd, home, agentDir, platform, budget } = {}) {
-  const projectSettings = readSettings(settingsPath({ cwd, home, agentDir, store: 'project' }));
+export function buildMemoryIndex({ cwd, home, agentDir, platform, budget, includeProject = true } = {}) {
+  const stores = includeProject ? ['project', 'global'] : ['global'];
+  const projectSettings = includeProject
+    ? readSettings(settingsPath({ cwd, home, agentDir, store: 'project' }))
+    : {};
   const globalSettings = readSettings(settingsPath({ cwd, home, agentDir, store: 'global' }));
-  const projectPins = readPins(pinsPath({ cwd, home, store: 'project' }));
+  const projectPins = includeProject
+    ? readPins(pinsPath({ cwd, home, store: 'project' }))
+    : [];
   const globalPins = readPins(pinsPath({ cwd, home, store: 'global' }));
   const limit = budget ?? projectSettings.injection_budget ?? globalSettings.injection_budget ?? DEFAULT_INJECTION_BUDGET;
   const reinjection = {
@@ -159,7 +164,9 @@ export function buildMemoryIndex({ cwd, home, agentDir, platform, budget } = {})
   const records = [];
   const seen = new Set();
   let unresolved = 0;
-  for (const [store, pins] of [['project', projectPins], ['global', globalPins]]) {
+  const pinsByStore = { project: projectPins, global: globalPins };
+  for (const store of stores) {
+    const pins = pinsByStore[store];
     for (const id of pins) {
       try {
         const memory = readStore({ cwd, home, platform, store, operation: 'recall', input: { id } });
@@ -171,7 +178,7 @@ export function buildMemoryIndex({ cwd, home, agentDir, platform, budget } = {})
       }
     }
   }
-  for (const store of ['project', 'global']) {
+  for (const store of stores) {
     const recent = readStore({ cwd, home, platform, store, operation: 'retrieve', input: { limit: 20, order_by: 'updated_at' } });
     if (!recent) continue;
     for (const memory of recent.items) {

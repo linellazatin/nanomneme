@@ -12,6 +12,10 @@ function temporaryDirectory(name) {
   return mkdtempSync(join(tmpdir(), name));
 }
 
+function trustedContext(cwd, ui) {
+  return { cwd, isProjectTrusted: () => true, ui };
+}
+
 function scriptedUi({ selections = [], inputs = [], confirmations = [] } = {}) {
   const notices = [];
   const selectCalls = [];
@@ -36,14 +40,23 @@ function scriptedUi({ selections = [], inputs = [], confirmations = [] } = {}) {
   };
 }
 
-function customUi({ interactions = [], selections = [], inputs = [], confirmations = [] } = {}) {
+function customUi({ interactions = [], selections = [], inputs = [], confirmations = [], keybindings } = {}) {
   const scripted = scriptedUi({ selections, inputs, confirmations });
   const customCalls = [];
+  const defaults = {
+    'tui.select.up': '\x1b[A',
+    'tui.select.down': '\x1b[B',
+    'tui.select.confirm': '\r',
+    'tui.select.cancel': '\x1b',
+  };
+  const manager = keybindings ?? {
+    matches: (data, action) => defaults[action] === data,
+  };
   scripted.ui.custom = async (factory) => new Promise((done) => {
     const component = factory(
       { requestRender: () => {} },
       { fg: (_color, text) => text, bold: (text) => text },
-      { matches: () => false },
+      manager,
       done,
     );
     customCalls.push(component);
@@ -66,7 +79,7 @@ test('injects a compact index once and refresh makes it pending again', async ()
       on: (event, handler) => handlers.set(event, handler),
       registerCommand: (name, command) => commands.set(name, command),
     }, { home, platform: 'darwin' });
-    const ctx = { cwd: project, ui: { notify: (message) => notices.push(message) } };
+    const ctx = trustedContext(project, { notify: (message) => notices.push(message) });
 
     await handlers.get('session_start')({}, ctx);
     const first = await handlers.get('before_agent_start')({ systemPrompt: 'Base prompt' }, ctx);
@@ -112,7 +125,7 @@ test('injects opt-in cadence context on the fifth eligible prompt only', async (
       on: (event, handler) => handlers.set(event, handler),
       registerCommand: (name, command) => commands.set(name, command),
     }, { home, agentDir, platform: 'darwin' });
-    const ctx = { cwd: project, ui: { notify: (message) => notices.push(message) } };
+    const ctx = trustedContext(project, { notify: (message) => notices.push(message) });
 
     await commands.get('memory').handler('status', ctx);
     assert.match(notices.at(-1), /Periodic reinjection      every 5 prompts/);
@@ -149,7 +162,7 @@ test('keeps a failed cadence injection pending without resetting its prompt coun
       on: (event, handler) => handlers.set(event, handler),
       registerCommand: (name, command) => commands.set(name, command),
     }, { home, agentDir, platform: 'darwin' });
-    const ctx = { cwd: project, ui: { notify: (message) => notices.push(message) } };
+    const ctx = trustedContext(project, { notify: (message) => notices.push(message) });
 
     await handlers.get('session_start')({}, ctx);
     await handlers.get('before_agent_start')({ systemPrompt: 'Base prompt' }, ctx);
@@ -182,7 +195,7 @@ test('memory status reports the full next-injection character count without expo
       on: (event, handler) => handlers.set(event, handler),
       registerCommand: (name, command) => commands.set(name, command),
     }, { home, agentDir, platform: 'darwin' });
-    const ctx = { cwd: project, ui: { notify: (message) => notices.push(message) } };
+    const ctx = trustedContext(project, { notify: (message) => notices.push(message) });
     const expectedPayload = [
       `Nanomneme memory index:\n- [project] ${retained.id} Status-only secret memory content\n`,
       '## Nanomneme autoretention\nAutoretention is enabled. Use retain_memory only when retaining a memory. Never automatically retain rules take precedence over all other rules.\nAsk the user before retaining:\n- Ask before retaining status details',
@@ -230,7 +243,7 @@ test('memory status reports an injection error without creating a store', async 
       on: (event, handler) => handlers.set(event, handler),
       registerCommand: (name, command) => commands.set(name, command),
     }, { home, agentDir, platform: 'darwin' });
-    const ctx = { cwd: project, ui: { notify: (message) => notices.push(message) } };
+    const ctx = trustedContext(project, { notify: (message) => notices.push(message) });
 
     await handlers.get('session_start')({}, ctx);
     await handlers.get('before_agent_start')({ systemPrompt: 'Base prompt' }, ctx);
@@ -264,7 +277,7 @@ test('validates configuration at session start and retries injection after it is
       on: (event, handler) => handlers.set(event, handler),
       registerCommand: () => {},
     }, { home, agentDir, platform: 'darwin' });
-    const ctx = { cwd: project, ui: { notify: (message) => notices.push(message) } };
+    const ctx = trustedContext(project, { notify: (message) => notices.push(message) });
 
     await handlers.get('session_start')({}, ctx);
     const failed = await handlers.get('before_agent_start')({ systemPrompt: 'Base prompt' }, ctx);
@@ -291,7 +304,7 @@ test('injects enabled autoretention rules without a persistent message', async (
       autoretention: { enabled: true, always_persist: ['Record durable project decisions'] },
     }));
     registerPiMemory({ on: (event, handler) => handlers.set(event, handler), registerCommand: () => {} }, { home, agentDir, platform: 'darwin' });
-    const ctx = { cwd: project, ui: { notify: () => {} } };
+    const ctx = trustedContext(project, { notify: () => {} });
 
     await handlers.get('session_start')({}, ctx);
     const result = await handlers.get('before_agent_start')({ systemPrompt: 'Base prompt' }, ctx);
@@ -300,6 +313,115 @@ test('injects enabled autoretention rules without a persistent message', async (
     assert.match(result.systemPrompt, /## Nanomneme autoretention/);
     assert.match(result.systemPrompt, /Use retain_memory only when retaining a memory/);
     assert.match(result.systemPrompt, /Record durable project decisions/);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('untrusted automatic context reads only global configuration and memory', async () => {
+  const project = temporaryDirectory('nmnm-pi-session-untrusted-project-');
+  const home = temporaryDirectory('nmnm-pi-session-untrusted-home-');
+  try {
+    const handlers = new Map();
+    const notices = [];
+    const agentDir = join(home, 'pi-agent');
+    runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Project trust-hidden session memory' } });
+    runMemory({ cwd: project, home, platform: 'darwin', store: 'global', operation: 'retain', input: { content: 'Global trust-visible session memory' } });
+    mkdirSync(join(project, '.nanomneme'), { recursive: true });
+    mkdirSync(agentDir, { recursive: true });
+    writeFileSync(settingsPath({ cwd: project, agentDir, store: 'project' }), '{ invalid project jsonc');
+    registerPiMemory({
+      on: (event, handler) => handlers.set(event, handler),
+      registerCommand: () => {},
+    }, { home, agentDir, platform: 'darwin' });
+    const ctx = {
+      cwd: project,
+      isProjectTrusted: () => false,
+      ui: { notify: (message) => notices.push(message) },
+    };
+
+    await handlers.get('session_start')({}, ctx);
+    const result = await handlers.get('before_agent_start')({ systemPrompt: 'Base prompt' }, ctx);
+
+    assert.deepEqual(notices, []);
+    assert.doesNotMatch(result.systemPrompt, /Project trust-hidden session memory/);
+    assert.match(result.systemPrompt, /Global trust-visible session memory/);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('missing project trust capability fails closed for automatic context', async () => {
+  const project = temporaryDirectory('nmnm-pi-session-missing-trust-project-');
+  const home = temporaryDirectory('nmnm-pi-session-missing-trust-home-');
+  try {
+    const handlers = new Map();
+    runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Project fail-closed memory' } });
+    runMemory({ cwd: project, home, platform: 'darwin', store: 'global', operation: 'retain', input: { content: 'Global fail-closed memory' } });
+    registerPiMemory({ on: (event, handler) => handlers.set(event, handler), registerCommand: () => {} }, { home, platform: 'darwin' });
+    const ctx = { cwd: project, ui: { notify: () => {} } };
+
+    await handlers.get('session_start')({}, ctx);
+    const result = await handlers.get('before_agent_start')({ systemPrompt: 'Base prompt' }, ctx);
+
+    assert.doesNotMatch(result.systemPrompt, /Project fail-closed memory/);
+    assert.match(result.systemPrompt, /Global fail-closed memory/);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('throwing project trust capability fails closed to global-only automatic context', async () => {
+  const project = temporaryDirectory('nmnm-pi-session-throwing-trust-project-');
+  const home = temporaryDirectory('nmnm-pi-session-throwing-trust-home-');
+  try {
+    const handlers = new Map();
+    const notices = [];
+    runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Project throwing-trust memory' } });
+    runMemory({ cwd: project, home, platform: 'darwin', store: 'global', operation: 'retain', input: { content: 'Global throwing-trust memory' } });
+    registerPiMemory({ on: (event, handler) => handlers.set(event, handler), registerCommand: () => {} }, { home, platform: 'darwin' });
+    const ctx = {
+      cwd: project,
+      isProjectTrusted: () => { throw new Error('trust unavailable'); },
+      ui: { notify: (message) => notices.push(message) },
+    };
+
+    await handlers.get('session_start')({}, ctx);
+    const result = await handlers.get('before_agent_start')({ systemPrompt: 'Base prompt' }, ctx);
+
+    assert.equal(notices.length, 1);
+    assert.match(notices[0], /project trust check unavailable/i);
+    assert.match(notices[0], /global-only/i);
+    assert.doesNotMatch(result.systemPrompt, /Project throwing-trust memory/);
+    assert.match(result.systemPrompt, /Global throwing-trust memory/);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('untrusted session still reports malformed global configuration', async () => {
+  const project = temporaryDirectory('nmnm-pi-session-untrusted-global-error-project-');
+  const home = temporaryDirectory('nmnm-pi-session-untrusted-global-error-home-');
+  try {
+    const handlers = new Map();
+    const notices = [];
+    const agentDir = join(home, 'pi-agent');
+    mkdirSync(agentDir, { recursive: true });
+    writeFileSync(settingsPath({ cwd: project, agentDir, store: 'global' }), '{ invalid global jsonc');
+    registerPiMemory({ on: (event, handler) => handlers.set(event, handler), registerCommand: () => {} }, { home, agentDir, platform: 'darwin' });
+    const ctx = {
+      cwd: project,
+      isProjectTrusted: () => false,
+      ui: { notify: (message) => notices.push(message) },
+    };
+
+    await handlers.get('session_start')({}, ctx);
+
+    assert.match(notices[0], /configuration unavailable/);
   } finally {
     rmSync(project, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });
@@ -389,6 +511,54 @@ test('memory browser uses left and right arrows to switch between status and sto
     await commands.get('memory').handler('browse', { cwd: project, mode: 'tui', hasUI: true, ui: scripted.ui });
 
     assert.equal(scripted.customCalls.length, 1);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('memory browser honors configured keybindings and keeps raw navigation aliases', async () => {
+  const project = temporaryDirectory('nmnm-pi-browser-configured-keybindings-project-');
+  const home = temporaryDirectory('nmnm-pi-browser-configured-keybindings-home-');
+  try {
+    const commands = new Map();
+    runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Configured keybinding memory' } });
+    const bindings = new Map([
+      ['U', 'tui.select.up'],
+      ['D', 'tui.select.down'],
+      ['C', 'tui.select.confirm'],
+      ['X', 'tui.select.cancel'],
+    ]);
+    const scripted = customUi({
+      keybindings: { matches: (data, action) => bindings.get(data) === action },
+      interactions: [
+        (component) => {
+          assert.equal(component.handleInput('l'), true);
+          assert.match(component.render(120).join('\n'), /\[All\]/);
+          assert.equal(component.handleInput('D'), true);
+          assert.match(component.render(120).join('\n'), /> Source: all/);
+          assert.equal(component.handleInput('U'), true);
+          assert.match(component.render(120).join('\n'), /> Search/);
+          assert.equal(component.handleInput('j'), true);
+          assert.match(component.render(120).join('\n'), /> Source: all/);
+          assert.equal(component.handleInput('k'), true);
+          assert.match(component.render(120).join('\n'), /> Search/);
+          assert.equal(component.handleInput('h'), true);
+          assert.match(component.render(120).join('\n'), /\[Status\]/);
+          const before = component.render(120);
+          assert.equal(component.handleInput('?'), false);
+          assert.deepEqual(component.render(120), before);
+          assert.equal(component.handleInput('l'), true);
+          assert.equal(component.handleInput('C'), true);
+        },
+        (component) => assert.equal(component.handleInput('X'), true),
+      ],
+    });
+    registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, { home, platform: 'darwin' });
+
+    await commands.get('memory').handler('browse', { cwd: project, mode: 'tui', hasUI: true, ui: scripted.ui });
+
+    assert.equal(scripted.customCalls.length, 2);
   } finally {
     rmSync(project, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });

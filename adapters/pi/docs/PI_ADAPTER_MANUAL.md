@@ -5,7 +5,7 @@ directly, keeps SQLite as the storage authority, and does not invoke or parse th
 
 ## Install
 
-Use Node.js 22.13+ and Pi. The adapter is verified against Pi 0.87.0. Install the public package:
+Use Node.js 22.19+ and Pi 0.87.0. This manual describes `@openlines/nmnm-pi` 0.2.0. Install the public package:
 
 ```sh
 pi install npm:@openlines/nmnm-pi
@@ -35,7 +35,14 @@ source before installing it.
 
 ## Native memory tools
 
-Pi exposes four tools to the model:
+Pi exposes four tools to the model. Model-facing project operations require the current project to be
+trusted by Pi. In an untrusted project, use explicit global scope/store operations; user-invoked
+`/memory` commands remain available for explicit local project management.
+
+Successful model-visible tool JSON is limited to 50 KiB (51,200 UTF-8 bytes). Results that fit retain
+their existing canonical JSON. Oversized results return valid JSON with `truncated: true`, byte-count
+diagnostics, stable record or page identifiers, bounded content previews, and guidance to narrow the
+request or use the CLI. This summary does not modify or truncate the canonical stored memory.
 
 | Tool | Input | Description | Notes |
 |---|---|---|---|
@@ -53,9 +60,12 @@ records. The adapter does not parse CLI flags or support custom database paths. 
 
 ## Automatic memory index
 
-At the first user prompt in each Pi session, the adapter appends bounded Nanomneme context to
-that prompt's system prompt. Enabled autoretention guidance takes priority, followed by a compact
-index that lists project pins first, then global pins, then recent active records from each store.
+At the first user prompt in each trusted Pi session, the adapter appends bounded Nanomneme context to
+that prompt's system prompt. In an untrusted project, this automatic context is global-only: the adapter
+does not read project settings, project pins, or the project database. Enabled global autoretention
+guidance takes priority, followed by a compact index. In a trusted project, project and global settings
+and memories compose as described below. Pinned entries come first, with recent active records after
+them.
 Rows contain `store`, a `[source]` label when recorded, ID, and a short content preview. It is not a transfer of complete records;
 use `recall_memory` or `retrieve_memory` for full content.
 
@@ -209,7 +219,7 @@ not required.
 
 | Topic | Behavior |
 |---|---|
-| Browser | In the Pi TUI, `/memory` and `/memory browse` open a custom menu with `Status`, `All`, `Project`, and `Global` tabs. Left/right selects tabs; up/down and `j`/`k` select controls and records. Status renders the shared read-only card. Store tabs contain search, source selection, records, paging, and Close. Text search uses FTS retrieval; changing search or source resets that tab’s pagination. Source `all` includes legacy records; `pi` matches `metadata.source: "pi"`. The selected row remains selected after tab changes, details, and pin/unpin; removal selects the nearest remaining row. Non-TUI UI modes retain the native dialog browser; non-UI modes should use explicit subcommands. |
+| Browser | In the Pi TUI, `/memory` and `/memory browse` open a custom menu with `Status`, `All`, `Project`, and `Global` tabs. Left/right selects tabs; configured `tui.select.up`, `tui.select.down`, `tui.select.confirm`, and `tui.select.cancel` bindings control selection, confirmation, and cancellation. Raw `h`/`l` change tabs and `j`/`k` navigate rows. Status renders the shared read-only card. Store tabs contain search, source selection, records, paging, and Close. Text search uses FTS retrieval; changing search or source resets that tab’s pagination. Source `all` includes legacy records; `pi` matches `metadata.source: "pi"`. The selected row remains selected after tab changes, details, and pin/unpin; removal selects the nearest remaining row. Non-TUI UI modes retain the native dialog browser; non-UI modes should use explicit subcommands. |
 | Browser details | Selecting a row opens a native action dialog whose title contains full canonical content and fields, then offers exact-store pin/unpin, confirmed soft removal, or back. Closing it returns to the custom browser with the previous selection retained. |
 | List order | Unscoped list and browser `both` pages combine project entries before global entries; selected-store views read one store. |
 | List display | Browser rows include `[project]` or `[global]`; `*` marks an exact `(store, id)` pin. They omit IDs; details show the selected record's ID. Previews normalize whitespace, show 60 characters, and append `...` only when truncated. |
@@ -236,7 +246,7 @@ not required.
 
 ### Pi token overhead
 
-`nmnm-pi` adds four model-visible tool definitions: `retain_memory`, `recall_memory`,
+`nmnm-pi` 0.2.0 adds four model-visible tool definitions: `retain_memory`, `recall_memory`,
 `retrieve_memory`, and `remove_memory`. Their JSON schemas total `1,190 characters`
 (`retain_memory` 440, `recall_memory` 164, `retrieve_memory` 422, `remove_memory` 164).
 This is a schema-only reference, not a token or cost estimate: Pi adds tool names,
@@ -262,6 +272,10 @@ with `nmnm-pi` enabled and once without it, then subtract the first assistant re
 usage is provider-reported and is the authoritative token and cost measurement.
 
 ## Boundaries
+
+The current production adapter injects transient context through the `before_agent_start` system-prompt
+return. Pi 0.87 structured prompt sections remain under a separate behavior and cache probe; this release
+does not claim a cache improvement or change the injection lifecycle.
 
 This adapter has no Markdown memory storage, consolidation, separate compaction handoff,
 or auto-resume. Those capabilities are not implied by configuration, pins, or the browser.

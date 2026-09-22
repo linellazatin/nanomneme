@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 
-import { Key, matchesKey, truncateToWidth } from '@earendil-works/pi-tui';
+import { matchesKey, truncateToWidth } from '@earendil-works/pi-tui';
 import { Type } from 'typebox';
 
 const require = createRequire(import.meta.url);
@@ -37,11 +37,8 @@ test('loader-provided host packages satisfy the adapter surface', () => {
   // `src/session.js` links only these pi-tui exports.
   assert.equal(typeof matchesKey, 'function');
   assert.equal(typeof truncateToWidth, 'function');
-  for (const key of ['up', 'down', 'left', 'right', 'enter', 'escape']) {
-    assert.ok(Key[key] !== undefined, `Key.${key} is missing`);
-  }
-  assert.equal(matchesKey('\x1b[C', Key.right), true);
-  assert.equal(matchesKey('j', Key.right), false);
+  assert.equal(matchesKey('\x1b[C', 'right'), true);
+  assert.equal(matchesKey('j', 'right'), false);
   assert.equal(truncateToWidth('abc', 10), 'abc');
   assert.match(truncateToWidth('abcdef', 3), /\.\.\./);
 

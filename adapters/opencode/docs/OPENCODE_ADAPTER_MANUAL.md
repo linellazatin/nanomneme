@@ -54,7 +54,7 @@ Bun at startup and caches them under `~/.cache/opencode/node_modules`.
 }
 ```
 
-Pin a version for reproducibility: `"@openlines/nmnm-opencode@0.1.0"`.
+Pin a version for reproducibility: `"@openlines/nmnm-opencode@0.1.1"`.
 
 To also enable the TUI memory browser, register the same package in the **TUI** config; OpenCode
 resolves its `./tui` export:
@@ -196,7 +196,7 @@ Memory itself is shared across adapters.
 JSONC, validated at load in the Node bridge. Invalid JSONC or out-of-contract values raise an
 error that is caught so it never blocks a chat.
 
-- **Project** (shared with Pi and Claude): `<project>/.nanomneme/nmnm.jsonc`.
+- **Project** (shared across adapters): `<project>/.nanomneme/nmnm.jsonc`.
 - **Global**: `${XDG_CONFIG_HOME:-~/.config}/opencode/nmnm.jsonc`.
 
 Project settings override global. Template:

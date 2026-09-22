@@ -72,7 +72,7 @@ including the compatibility probes and the manual smoke check.
 
 ## Configuration
 
-- Project settings (shared with Pi and Claude): `<repo>/.nanomneme/nmnm.jsonc`.
+- Project settings (shared across adapters): `<repo>/.nanomneme/nmnm.jsonc`.
 - Global settings: `${XDG_CONFIG_HOME:-~/.config}/opencode/nmnm.jsonc`.
 - Pins (adapter-owned): `<repo>/.nanomneme/nmnm-opencode.json` and
   `~/.local/share/nanomneme/nmnm-opencode.json`.

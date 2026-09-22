@@ -45,12 +45,12 @@ guide, including local development loading.
 
 ## Configuration
 
-- Project settings (shared with Pi): `<repo>/.nanomneme/nmnm.jsonc`.
+- Project settings (shared across adapters): `<repo>/.nanomneme/nmnm.jsonc`.
 - Global settings: `${CLAUDE_PLUGIN_DATA}/nmnm.jsonc`. Under a real install that is the
   per-plugin data dir (`~/.claude/plugins/data/<plugin>-<marketplace>/nmnm.jsonc`, currently
   `nanomneme-openlines`); `~/.claude/nmnm.jsonc` applies only when `CLAUDE_PLUGIN_DATA` is
   unset. This location is per-plugin (not shared, moves on rename) — prefer project settings
-  for anything shared with Pi.
+  for anything shared with other adapters.
 - Pins (adapter-owned): `<repo>/.nanomneme/nmnm-claude.json` and
   `~/.local/share/nanomneme/nmnm-claude.json`.
 

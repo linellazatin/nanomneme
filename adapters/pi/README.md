@@ -28,7 +28,7 @@ directly and never shells out to the CLI.
 
 ## Quickstart
 
-Version 0.2.0 targets Pi 0.87.0 and Node.js 22.19 or newer. Install it globally with Pi:
+Version 0.2.1 targets Pi 0.87.0 and Node.js 22.19 or newer. Install it globally with Pi:
 
 ```sh
 pi install npm:@openlines/nmnm-pi

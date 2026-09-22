@@ -5,7 +5,7 @@ directly, keeps SQLite as the storage authority, and does not invoke or parse th
 
 ## Install
 
-Use Node.js 22.19+ and Pi 0.87.0. This manual describes `@openlines/nmnm-pi` 0.2.0. Install the public package:
+Use Node.js 22.19+ and Pi 0.87.0. This manual describes `@openlines/nmnm-pi` 0.2.1. Install the public package:
 
 ```sh
 pi install npm:@openlines/nmnm-pi
@@ -48,7 +48,7 @@ request or use the CLI. This summary does not modify or truncate the canonical s
 |---|---|---|---|
 | `retain_memory` | `content`; optional `id`, canonical fields | Create, or patch and restore a known ID. | New records require `content`. Scope selects the matching write store. |
 | `recall_memory` | `id`; optional `store` | Read one active, unexpired memory. | Returns canonical core JSON or `null`; missing stores remain absent. |
-| `retrieve_memory` | Optional query, filters, ordering, pagination, `store` | Search or list active memories. | One store only; missing stores return `{ total: 0, items: [] }`. |
+| `retrieve_memory` | Optional query, filters, ordering, pagination, `store` | Search or list active memories. | One store only; missing stores return `{ total: 0, items: [] }`. Punctuation query terms are matched literally. |
 | `remove_memory` | `id`; optional `store` | Soft-remove an active memory. | Reversible through an explicit retain patch; irreversible purge is CLI-only; missing stores return `null`. |
 
 For `retain_memory`, scope selects the matching write store: omitted scope means project and
@@ -219,7 +219,7 @@ not required.
 
 | Topic | Behavior |
 |---|---|
-| Browser | In the Pi TUI, `/memory` and `/memory browse` open a custom menu with `Status`, `All`, `Project`, and `Global` tabs. Left/right selects tabs; configured `tui.select.up`, `tui.select.down`, `tui.select.confirm`, and `tui.select.cancel` bindings control selection, confirmation, and cancellation. Raw `h`/`l` change tabs and `j`/`k` navigate rows. Status renders the shared read-only card. Store tabs contain search, source selection, records, paging, and Close. Text search uses FTS retrieval; changing search or source resets that tab’s pagination. Source `all` includes legacy records; `pi` matches `metadata.source: "pi"`. The selected row remains selected after tab changes, details, and pin/unpin; removal selects the nearest remaining row. Non-TUI UI modes retain the native dialog browser; non-UI modes should use explicit subcommands. |
+| Browser | In the Pi TUI, `/memory` and `/memory browse` open a custom menu with `Status`, `All`, `Project`, and `Global` tabs. Left/right selects tabs; configured `tui.select.up`, `tui.select.down`, `tui.select.confirm`, and `tui.select.cancel` bindings control selection, confirmation, and cancellation. Raw `h`/`l` change tabs and `j`/`k` navigate rows. Status renders the shared read-only card. Store tabs contain search, source selection, records, paging, and Close. Text search uses FTS retrieval (hyphenated terms are literal); changing search or source resets that tab’s pagination. Source `all` includes legacy records; `pi` matches `metadata.source: "pi"`. The selected row remains selected after tab changes, details, and pin/unpin; removal selects the nearest remaining row. Non-TUI UI modes retain the native dialog browser; non-UI modes should use explicit subcommands. |
 | Browser details | Selecting a row opens a native action dialog whose title contains full canonical content and fields, then offers exact-store pin/unpin, confirmed soft removal, or back. Closing it returns to the custom browser with the previous selection retained. |
 | List order | Unscoped list and browser `both` pages combine project entries before global entries; selected-store views read one store. |
 | List display | Browser rows include `[project]` or `[global]`; `*` marks an exact `(store, id)` pin. They omit IDs; details show the selected record's ID. Previews normalize whitespace, show 60 characters, and append `...` only when truncated. |
@@ -246,7 +246,7 @@ not required.
 
 ### Pi token overhead
 
-`nmnm-pi` 0.2.0 adds four model-visible tool definitions: `retain_memory`, `recall_memory`,
+`nmnm-pi` 0.2.1 adds four model-visible tool definitions: `retain_memory`, `recall_memory`,
 `retrieve_memory`, and `remove_memory`. Their JSON schemas total `1,190 characters`
 (`retain_memory` 440, `recall_memory` 164, `retrieve_memory` 422, `remove_memory` 164).
 This is a schema-only reference, not a token or cost estimate: Pi adds tool names,

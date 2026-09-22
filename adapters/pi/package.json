@@ -1,6 +1,6 @@
 {
   "name": "@openlines/nmnm-pi",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Pi coding agent adapter for nanomneme local SQLite memory",
   "type": "module",
   "keywords": [

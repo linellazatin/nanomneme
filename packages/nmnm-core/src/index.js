@@ -41,12 +41,98 @@ function text(value, name) {
   return value.trim();
 }
 
-// Quote hyphenated terms so FTS5 reads them as literal phrases instead of
-// column filters (`a-b` parses as "phrase a in column b", which does not exist).
+// Normalize a user query so ordinary text is searched literally while a small
+// set of FTS5 operators remain available. Terms containing FTS5 syntax
+// characters (dashes, colons, dots, slashes, and other punctuation) are quoted
+// so the default tokenizer reads them as phrases rather than column filters or
+// syntax errors. Operand keywords (`AND`/`OR`/`NOT`/`NEAR`) are kept only in infix
+// position; quoted phrases, balanced parentheses, and a trailing `*` prefix are
+// preserved, and dangling operators or stray punctuation never produce invalid
+// FTS5 expressions.
+const OPERATOR = /^(?:AND|OR|NOT|NEAR)$/i;
+const WORD_CHAR = /[A-Za-z0-9_]/;
+const SAFE_WORD = /^[A-Za-z0-9_]+$/;
+const PREFIX_WORD = /^[A-Za-z0-9_]+\*$/;
+
+function tokenizeQuery(value) {
+  const atoms = [];
+  let index = 0;
+  while (index < value.length) {
+    const character = value[index];
+    if (/\s/.test(character)) { index += 1; continue; }
+    if (character === '"') {
+      let end = index + 1;
+      while (end < value.length && value[end] !== '"') end += 1;
+      if (end < value.length) {
+        atoms.push({ type: 'phrase', value: value.slice(index + 1, end) });
+        index = end + 1;
+      } else {
+        atoms.push({ type: 'word', value: value.slice(index + 1) });
+        index = value.length;
+      }
+      continue;
+    }
+    if (character === '(') { atoms.push({ type: 'open', value: '(' }); index += 1; continue; }
+    if (character === ')') { atoms.push({ type: 'close', value: ')' }); index += 1; continue; }
+    let end = index;
+    while (end < value.length && !/[\s"()]/.test(value[end])) end += 1;
+    atoms.push({ type: 'word', value: value.slice(index, end) });
+    index = end;
+  }
+  return atoms;
+}
+
+function classifyAtom(atom) {
+  if (atom.type !== 'word') return atom;
+  const word = atom.value;
+  if (OPERATOR.test(word)) return { type: 'operator', value: word };
+  if (PREFIX_WORD.test(word)) return { type: 'word', value: word };
+  if (!WORD_CHAR.test(word)) return { type: 'skip', value: word };
+  if (SAFE_WORD.test(word)) return { type: 'word', value: word };
+  return { type: 'word', value: `"${word}"` };
+}
+
+function isOperand(atom) {
+  return atom != null && (atom.type === 'word' || atom.type === 'phrase');
+}
+
+function preserveInfixOperators(atoms) {
+  return atoms.map((atom, index) => {
+    if (atom.type !== 'operator') return atom;
+    if (isOperand(atoms[index - 1]) && isOperand(atoms[index + 1])) return atom;
+    return { type: 'word', value: `"${atom.value}"` };
+  });
+}
+
+function balancedParentheses(atoms) {
+  let depth = 0;
+  for (const atom of atoms) {
+    if (atom.type === 'open') depth += 1;
+    else if (atom.type === 'close') { depth -= 1; if (depth < 0) return false; }
+  }
+  return depth === 0;
+}
+
 function fts5Query(value) {
-  return value.split(/\s+/).map((term) => (
-    term.includes('"') || !/[A-Za-z0-9]-[A-Za-z0-9]/.test(term) ? term : `"${term}"`
-  )).join(' ');
+  const atoms = preserveInfixOperators(tokenizeQuery(value).map(classifyAtom));
+  const balanced = balancedParentheses(atoms);
+  const parts = [];
+  for (let index = 0; index < atoms.length; index += 1) {
+    const atom = atoms[index];
+    if (atom.type === 'skip') continue;
+    if (atom.type === 'phrase') {
+      if (atom.value.trim()) parts.push(`"${atom.value}"`);
+      continue;
+    }
+    if (atom.type === 'open' || atom.type === 'close') {
+      if (!balanced) continue;
+      if (atom.type === 'open' && atoms[index + 1]?.type === 'close') { index += 1; continue; }
+      parts.push(atom.value);
+      continue;
+    }
+    parts.push(atom.value);
+  }
+  return parts.join(' ');
 }
 
 function kind(value) {
@@ -309,7 +395,9 @@ export function open(path, { create = true, readOnly = false } = {}) {
 
     retrieve(selector = {}) {
       if (!selector || typeof selector !== 'object' || Array.isArray(selector)) throw new TypeError('retrieve selector must be an object');
-      const query = selector.query == null ? null : fts5Query(text(selector.query, 'query'));
+      const rawQuery = selector.query == null ? null : text(selector.query, 'query');
+      const query = rawQuery == null ? null : fts5Query(rawQuery);
+      const unmatched = rawQuery != null && query === '';
       const source = selector.source == null ? null : text(selector.source, 'source');
       const limit = integer(selector.limit, 'limit', 20, 1);
       const offset = integer(selector.offset, 'offset', 0, 0);
@@ -350,6 +438,7 @@ export function open(path, { create = true, readOnly = false } = {}) {
           : null;
       if (!ordering) throw new TypeError('order_by must be relevance, id, created_at, updated_at, importance, or confidence');
       const condition = where.join(' AND ');
+      if (unmatched) return { total: 0, items: [] };
       try {
         const total = db.prepare(`SELECT COUNT(*) AS total FROM memories m ${join} WHERE ${condition}`).get(...parameters).total;
         const rows = db.prepare(`SELECT ${MEMORY_SELECT}, ${query ? 'bm25(memories_fts) AS score' : 'NULL AS score'} FROM memories m ${join} WHERE ${condition} ORDER BY ${ordering} LIMIT ? OFFSET ?`)

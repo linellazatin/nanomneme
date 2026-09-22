@@ -11,7 +11,7 @@ const HELP = `Usage: nmnm <command> [arguments] [options]
 Commands:
   retain [content]     Create a memory, or patch one with --id.
   recall <id>          Return one active memory.
-  retrieve [query]     Search or list active memories.
+  retrieve [query words...]     Search or list active memories.
   remove <id>          Soft-delete one memory; add --purge to delete permanently.
   verify               Diagnose database integrity without modifying records.
   export               Write all canonical records as JSONL.
@@ -83,7 +83,6 @@ function validateCommand(command, positionals, options) {
   if (command === 'retain' && options.db && options.scope === undefined) throw new TypeError('--db requires --scope project or global');
   if (command === 'retain' && options.global && options.scope === 'project') throw new TypeError('--global requires --scope global');
   if (command === 'retain' && !options.db && !options.global && options.scope === 'global') throw new TypeError('project database requires --scope project');
-  if (command === 'retrieve' && positionals.length > 1) throw new TypeError('retrieve accepts one query argument');
   if (command === 'recall' && positionals.length !== 1) throw new TypeError('recall requires an id');
   if (command === 'remove' && positionals.length !== 1) throw new TypeError('remove requires an id');
   if (command === 'import' && positionals.length !== 1) throw new TypeError('import requires one file');
@@ -124,7 +123,7 @@ function retainInput(positionals, options) {
 
 function retrieveInput(positionals, options) {
   const input = {};
-  assign(input, 'query', positionals[0]);
+  if (positionals.length) assign(input, 'query', positionals.join(' '));
   for (const field of ['kind', 'scope', 'namespace']) assign(input, field, options[field]);
   assign(input, 'tags', commaList(options.tags));
   assign(input, 'order_by', options['order-by']);

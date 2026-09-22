@@ -357,6 +357,115 @@ test('retrieve treats hyphenated query terms as literal phrases', async (t) => {
   assert.deepEqual(store.retrieve({ query: '"pi-adapter"' }).items.map(({ id }) => id).sort(), [both.id, piOnly.id].sort());
 });
 
+test('retrieve treats punctuation and identifier terms as literal phrases', async (t) => {
+  const store = await createStore(t);
+  const node = store.retain({ content: 'node.js runtime' });
+  const version = store.retain({ content: 'released v1.2.3 patch' });
+  const cpp = store.retain({ content: 'C++ language feature' });
+  const hash = store.retain({ content: 'C# language feature' });
+  const percent = store.retain({ content: '50% of the work' });
+  const snake = store.retain({ content: 'foo_bar helper token' });
+
+  assert.deepEqual(store.retrieve({ query: 'node.js' }).items.map(({ id }) => id), [node.id]);
+  assert.deepEqual(store.retrieve({ query: 'v1.2.3' }).items.map(({ id }) => id), [version.id]);
+  assert.deepEqual(store.retrieve({ query: '50%' }).items.map(({ id }) => id), [percent.id]);
+  assert.deepEqual(store.retrieve({ query: 'foo_bar' }).items.map(({ id }) => id), [snake.id]);
+  assert.ok(store.retrieve({ query: 'C++' }).items.some(({ id }) => id === cpp.id));
+  assert.ok(store.retrieve({ query: 'C#' }).items.some(({ id }) => id === hash.id));
+});
+
+test('retrieve treats colon syntax and URLs as literal phrases', async (t) => {
+  const store = await createStore(t);
+  const keyValue = store.retain({ content: 'scope:project configuration entry' });
+  const url = store.retain({ content: 'saved https://example.com link' });
+
+  assert.deepEqual(store.retrieve({ query: 'scope:project' }).items.map(({ id }) => id), [keyValue.id]);
+  assert.deepEqual(store.retrieve({ query: 'https://example.com' }).items.map(({ id }) => id), [url.id]);
+});
+
+test('retrieve treats leading and stray minus signs as literal text', async (t) => {
+  const store = await createStore(t);
+  const fooBar = store.retain({ content: 'foo bar here' });
+  const scopeOnly = store.retain({ content: 'scope only' });
+
+  assert.deepEqual(store.retrieve({ query: 'foo - bar' }).items.map(({ id }) => id), [fooBar.id]);
+  assert.deepEqual(store.retrieve({ query: '-scope' }).items.map(({ id }) => id), [scopeOnly.id]);
+  assert.doesNotThrow(() => store.retrieve({ query: '-' }));
+  assert.deepEqual(store.retrieve({ query: '--' }), { total: 0, items: [] });
+});
+
+test('retrieve treats dangling boolean operators as literal text', async (t) => {
+  const store = await createStore(t);
+  const orMemory = store.retain({ content: 'the OR literal world' });
+  const foo = store.retain({ content: 'foo the target' });
+  const bar = store.retain({ content: 'bar the target' });
+
+  assert.deepEqual(store.retrieve({ query: 'OR' }).items.map(({ id }) => id), [orMemory.id]);
+  assert.doesNotThrow(() => store.retrieve({ query: 'OR foo' }));
+  assert.doesNotThrow(() => store.retrieve({ query: 'foo OR' }));
+  assert.doesNotThrow(() => store.retrieve({ query: 'NOT foo' }));
+  assert.doesNotThrow(() => store.retrieve({ query: 'foo AND' }));
+  assert.deepEqual(store.retrieve({ query: 'foo NOT bar' }).items.map(({ id }) => id), [foo.id]);
+  assert.deepEqual(store.retrieve({ query: 'foo OR bar' }).items.map(({ id }) => id).sort(), [foo.id, bar.id].sort());
+});
+
+test('retrieve tolerates bare and dangling NEAR operators', async (t) => {
+  const store = await createStore(t);
+  const near = store.retain({ content: 'one near two phrase' });
+
+  assert.deepEqual(store.retrieve({ query: 'NEAR' }).items.map(({ id }) => id), [near.id]);
+  assert.doesNotThrow(() => store.retrieve({ query: 'foo NEAR' }));
+  assert.doesNotThrow(() => store.retrieve({ query: 'NEAR foo' }));
+});
+
+test('retrieve tolerates unbalanced quotes without erroring', async (t) => {
+  const store = await createStore(t);
+  const hello = store.retain({ content: 'hello world memory' });
+
+  assert.deepEqual(store.retrieve({ query: '"hello' }).items.map(({ id }) => id), [hello.id]);
+  assert.deepEqual(store.retrieve({ query: 'hello "' }).items.map(({ id }) => id), [hello.id]);
+  assert.deepEqual(store.retrieve({ query: '"' }), { total: 0, items: [] });
+});
+
+test('retrieve preserves balanced parentheses and tolerates unbalanced ones', async (t) => {
+  const store = await createStore(t);
+  const foo = store.retain({ content: 'foo group member' });
+  const bar = store.retain({ content: 'bar group member' });
+
+  assert.deepEqual(store.retrieve({ query: '(foo OR bar)' }).items.map(({ id }) => id).sort(), [foo.id, bar.id].sort());
+  assert.deepEqual(store.retrieve({ query: '(foo' }).items.map(({ id }) => id), [foo.id]);
+  assert.deepEqual(store.retrieve({ query: 'foo)' }).items.map(({ id }) => id), [foo.id]);
+  assert.deepEqual(store.retrieve({ query: '()' }), { total: 0, items: [] });
+});
+
+test('retrieve treats a trailing star as a prefix and a stray star as inert', async (t) => {
+  const store = await createStore(t);
+  const foo = store.retain({ content: 'foo bar' });
+  const football = store.retain({ content: 'football game' });
+  const foosball = store.retain({ content: 'foosball rally' });
+
+  assert.deepEqual(store.retrieve({ query: 'foo*' }).items.map(({ id }) => id).sort(), [foo.id, football.id, foosball.id].sort());
+  assert.doesNotThrow(() => store.retrieve({ query: '*foo' }));
+  assert.deepEqual(store.retrieve({ query: '*' }), { total: 0, items: [] });
+});
+
+test('retrieve returns no matches for punctuation-only queries', async (t) => {
+  const store = await createStore(t);
+  store.retain({ content: 'irrelevant memory' });
+
+  for (const query of ['!!!', '...', '---', '*', '"', '()']) {
+    assert.deepEqual(store.retrieve({ query }), { total: 0, items: [] }, query);
+  }
+});
+
+test('retrieve matches case and diacritics insensitively', async (t) => {
+  const store = await createStore(t);
+  const cafe = store.retain({ content: 'Café créme recipe' });
+
+  assert.deepEqual(store.retrieve({ query: 'cafe' }).items.map(({ id }) => id), [cafe.id]);
+  assert.deepEqual(store.retrieve({ query: 'CAFÉ CRÈME' }).items.map(({ id }) => id), [cafe.id]);
+});
+
 test('retrieve filters memories by metadata source', async (t) => {
   const store = await createStore(t);
   const pi = store.retain({ content: 'Pi source memory', metadata: { source: 'pi' } });

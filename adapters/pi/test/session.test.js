@@ -720,7 +720,7 @@ test('memory browser searches both stores and opens the selected record', async 
   }
 });
 
-test('memory browser reports an invalid native search without closing', async () => {
+test('memory browser treats an inert native search as empty without closing', async () => {
   const project = temporaryDirectory('nmnm-pi-browser-invalid-native-project-');
   const home = temporaryDirectory('nmnm-pi-browser-invalid-native-home-');
   try {
@@ -731,14 +731,14 @@ test('memory browser reports an invalid native search without closing', async ()
 
     await assert.doesNotReject(commands.get('memory').handler('', { cwd: project, hasUI: true, ui: scripted.ui }));
 
-    assert.match(scripted.notices.at(-1), /search unavailable: invalid FTS5 query/i);
+    assert.equal(scripted.notices.some((message) => /search unavailable/i.test(message)), false);
   } finally {
     rmSync(project, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });
   }
 });
 
-test('memory browser reports an invalid TUI search without closing', async () => {
+test('memory browser treats an inert TUI search as empty without closing', async () => {
   const project = temporaryDirectory('nmnm-pi-browser-invalid-tui-project-');
   const home = temporaryDirectory('nmnm-pi-browser-invalid-tui-home-');
   try {
@@ -761,7 +761,7 @@ test('memory browser reports an invalid TUI search without closing', async () =>
 
     await assert.doesNotReject(commands.get('memory').handler('browse', { cwd: project, mode: 'tui', hasUI: true, ui: scripted.ui }));
 
-    assert.match(scripted.notices.at(-1), /search unavailable: invalid FTS5 query/i);
+    assert.equal(scripted.notices.some((message) => /search unavailable/i.test(message)), false);
   } finally {
     rmSync(project, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });

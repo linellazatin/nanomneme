@@ -29,7 +29,16 @@ function retainStore(params) {
 
 function requireTrustedProject(ctx, store) {
   if (store !== 'project') return;
-  if (typeof ctx?.isProjectTrusted === 'function' && ctx.isProjectTrusted() === true) return;
+  if (typeof ctx?.isProjectTrusted !== 'function') {
+    throw new Error('Nanomneme project memory requires a trusted project; use global scope/store while this project is untrusted.');
+  }
+  let trusted;
+  try {
+    trusted = ctx.isProjectTrusted();
+  } catch {
+    trusted = false;
+  }
+  if (trusted === true) return;
   throw new Error('Nanomneme project memory requires a trusted project; use global scope/store while this project is untrusted.');
 }
 

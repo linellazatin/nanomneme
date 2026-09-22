@@ -163,6 +163,27 @@ test('Pi project tools reject untrusted or missing trust contexts while global t
   }
 });
 
+test('Pi project tools reject a throwing trust probe with the standard explanation', async () => {
+  const cwd = temporaryDirectory('nmnm-pi-tools-throwing-trust-');
+  try {
+    const tools = registeredTools();
+    const ctx = {
+      cwd,
+      isProjectTrusted: () => { throw new Error('trust unavailable'); },
+    };
+    await assert.rejects(
+      tools.get('retain_memory').execute('call', { content: 'blocked' }, undefined, undefined, ctx),
+      /trusted project.*global/i,
+    );
+    await assert.rejects(
+      tools.get('recall_memory').execute('call', { id: '00000000-0000-4000-8000-000000000001', store: 'project' }, undefined, undefined, ctx),
+      /trusted project.*global/i,
+    );
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('Pi read and remove tools leave a missing selected store absent', async () => {
   const cwd = temporaryDirectory('nmnm-pi-tools-missing-');
   try {

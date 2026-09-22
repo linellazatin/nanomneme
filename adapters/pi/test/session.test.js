@@ -392,7 +392,9 @@ test('throwing project trust capability fails closed to global-only automatic co
     await handlers.get('session_start')({}, ctx);
     const result = await handlers.get('before_agent_start')({ systemPrompt: 'Base prompt' }, ctx);
 
-    assert.deepEqual(notices, []);
+    assert.equal(notices.length, 1);
+    assert.match(notices[0], /project trust check unavailable/i);
+    assert.match(notices[0], /global-only/i);
     assert.doesNotMatch(result.systemPrompt, /Project throwing-trust memory/);
     assert.match(result.systemPrompt, /Global throwing-trust memory/);
   } finally {

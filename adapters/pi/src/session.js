@@ -426,6 +426,16 @@ function projectIsTrusted(ctx) {
   }
 }
 
+function projectTrustFailure(ctx) {
+  if (typeof ctx?.isProjectTrusted !== 'function') return undefined;
+  try {
+    ctx.isProjectTrusted();
+  } catch (error) {
+    return error;
+  }
+  return undefined;
+}
+
 function validateConfiguration({ cwd, home, agentDir, includeProject = true }) {
   const stores = includeProject ? ['project', 'global'] : ['global'];
   for (const store of stores) {
@@ -484,6 +494,8 @@ export function registerPiMemory(pi, options = {}) {
   pi.on('session_start', (_event, ctx) => {
     refresh('session_start');
     if (!ctx) return;
+    const trustFailure = projectTrustFailure(ctx);
+    if (trustFailure) notify(ctx, `Nanomneme project trust check unavailable (${trustFailure.message}); using global-only memory context for this session.`);
     try {
       validateConfiguration({
         cwd: ctx.cwd,

@@ -4,7 +4,7 @@
 
 ## Install
 
-Use Node.js 22.19+ and Pi 0.87.0. This manual describes `@openlines/nmnm-pi` 0.2.1. Install the public package:
+Use Node.js 22.19+ and Pi 0.87.0 or newer. This manual describes `@openlines/nmnm-pi` 0.2.1. Install the public package:
 
 ```sh
 pi install npm:@openlines/nmnm-pi

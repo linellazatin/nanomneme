@@ -1,0 +1,20 @@
+{
+  "name": "nanomneme-local",
+  "interface": {
+    "displayName": "Nanomneme Local"
+  },
+  "plugins": [
+    {
+      "name": "nmnm-codex",
+      "source": {
+        "source": "local",
+        "path": "./adapters/codex"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

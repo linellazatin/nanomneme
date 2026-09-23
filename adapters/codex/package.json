@@ -1,0 +1,41 @@
+{
+  "name": "@openlines/nmnm-codex",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MCP-free Codex adapter for nanomneme local SQLite memory",
+  "type": "module",
+  "keywords": [
+    "codex",
+    "plugin",
+    "coding-agent",
+    "memory",
+    "adapter"
+  ],
+  "files": [
+    ".codex-plugin",
+    "hooks",
+    "scripts",
+    "skills",
+    "src",
+    "docs",
+    "plugin.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "@openlines/nmnm-core": "0.1.1"
+  },
+  "bundleDependencies": [
+    "@openlines/nmnm-core"
+  ],
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "license": "MIT",
+  "author": "Linel Lazatin",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/linellazatin/nanomneme.git",
+    "directory": "adapters/codex"
+  }
+}

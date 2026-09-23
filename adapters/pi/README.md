@@ -33,7 +33,7 @@ Pi package for the [nanomneme](https://github.com/linellazatin/nanomneme) SQLite
 
 ## Quickstart
 
-Version 0.2.1 targets Pi 0.87.0 and Node.js 22.19 or newer. Install it globally with Pi:
+Version 0.2.1 targets Pi 0.87.0 or newer and Node.js 22.19 or newer. Install it globally with Pi:
 
 ```sh
 pi install npm:@openlines/nmnm-pi

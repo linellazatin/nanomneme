@@ -1,6 +1,6 @@
 {
-  "name": "nmnm-claude",
-  "version": "0.1.3",
+  "name": "@openlines/nmnm-claude",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "dependencies": {

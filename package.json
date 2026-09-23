@@ -1,6 +1,6 @@
 {
   "name": "nanomneme",
-  "version": "0.3.4",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "keywords": [
@@ -30,9 +30,9 @@
     ]
   },
   "scripts": {
-    "test": "node --test packages/*/test/*.test.js adapters/*/test/*.test.js"
+    "test": "node --test packages/*/test/*.test.js adapters/*/test/*.test.js test/*.test.js"
   },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "0.87.0"
+    "@earendil-works/pi-coding-agent": ">=0.87.0"
   }
 }

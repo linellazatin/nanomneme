@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.0 - Codex adapter prototype
+
+### New
+- Added `@openlines/nmnm-codex` 0.1.0, an MCP-free macOS/Linux Codex plugin prototype with a direct `nmnm-core` JSON runner for retain, recall, retrieve, and soft remove.
+- Added bounded project-first/global-second SessionStart context, with a trusted read-only hook that fails without injecting context.
+- Added `.agents/plugins/marketplace.json` for Codex local deployment; npm publication is deferred for now.
+
+### Changed
+- Raised the Pi development baseline to `>=0.87.0` and refreshed the lockfile to Pi 0.87.1.
+- Updated nmnm-claude package name to match @openlines tagging.
+
+
 ## 0.3.4 - Literal search-term hardening
 
 - `@openlines/nmnm-core` 0.1.1: `retrieve` search terms are normalized so ordinary text — hyphenated
@@ -10,8 +22,8 @@
   queries degrade to literal text or an empty result rather than erroring.
 - `@openlines/nmnm-cli` `retrieve` joins unquoted words into a single query, so `nmnm retrieve node js`
   is read as `node js`.
-- `@openlines/nmnm-cli` 0.1.1, `nmnm-claude` 0.1.3, `@openlines/nmnm-opencode` 0.1.1, and
-  `@openlines/nmnm-pi` 0.2.1 all repin `@openlines/nmnm-core` to 0.1.1, carrying the fix through their
+- `@openlines/nmnm-cli` 0.1.1, `@openlines/nmnm-opencode` 0.1.1, and `@openlines/nmnm-pi` 0.2.1 all repin
+  `@openlines/nmnm-core` to 0.1.1, carrying the fix through their
   model-visible `retrieve_memory` tools.
 - `@openlines/nmnm-opencode` text clutter clean-up in memory browser status view
 

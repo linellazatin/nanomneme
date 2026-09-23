@@ -2,19 +2,25 @@
 
 # nanomneme (nmnm)
 
-[![gh stars](https://img.shields.io/github/stars/linellazatin/nanomneme?logo=github&color=ffffe0)](https://github.com/linellazatin/nanomneme) [![gh release](https://img.shields.io/github/v/release/linellazatin/nanomneme?label=release&logo=github&color=ffffe0)](https://github.com/linellazatin/nanomneme) [![license](https://img.shields.io/npm/l/@openlines/opl-pi-sht)](./LICENSE)
+[![gh stars](https://img.shields.io/github/stars/linellazatin/nanomneme?logo=github&color=ffffe0)](https://github.com/linellazatin/nanomneme)
+[![gh release](https://img.shields.io/github/v/release/linellazatin/nanomneme?label=release&logo=github&color=ffffe0)](https://github.com/linellazatin/nanomneme)
+[![license](https://img.shields.io/npm/l/@openlines/opl-pi-sht)](./LICENSE)
 
 ### memory core
-[![nmnm-cli version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-cli?label=cli&logo=npm&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-cli) [![nmnm-cli downloads](https://img.shields.io/npm/dt/@openlines/nmnm-cli?label=cli&logo=npm&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-cli)
+[![nmnm-cli version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-cli?label=cli&logo=npm&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-cli)
+[![nmnm-cli downloads](https://img.shields.io/npm/dt/@openlines/nmnm-cli?label=cli&logo=npm&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-cli)
 
-[![nmnm-core version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-core?label=core&logo=npm&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-core) [![nmnm-core downloads](https://img.shields.io/npm/dt/@openlines/nmnm-core?label=core&logo=npm&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-core)
+[![nmnm-core version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-core?label=core&logo=npm&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-core)
+[![nmnm-core downloads](https://img.shields.io/npm/dt/@openlines/nmnm-core?label=core&logo=npm&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-core)
 
 ### adapters
-[![nmnm-pi version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-pi?label=pi&logo=pi&color=ffffe0)](https://www.npmjs.com/package/@openlines/nmnm-pi) [![nmnm-claude version](https://img.shields.io/badge/claude-v0.1.2-orange?logo=claude)](https://github.com/linellazatin/nanomneme/tree/main/adapters/claude) [![nmnm-opencode version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-opencode?label=opencode&logo=opencode)](https://www.npmjs.com/package/@openlines/nmnm-opencode)
+[![nmnm-pi version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-pi?label=pi&logo=pi&color=ffffe0)](https://www.npmjs.com/package/@openlines/nmnm-pi)
+[![nmnm-claude version](https://img.shields.io/badge/claude-v0.1.2-orange?logo=claude)](https://github.com/linellazatin/nanomneme/tree/main/adapters/claude)
+[![nmnm-opencode version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-opencode?label=opencode&logo=opencode)](https://www.npmjs.com/package/@openlines/nmnm-opencode)
 
 </div>
 
-nanomneme is a small, deterministic SQLite core for coding-agent memory: useful context survives a session without becoming an opaque service. Inspired by [`openpi-memory`](https://github.com/linellazatin/openpi-memory) and [`openclaude-memory`](https://github.com/linellazatin/openclaude-memory), and their demonstration that memory can persist in inspectable files, it replaces per-harness memory formats with one shared system for `Pi`, `Claude Code`, and future adapters.
+nanomneme is a small, deterministic SQLite core for coding-agent memory: useful context survives a session without becoming an opaque service. Inspired by [`openpi-memory`](https://github.com/linellazatin/openpi-memory) and [`openclaude-memory`](https://github.com/linellazatin/openclaude-memory), and their demonstration that memory can persist in inspectable files, it replaces per-harness memory formats with one shared system for `Pi`, `Claude Code`, Codex, and future adapters.
 
 ## What the name means
 
@@ -37,7 +43,7 @@ Nanomneme helps agents remember without pretending to be human memory.
 ### Core memory handler
 
 - **Local and user-owned:** no required LLM calls, embeddings, vector database, daemon, ORM, or network service; operations are local and deterministic, SQLite is the source of truth, and JSONL portability preserves explicit project/global boundaries.
-- **Harness-agnostic foundation:** one shared memory contract supports Pi, Claude Code, OpenCode, and future thin adapters.
+- **Harness-agnostic foundation:** one shared memory contract supports Pi, Claude Code, Codex, OpenCode, and future thin adapters.
 - **4Rs lifecycle:** retain, recall, retrieve, and remove; retrieval can filter recorded harness sources; soft removal is reversible and purge is explicit.
 - **Local SQLite storage:** transactional canonical records with derived tags and FTS5 indexes.
 - **Canonical validation:** UUID v4 IDs, UTC timestamps, supported kinds and scopes, kebab-case namespaces and tags, and JSON metadata.
@@ -74,6 +80,12 @@ Nanomneme helps agents remember without pretending to be human memory.
 - **Model guidance:** a `memory-guide` Skill (`/nanomneme:memory-guide`) teaches the 4Rs, project-versus-global scope, and safe capture.
 - **Model-free management command:** `bin/memory.js` (`status`, `list`, `search`, `show`, `pin`, `unpin`, `remove`) reuses the shared store/context helpers; `list` and `search` accept `--source all|claude-code`. A `/nanomneme:memory` slash command embeds it and relays output verbatim, or invoke the CLI with `!` for a fully model-free path.
 
+#### Codex prototype
+
+- **MCP-free package:** `@openlines/nmnm-codex` 0.1.0 bundles the exact core runtime and a constrained, shell-backed JSON runner for retain, recall, retrieve, and soft remove. New records carry `metadata.source: "codex"`; reads and no-op removal do not create a store.
+- **Bounded trusted context:** one SessionStart hook reads existing project then global stores without writing them, injects a fixed bounded index, and emits no context on failure. The prototype intentionally has no pins, adapter settings, prompt cadence, automatic retention, adapter management CLI, or Windows support claim.
+- **Lazy guidance:** one `memory` skill resolves the package-relative runner beside its `SKILL.md`; no MCP fallback is supplied.
+
 #### OpenCode
 
 - **Native plugin memory tools:** an OpenCode server plugin on `@opencode-ai/plugin` registers retain, recall, retrieve, and remove backed by `nmnm-core` with no MCP server, daemon, network, or CLI parsing. Because OpenCode loads plugins under Bun (no `node:sqlite`), each core call runs in a short-lived spawned `node` bridge. `retain_memory` records `"opencode"` source provenance on new entries and is the only operation that creates a missing store; `remove_memory` is soft-only.
@@ -104,6 +116,7 @@ node:sqlite + SQLite FTS5
 | `packages/nmnm-cli` | Publishable `@openlines/nmnm-cli` package providing the `nmnm` CLI. |
 | `adapters/pi` | Publishable `@openlines/nmnm-pi` Pi package, including a model-free memory browser. |
 | `adapters/claude` | Private Git-first Claude Code plugin: native MCP memory tools plus session-start index injection. |
+| `adapters/codex` | Local-marketplace-only MCP-free Codex prototype with a bundled direct-core runner and bounded session-start index. |
 | `adapters/opencode` | Publishable `@openlines/nmnm-opencode` OpenCode server plugin: native memory tools plus bounded transient index injection. |
 
 Use Node.js 22.19+ with built-in `node:sqlite` and FTS5. The Pi adapter is published as `@openlines/nmnm-pi` and the OpenCode adapter as `@openlines/nmnm-opencode`; Claude Code is a separately installed Git-first plugin.
@@ -123,6 +136,14 @@ pi install npm:@openlines/nmnm-pi
 ```
 
 Claude Code remains a separately installed adapter.
+
+The Codex adapter is a local prototype, not an npm-published install. Create a packed local artifact with:
+
+```sh
+npm pack --workspace @openlines/nmnm-codex
+```
+
+The tarball is for isolated artifact validation; use the repo-local `.agents/plugins/marketplace.json` entry for live development, then review and trust its SessionStart hook in Codex. See the [Codex adapter manual](adapters/codex/docs/CODEX_ADAPTER_MANUAL.md).
 
 The CLI defaults to `./.nanomneme/memory.db`. `--global` uses `~/.local/share/nanomneme/memory.db` on Linux and macOS. Standard `retain` routes derive the matching scope; custom `--db` retains require `--scope project|global`. `retrieve --both` composes project results before global results; `(store, id)` identifies a retrieval item.
 
@@ -145,6 +166,8 @@ Pi settings and pins are adapter-owned files outside SQLite. First load creates 
 | [Pi Adapter Manual](adapters/pi/docs/PI_ADAPTER_MANUAL.md) | Pi installation, tools, pins, configuration, and automatic index behavior. |
 | [Claude quick start](adapters/claude/README.md) | Package-local Claude Code plugin entry point. |
 | [Claude Adapter Manual](adapters/claude/docs/CLAUDE_ADAPTER_MANUAL.md) | Claude Code plugin install, MCP tools, hooks, the `/nanomneme:memory` management command, pins, and configuration. |
+| [Codex quick start](adapters/codex/README.md) | Package-local Codex prototype entry point. |
+| [Codex Adapter Manual](adapters/codex/docs/CODEX_ADAPTER_MANUAL.md) | Codex local-prototype installation, trusted hook, shell-backed 4Rs, and token boundaries. |
 | [OpenCode quick start](adapters/opencode/README.md) | Package-local OpenCode server plugin entry point. |
 | [OpenCode Adapter Manual](adapters/opencode/docs/OPENCODE_ADAPTER_MANUAL.md) | OpenCode plugin install, native tools, transient injection, the `nmnm-opencode` CLI, the TUI memory browser, pins, configuration, and compatibility probes. |
 | [Roadmap](ROADMAP.md) | Phased delivery and deferred work. |
@@ -157,7 +180,7 @@ Pi settings and pins are adapter-owned files outside SQLite. First load creates 
 ```sh
 npm test
 pi -e ./adapters/pi/extensions/index.js --help
-npm pack --dry-run --workspace @openlines/nmnm-core --workspace @openlines/nmnm-cli
+npm pack --dry-run --workspace @openlines/nmnm-core --workspace @openlines/nmnm-cli --workspace @openlines/nmnm-codex
 ```
 
 Run `npm test` before submitting changes. Do not commit `.nanomneme/`, personal global databases, or Pi settings and pin files containing local data. Use canonical JSONL for transfer and closed SQLite copies for exact backups. See the manuals for validation, recovery, and adapter-specific safety boundaries.

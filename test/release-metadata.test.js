@@ -22,7 +22,8 @@ test('release metadata identifies the hardening release', () => {
   assert.equal(core.version, '0.1.1');
   assert.equal(cli.version, '0.1.1');
   assert.equal(pi.version, '0.2.1');
-  assert.equal(claude.version, '0.1.3');
+  assert.equal(claude.name, '@openlines/nmnm-claude');
+  assert.equal(claude.version, '0.1.2');
   assert.equal(codex.version, '0.1.0');
   assert.equal(opencode.version, '0.1.1');
   for (const pkg of [cli, pi, claude, codex, opencode]) {

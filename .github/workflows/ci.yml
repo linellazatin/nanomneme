@@ -26,4 +26,4 @@ jobs:
       - run: npm audit --audit-level=high
       - run: npm test
       - run: git diff --check
-      - run: npm pack --dry-run --workspace @openlines/nmnm-core --workspace @openlines/nmnm-cli --workspace @openlines/nmnm-pi --workspace @openlines/nmnm-opencode
+      - run: npm pack --dry-run --workspace @openlines/nmnm-core --workspace @openlines/nmnm-cli --workspace @openlines/nmnm-pi --workspace @openlines/nmnm-opencode --workspace @openlines/nmnm-codex

@@ -77,6 +77,21 @@ test('records failed removal with a generic normalized error', () => {
   assert.equal(records[0].level, 'error');
 });
 
+test('a throwing host session lookup emits a null session ID', () => {
+  const records = [];
+  const logger = createPiLogger({ sink: (record) => records.push(record) });
+
+  assert.equal(logger.record({
+    ctx: { sessionManager: { getSessionId: () => { throw new Error('private host failure'); } } },
+    operation: 'recall',
+    status: 'not_found',
+    duration_ms: 1,
+  }), true);
+  assert.equal(records.length, 1);
+  assert.deepEqual(records[0].context, { session_id: null });
+  assert.equal(JSON.stringify(records[0]).includes('private host failure'), false);
+});
+
 test('appends default records to the Pi adapter global Nanomneme log file', () => {
   const home = mkdtempSync(join(tmpdir(), 'nmnm-pi-logger-'));
   const path = join(home, '.local', 'share', 'nanomneme', 'logs', 'nmnm-pi.jsonl');

@@ -227,6 +227,26 @@ test('Pi tools log sanitized core failures without changing the thrown error', a
   }
 });
 
+test('a throwing diagnostic sink does not change successful or failed tool operations', async () => {
+  const cwd = temporaryDirectory('nmnm-pi-tools-sink-failure-');
+  const logger = createPiLogger({ sink: () => { throw new Error('private sink failure'); } });
+  const tools = registeredTools({ logger });
+  const ctx = { cwd, isProjectTrusted: () => true };
+  try {
+    const retained = JSON.parse((await tools.get('retain_memory').execute('call', {
+      content: 'Sink failure must not block retention',
+    }, undefined, undefined, ctx)).content[0].text);
+    const recalled = await tools.get('recall_memory').execute('call', { id: retained.id }, undefined, undefined, ctx);
+    assert.equal(JSON.parse(recalled.content[0].text).id, retained.id);
+    await assert.rejects(
+      tools.get('retain_memory').execute('call', { content: '' }, undefined, undefined, ctx),
+      /content must be a non-empty string/i,
+    );
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('Pi tools return bounded valid JSON for oversized memory results', async () => {
   const cwd = temporaryDirectory('nmnm-pi-tools-bounded-');
   try {

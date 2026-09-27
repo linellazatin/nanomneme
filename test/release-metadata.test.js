@@ -37,6 +37,11 @@ test('release metadata identifies the Logslines diagnostics release', () => {
     '@earendil-works/pi-tui': '*',
     typebox: '*',
   });
+  assert.equal(root.devDependencies['@openlines/logslines'], 'file:../logslines');
+  assert.equal(root.devDependencies.esbuild, '0.28.2');
+  assert.equal(pi.dependencies['@openlines/logslines'], undefined);
+  assert.equal(pi.dependencies['@openlines/nmnm-logger'], undefined);
+  assert.equal(lock.packages['packages/logger'], undefined);
 });
 
 test('Codex prototype remains marketplace-local and is not released to npm', () => {

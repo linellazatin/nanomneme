@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { matchesKey, truncateToWidth } from '@earendil-works/pi-tui';
 
 import { buildMemoryIndex, pin, piAgentDir, pinsPath, readPins, readSettings, settingsPath, unpin, writePins } from './context.js';
+import { getPiLogger } from './logger.js';
 import { databasePath, runMemory, supportsGlobalStore } from './store.js';
 
 const DEFAULT_LIST_LIMIT = 20;
@@ -618,5 +619,5 @@ export function registerPiMemory(pi, options = {}) {
       notify(ctx, 'Usage: /memory [browse] | refresh | status | list [project|global] [all|pi] [limit] [offset] | remove [project|global] <id> | pin [project|global] <id> | unpin [project|global] <id>');
     },
   });
-  return { refresh };
+  return { refresh, logger: options.logger ?? getPiLogger({ home: options.home, agentDir }) };
 }

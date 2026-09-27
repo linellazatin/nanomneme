@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 
-import { createPiLogger, recordPiBlockedOperation, runPiOperation } from './logger.js';
+import { getPiLogger, recordPiBlockedOperation, runPiOperation } from './logger.js';
 import { toolResponse } from './response.js';
 import { databasePath, runMemory } from './store.js';
 
@@ -44,7 +44,7 @@ function requireTrustedProject(ctx, store) {
 }
 
 export function registerPiTools(pi, Type, options = {}) {
-  const logger = options.logger ?? createPiLogger();
+  const logger = options.logger ?? getPiLogger();
   const requireTrusted = (ctx, operation, selectedStore) => {
     try {
       requireTrustedProject(ctx, selectedStore);

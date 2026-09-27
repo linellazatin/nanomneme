@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { Type } from 'typebox';
 import { MAX_TOOL_RESULT_BYTES } from '../src/response.js';
 import { createPiLogger } from '../src/logger.js';
+import { registerPiMemory } from '../src/session.js';
 import { databasePath, runMemory } from '../src/store.js';
 import { registerPiTools } from '../src/tools.js';
 
@@ -111,6 +112,47 @@ test('Pi mutation tools notify the adapter, while reads do not', async () => {
     assert.deepEqual(mutations, ['retain', 'remove']);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('session and tools share one lazy logger without session records; fresh registration applies settings', async () => {
+  const cwd = temporaryDirectory('nmnm-pi-shared-project-');
+  const home = temporaryDirectory('nmnm-pi-shared-home-');
+  const agentDir = join(home, 'pi-agent');
+  const file = join(home, '.local', 'share', 'nanomneme', 'logs', 'nmnm-pi.jsonl');
+  const ctx = { cwd, isProjectTrusted: () => true, ui: { notify: () => {} } };
+  const register = () => {
+    const tools = new Map();
+    const events = new Map();
+    const commands = new Map();
+    const pi = {
+      registerTool: (tool) => tools.set(tool.name, tool),
+      registerCommand: (name, command) => commands.set(name, command),
+      on: (name, handler) => events.set(name, handler),
+    };
+    const memory = registerPiMemory(pi, { home, agentDir });
+    registerPiTools(pi, Type, { logger: memory.logger, onMutation: memory.refresh });
+    return { tools, events, commands };
+  };
+  try {
+    mkdirSync(agentDir);
+    writeFileSync(join(agentDir, 'nmnm.jsonc'), '{ "logging": { "enabled": true } }');
+    const first = register();
+    first.events.get('session_start')({}, ctx);
+    await first.commands.get('memory').handler('status', ctx);
+    assert.equal(existsSync(file), false);
+    const retained = await execute(first.tools.get('retain_memory'), { content: 'One model tool outcome' }, cwd);
+    assert.equal(retained.content, 'One model tool outcome');
+    assert.equal(readFileSync(file, 'utf8').trim().split('\n').length, 1);
+
+    writeFileSync(join(agentDir, 'nmnm.jsonc'), '{ "logging": { "enabled": false } }');
+    const reloaded = register();
+    reloaded.events.get('session_start')({}, ctx);
+    assert.equal((await execute(reloaded.tools.get('retain_memory'), { content: 'No diagnostic after reload' }, cwd)).content, 'No diagnostic after reload');
+    assert.equal(readFileSync(file, 'utf8').trim().split('\n').length, 1);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
   }
 });
 

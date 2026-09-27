@@ -11,7 +11,7 @@ Pi package for the [nanomneme](https://github.com/linellazatin/nanomneme) SQLite
 ## Features
 
 - **Native memory tools:** model-invoked retain, recall, retrieve, and remove operations over `nmnm-core`; project operations require Pi project trust, while global operations remain available in untrusted projects. Model-visible JSON is bounded to 50 KiB, with explicit summaries for oversized results.
-- **Opt-in Logslines diagnostics:** enable `logging.enabled` in global Pi `nmnm.jsonc` and run `/reload`. `src/logger.js` owns privacy-bounded `logslines/v1` outcomes for the four tools; the bundled shared logger appends them to `~/.local/share/nanomneme/logs/nmnm-pi.jsonl`.
+- **Opt-in Logslines diagnostics:** enable `logging.enabled` in global Pi `nmnm.jsonc` and run `/reload` to apply changes. A lazy logger shared by session and tools emits privacy-bounded `logslines/v1` outcomes only for the four model-facing tools, appending them to `~/.local/share/nanomneme/logs/nmnm-pi.jsonl`.
 - **Project and global memory:** explicit store selection with canonical records and no custom database-path parsing.
 - **Bounded automatic context:** transient autoretention guidance and the first-prompt memory index share one configurable character budget; pinned entries come first, with recent active fallback, store and recorded-source labels, unresolved-pin reporting, and refresh after successful compaction or memory mutations.
 - **Opt-in autoretention:** project/global JSONC rules guide the active model's `retain_memory` calls without a nested model, worker, or direct adapter write.

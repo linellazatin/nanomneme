@@ -124,6 +124,27 @@ test('only valid global Pi settings opt in to diagnostics', () => {
   }
 });
 
+test('lazy Pi logger samples global settings on first use and again after a new registration', async () => {
+  const { getPiLogger } = await import('../src/logger.js');
+  const home = mkdtempSync(join(tmpdir(), 'nmnm-pi-lazy-'));
+  const agentDir = join(home, 'agent');
+  const path = join(agentDir, 'nmnm.jsonc');
+  const fields = { ctx: {}, operation: 'retain', status: 'ok', duration_ms: 1 };
+  try {
+    mkdirSync(agentDir);
+    const first = getPiLogger({ home, agentDir });
+    writeFileSync(path, '{ "logging": { "enabled": true } }');
+    assert.equal(first.record(fields), true);
+    writeFileSync(path, '{ "logging": { "enabled": false } }');
+    assert.equal(first.record(fields), true);
+    const reloaded = getPiLogger({ home, agentDir });
+    assert.equal(reloaded.record(fields), false);
+    assert.equal(readFileSync(join(home, '.local', 'share', 'nanomneme', 'logs', 'nmnm-pi.jsonl'), 'utf8').trim().split('\n').length, 2);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test('appends default records to the Pi adapter global Nanomneme log file', () => {
   const home = mkdtempSync(join(tmpdir(), 'nmnm-pi-logger-'));
   const path = join(home, '.local', 'share', 'nanomneme', 'logs', 'nmnm-pi.jsonl');

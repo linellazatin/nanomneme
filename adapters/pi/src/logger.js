@@ -85,6 +85,16 @@ export function createPiLogger({ enabled, sink, now, home, agentDir } = {}) {
   };
 }
 
+export function getPiLogger(options) {
+  let logger;
+  return {
+    record(fields) {
+      logger ??= createPiLogger(options);
+      return logger.record(fields);
+    },
+  };
+}
+
 function safeRecord(logger, fields) {
   try {
     return logger.record(fields) === true;

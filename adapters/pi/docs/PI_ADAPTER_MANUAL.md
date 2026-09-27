@@ -38,7 +38,7 @@ Pi exposes four tools to the model. Model-facing project operations require the 
 
 `src/logger.js` is the model-tool logging boundary for the Pi adapter and the reference template for later Nanomneme adapters. When enabled, it emits one closed `logslines/v1` outcome record for each model-facing retain, recall, retrieve, or remove attempt that reaches a terminal adapter outcome. The shared Nanomneme logger source and Logslines runtime are bundled into Pi; `src/logger.js` retains Pi's event catalog and host-session lookup.
 
-This instrumentation currently covers only the four tools in [Native memory tools](#native-memory-tools). User-invoked `/memory` commands, the native memory browser, automatic context injection, pin operations, and other non-model adapter paths do not emit Logslines records yet.
+This instrumentation currently covers only the four tools in [Native memory tools](#native-memory-tools). Session and tool registration share a lazy logger: the first model-tool outcome reads global logging settings, and `/reload` creates a fresh logger that reads them again. Session lifecycle events, user-invoked `/memory` commands, the native memory browser, automatic context injection, pin operations, and other non-model adapter paths do not emit Logslines records yet.
 
 ### Emission and destination
 

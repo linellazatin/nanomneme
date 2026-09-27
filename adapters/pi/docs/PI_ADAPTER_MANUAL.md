@@ -4,7 +4,7 @@
 
 ## Install
 
-Use Node.js 22.19+ and Pi 0.87.0 or newer. This manual describes `@openlines/nmnm-pi` 0.2.1. Install the public package:
+Use Node.js 22.19+ and Pi 0.87.0 or newer. This manual describes `@openlines/nmnm-pi` 0.3.0. Install the public package:
 
 ```sh
 pi install npm:@openlines/nmnm-pi
@@ -33,6 +33,149 @@ Pi runs package extensions with full local-system access. Review package, checke
 ## Native memory tools
 
 Pi exposes four tools to the model. Model-facing project operations require the current project to be trusted by Pi. In an untrusted project, use explicit global scope/store operations; user-invoked `/memory` commands remain available for explicit local project management.
+
+## Logslines diagnostics
+
+`src/logger.js` is the model-tool logging boundary for the Pi adapter and the reference template for later Nanomneme adapters. It emits one closed `logslines/v1` outcome record for each model-facing retain, recall, retrieve, or remove attempt that reaches a terminal adapter outcome. The adapter delegates record validation and envelope construction to `@openlines/logslines`.
+
+This instrumentation currently covers only the four tools in [Native memory tools](#native-memory-tools). User-invoked `/memory` commands, the native memory browser, automatic context injection, pin operations, and other non-model adapter paths do not emit Logslines records yet.
+
+### Emission and destination
+
+The default Pi sink appends JSON Lines to `~/.local/share/nanomneme/logs/nmnm-pi.jsonl`: one complete JSON object followed by a newline for each emitted record. The `logs` directory is created on the first emitted record. The filename is derived from the owning Logslines service component, `nmnm-pi`. The adapter does not configure rotation, transport, indexing, search, dashboards, or telemetry.
+
+The adapter records one of these terminal outcomes:
+
+- A core memory operation completes, including an empty retrieval or a requested memory that is absent.
+- Pi project-trust policy blocks a model-facing project operation before the core is called.
+- The core operation throws.
+
+A logger, validation, sink, serialization, or host-session lookup failure is contained. It returns no record and does not change the memory tool's result, error, mutation refresh, or trust decision. The normal tool operation remains the authority for success or failure.
+
+### Record shape
+
+Every emitted record has exactly the following 12 top-level fields. `logslines/v1` rejects additional top-level fields.
+
+| Field | Type and adapter value | Meaning in this adapter |
+|---|---|---|
+| `schema` | String, always `"logslines/v1"` | Stable wire-contract identifier. It is independent of adapter and Logslines package versions. |
+| `timestamp` | UTC RFC 3339 string ending in `Z`, created by the Logslines emitter | Time at which the record is emitted. |
+| `level` | `"info"`, `"warn"`, or `"error"` | Diagnostic severity selected from the operation outcome mapping below. |
+| `event` | Stable `memory.*` identifier | Specific terminal event selected from the operation outcome mapping below. |
+| `message` | Fixed non-empty summary string | Human-readable outcome summary selected from the operation outcome mapping below. |
+| `service` | Closed object | Constant adapter identity described in [Service identity](#service-identity). |
+| `context` | Closed object with `session_id` only | Opaque Pi host-session correlation described in [Session context](#session-context). |
+| `operation` | One of `retain`, `recall`, `retrieve`, or `remove` | Logical Nanomneme 4R action. |
+| `status` | `ok`, `empty`, `not_found`, `blocked`, or `failed` | Terminal outcome. The full Logslines vocabulary also includes `skipped` and `partial`, but the current Pi model-tool surface does not emit them. |
+| `duration_ms` | Finite non-negative number or `null` | Measured core-operation duration, or `null` for a policy block that has no meaningful operation duration. |
+| `attributes` | Always `{}` | The current event catalog defines no event-specific attributes. |
+| `error` | `null` except for `failed` | Generic normalized failure object described in [Failure records](#failure-records). |
+
+#### Service identity
+
+The `service` object is closed and always has exactly these non-empty string values:
+
+```json
+{
+  "namespace": "openlines",
+  "name": "nanomneme",
+  "component": "nmnm-pi",
+  "version": "<the adapter package version>"
+}
+```
+
+`version` comes from `adapters/pi/package.json` at module load time. It identifies the adapter component, not the Logslines wire schema and not the core package version.
+
+#### Session context
+
+The `context` object is closed and always has exactly one property:
+
+```json
+{ "session_id": "<opaque Pi session ID or null>" }
+```
+
+When available, the adapter obtains the value from Pi's `ctx.sessionManager.getSessionId()`. It passes that value through unchanged only when it is a non-empty string. The adapter does not create, derive, sanitize, hash, or otherwise replace a session ID. When Pi provides no session manager or ID, or the lookup throws, it emits `null`.
+
+#### Duration
+
+For `retain`, `recall`, `retrieve`, and `remove` calls that pass the trust boundary, the adapter starts a monotonic timer immediately before invoking the core and records the elapsed milliseconds after it returns or throws. The recorded value is clamped to zero or greater. It includes the synchronous adapter-to-core operation, including selected-store presence checks that occur inside the logged operation.
+
+A `blocked` record has `duration_ms: null`: Pi project trust rejected the model-facing project operation before a core memory operation began. The adapter does not fabricate a duration for this policy result.
+
+### Operation outcomes and events
+
+The event catalog is closed by `src/logger.js`. The table lists every currently emitted combination.
+
+| Operation | Status | Level | Event | Message | When emitted |
+|---|---|---|---|---|---|
+| `retain` | `ok` | `info` | `memory.retained` | `Memory retention completed` | The core retain operation returns. |
+| `retain` | `blocked` | `warn` | `memory.retain_blocked` | `Memory retention blocked` | Pi project trust blocks the selected project store. |
+| `retain` | `failed` | `error` | `memory.retain_failed` | `Memory retention failed` | The core retain operation throws. |
+| `recall` | `ok` | `info` | `memory.recalled` | `Memory recall completed` | A requested active memory is returned. |
+| `recall` | `not_found` | `info` | `memory.recall_not_found` | `Memory was not found` | The requested memory is absent, inactive, expired, or the selected store does not exist. |
+| `recall` | `blocked` | `warn` | `memory.recall_blocked` | `Memory recall blocked` | Pi project trust blocks the selected project store. |
+| `recall` | `failed` | `error` | `memory.recall_failed` | `Memory recall failed` | The core recall operation throws. |
+| `retrieve` | `ok` | `info` | `memory.retrieved` | `Memory retrieval completed` | The returned page has one or more matching records. |
+| `retrieve` | `empty` | `info` | `memory.retrieved` | `Memory retrieval completed with no results` | The returned page has `total: 0`, including a missing selected store. |
+| `retrieve` | `blocked` | `warn` | `memory.retrieve_blocked` | `Memory retrieval blocked` | Pi project trust blocks the selected project store. |
+| `retrieve` | `failed` | `error` | `memory.retrieve_failed` | `Memory retrieval failed` | The core retrieve operation throws. |
+| `remove` | `ok` | `info` | `memory.removed` | `Memory removal completed` | The core soft-remove operation returns an active memory. |
+| `remove` | `not_found` | `info` | `memory.remove_not_found` | `Memory was not found` | The requested memory is absent, inactive, expired, or the selected store does not exist. |
+| `remove` | `blocked` | `warn` | `memory.remove_blocked` | `Memory removal blocked` | Pi project trust blocks the selected project store. |
+| `remove` | `failed` | `error` | `memory.remove_failed` | `Memory removal failed` | The core remove operation throws. |
+
+`ok`, `empty`, and `not_found` are successful logical outcomes and therefore use `error: null`. A project-policy block is also not a core failure and uses `error: null`.
+
+### Failure records
+
+Only `status: "failed"` has a non-null `error` object. It is closed and currently uses this generic shape, substituting the current operation name:
+
+```json
+{
+  "kind": "unknown",
+  "code": "<operation>_failed",
+  "message": "Memory <operation label> failed",
+  "retryable": false
+}
+```
+
+Examples include `retain_failed`, `recall_failed`, `retrieve_failed`, and `remove_failed`. The message is the same fixed message in the outcome table. No `cause_kind` is emitted today. The adapter deliberately does not classify underlying core exceptions, expose their error class, copy their message, include a stack trace, or infer whether a retry may work.
+
+For every status other than `failed`, `error` is exactly `null`. In particular, `blocked`, `empty`, and `not_found` do not carry errors.
+
+### Privacy boundary
+
+The logger uses an empty `attributes` object for every current event. Records do not contain:
+
+- Memory content or previews.
+- Recall or removal IDs.
+- Retrieval queries, filters, result totals, offsets, ordering, or tags.
+- Memory kind, scope, namespace, confidence, importance, expiry, or metadata.
+- Selected store, database path, working directory, home directory, settings, or pins.
+- Tool arguments, model messages, prompts, or model-visible tool responses.
+- Raw core error messages, error classes, causes, or stack traces.
+
+The only potentially correlating value is Pi's opaque host-provided `context.session_id`. Operators must handle that opaque value in the append-only diagnostics file according to their own retention and privacy policy.
+
+### Example records
+
+A successful retain can emit:
+
+```json
+{"schema":"logslines/v1","timestamp":"2026-09-27T04:30:00.000Z","level":"info","event":"memory.retained","message":"Memory retention completed","service":{"namespace":"openlines","name":"nanomneme","component":"nmnm-pi","version":"0.3.0"},"context":{"session_id":"<opaque Pi session ID>"},"operation":"retain","status":"ok","duration_ms":2.4,"attributes":{},"error":null}
+```
+
+A project-trust block for retrieval can emit:
+
+```json
+{"schema":"logslines/v1","timestamp":"2026-09-27T04:30:00.000Z","level":"warn","event":"memory.retrieve_blocked","message":"Memory retrieval blocked","service":{"namespace":"openlines","name":"nanomneme","component":"nmnm-pi","version":"0.3.0"},"context":{"session_id":"<opaque Pi session ID or null>"},"operation":"retrieve","status":"blocked","duration_ms":null,"attributes":{},"error":null}
+```
+
+A failed removal can emit:
+
+```json
+{"schema":"logslines/v1","timestamp":"2026-09-27T04:30:00.000Z","level":"error","event":"memory.remove_failed","message":"Memory removal failed","service":{"namespace":"openlines","name":"nanomneme","component":"nmnm-pi","version":"0.3.0"},"context":{"session_id":null},"operation":"remove","status":"failed","duration_ms":1,"attributes":{},"error":{"kind":"unknown","code":"remove_failed","message":"Memory removal failed","retryable":false}}
+```
 
 Successful model-visible tool JSON is limited to 50 KiB (51,200 UTF-8 bytes). Results that fit retain their existing canonical JSON. Oversized results return valid JSON with `truncated: true`, byte-count diagnostics, stable record or page identifiers, bounded content previews, and guidance to narrow the request or use the CLI. This summary does not modify or truncate the canonical stored memory.
 
@@ -189,7 +332,7 @@ An invalid settings or pin file leaves the file unchanged. Session start reports
 
 ### Pi token overhead
 
-`nmnm-pi` 0.2.1 adds four model-visible tool definitions: `retain_memory`, `recall_memory`, `retrieve_memory`, and `remove_memory`. Their JSON schemas total `1,190 characters` (`retain_memory` 440, `recall_memory` 164, `retrieve_memory` 422, `remove_memory` 164). This is a schema-only reference, not a token or cost estimate: Pi adds tool names, descriptions, and provider request structure, while each provider uses its own tokenizer.
+`nmnm-pi` 0.3.0 adds four model-visible tool definitions: `retain_memory`, `recall_memory`, `retrieve_memory`, and `remove_memory`. Their JSON schemas total `1,190 characters` (`retain_memory` 440, `recall_memory` 164, `retrieve_memory` 422, `remove_memory` 164). This is a schema-only reference, not a token or cost estimate: Pi adds tool names, descriptions, and provider request structure, while each provider uses its own tokenizer.
 
 The transient memory context is separately bounded. On the first prompt and each queued refresh, Pi appends at most `injection_budget + 2` characters to the system prompt: the configured context plus its two newline separator characters. With the default budget, that is at most 2,002 characters. Autoretention guidance and index rows share that limit. Ordinary prompts without a queued refresh append no memory context unless opt-in periodic `reinjection` queues a rebuild.
 

@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 
+import { createPiLogger, recordPiBlockedOperation, runPiOperation } from './logger.js';
 import { toolResponse } from './response.js';
 import { databasePath, runMemory } from './store.js';
 
@@ -43,6 +44,15 @@ function requireTrustedProject(ctx, store) {
 }
 
 export function registerPiTools(pi, Type, options = {}) {
+  const logger = options.logger ?? createPiLogger();
+  const requireTrusted = (ctx, operation, selectedStore) => {
+    try {
+      requireTrustedProject(ctx, selectedStore);
+    } catch (error) {
+      recordPiBlockedOperation(logger, ctx, operation);
+      throw error;
+    }
+  };
   pi.registerTool({
     name: 'retain_memory',
     label: 'Retain Memory',
@@ -55,8 +65,13 @@ export function registerPiTools(pi, Type, options = {}) {
     }),
     async execute(_id, params, _signal, _update, ctx) {
       const selectedStore = retainStore(params);
-      requireTrustedProject(ctx, selectedStore);
-      const result = runMemory({ cwd: ctx.cwd, store: selectedStore, operation: 'retain', input: retainInput(params) });
+      requireTrusted(ctx, 'retain', selectedStore);
+      const result = runPiOperation(logger, {
+        ctx,
+        operation: 'retain',
+        execute: () => runMemory({ cwd: ctx.cwd, store: selectedStore, operation: 'retain', input: retainInput(params) }),
+        status: () => 'ok',
+      });
       options.onMutation?.('retain');
       return toolResponse(result);
     },
@@ -68,9 +83,16 @@ export function registerPiTools(pi, Type, options = {}) {
     parameters: Type.Object({ id: Type.String(), store: store(Type) }),
     async execute(_id, params, _signal, _update, ctx) {
       const selectedStore = params.store ?? 'project';
-      requireTrustedProject(ctx, selectedStore);
-      if (!hasStore(ctx, selectedStore)) return toolResponse(null);
-      return toolResponse(runMemory({ cwd: ctx.cwd, store: selectedStore, operation: 'recall', input: { id: params.id }, create: false, readOnly: true }));
+      requireTrusted(ctx, 'recall', selectedStore);
+      const result = runPiOperation(logger, {
+        ctx,
+        operation: 'recall',
+        execute: () => (hasStore(ctx, selectedStore)
+          ? runMemory({ cwd: ctx.cwd, store: selectedStore, operation: 'recall', input: { id: params.id }, create: false, readOnly: true })
+          : null),
+        status: (memory) => (memory ? 'ok' : 'not_found'),
+      });
+      return toolResponse(result);
     },
   });
   pi.registerTool({
@@ -85,9 +107,16 @@ export function registerPiTools(pi, Type, options = {}) {
     }),
     async execute(_id, params, _signal, _update, ctx) {
       const selectedStore = params.store ?? 'project';
-      requireTrustedProject(ctx, selectedStore);
-      if (!hasStore(ctx, selectedStore)) return toolResponse({ total: 0, items: [] });
-      return toolResponse(runMemory({ cwd: ctx.cwd, store: selectedStore, operation: 'retrieve', input: input(params, ['query', 'kind', 'scope', 'namespace', 'tags', 'expires', 'importance', 'confidence', 'order_by', 'limit', 'offset']), create: false, readOnly: true }));
+      requireTrusted(ctx, 'retrieve', selectedStore);
+      const result = runPiOperation(logger, {
+        ctx,
+        operation: 'retrieve',
+        execute: () => (hasStore(ctx, selectedStore)
+          ? runMemory({ cwd: ctx.cwd, store: selectedStore, operation: 'retrieve', input: input(params, ['query', 'kind', 'scope', 'namespace', 'tags', 'expires', 'importance', 'confidence', 'order_by', 'limit', 'offset']), create: false, readOnly: true })
+          : { total: 0, items: [] }),
+        status: (page) => (page.total === 0 ? 'empty' : 'ok'),
+      });
+      return toolResponse(result);
     },
   });
   pi.registerTool({
@@ -97,9 +126,15 @@ export function registerPiTools(pi, Type, options = {}) {
     parameters: Type.Object({ id: Type.String(), store: store(Type) }),
     async execute(_id, params, _signal, _update, ctx) {
       const selectedStore = params.store ?? 'project';
-      requireTrustedProject(ctx, selectedStore);
-      if (!hasStore(ctx, selectedStore)) return toolResponse(null);
-      const result = runMemory({ cwd: ctx.cwd, store: selectedStore, operation: 'remove', input: { id: params.id, mode: 'soft' }, create: false });
+      requireTrusted(ctx, 'remove', selectedStore);
+      const result = runPiOperation(logger, {
+        ctx,
+        operation: 'remove',
+        execute: () => (hasStore(ctx, selectedStore)
+          ? runMemory({ cwd: ctx.cwd, store: selectedStore, operation: 'remove', input: { id: params.id, mode: 'soft' }, create: false })
+          : null),
+        status: (memory) => (memory ? 'ok' : 'not_found'),
+      });
       if (result) options.onMutation?.('remove');
       return toolResponse(result);
     },

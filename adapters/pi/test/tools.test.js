@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Type } from 'typebox';
 import { MAX_TOOL_RESULT_BYTES } from '../src/response.js';
+import { createPiLogger } from '../src/logger.js';
 import { databasePath, runMemory } from '../src/store.js';
 import { registerPiTools } from '../src/tools.js';
 
@@ -12,9 +13,12 @@ function temporaryDirectory(name) {
   return mkdtempSync(join(tmpdir(), name));
 }
 
-function registeredTools(options) {
+function registeredTools(options = {}) {
   const tools = [];
-  registerPiTools({ registerTool: (tool) => tools.push(tool) }, Type, options);
+  registerPiTools({ registerTool: (tool) => tools.push(tool) }, Type, {
+    logger: createPiLogger({ sink: () => true }),
+    ...options,
+  });
   return new Map(tools.map((tool) => [tool.name, tool]));
 }
 
@@ -105,6 +109,119 @@ test('Pi mutation tools notify the adapter, while reads do not', async () => {
     assert.deepEqual(mutations, ['retain', 'remove']);
     await execute(tools.get('remove_memory'), { id: '00000000-0000-4000-8000-000000000001' }, cwd);
     assert.deepEqual(mutations, ['retain', 'remove']);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('Pi tools emit privacy-bounded outcomes for the 4Rs', async () => {
+  const cwd = temporaryDirectory('nmnm-pi-tools-logs-');
+  const records = [];
+  const logger = createPiLogger({
+    sink: (record) => records.push(record),
+    now: () => new Date('2026-09-27T04:30:00.000Z'),
+  });
+  const ctx = {
+    cwd,
+    isProjectTrusted: () => true,
+    sessionManager: { getSessionId: () => 'host-session-7' },
+  };
+  try {
+    const tools = registeredTools({ logger });
+    const retained = JSON.parse((await tools.get('retain_memory').execute('call', {
+      content: 'private template memory',
+      tags: ['private'],
+    }, undefined, undefined, ctx)).content[0].text);
+    await tools.get('recall_memory').execute('call', { id: retained.id }, undefined, undefined, ctx);
+    await tools.get('retrieve_memory').execute('call', { query: 'private template' }, undefined, undefined, ctx);
+    await tools.get('remove_memory').execute('call', { id: retained.id }, undefined, undefined, ctx);
+    await tools.get('recall_memory').execute('call', { id: retained.id }, undefined, undefined, ctx);
+
+    assert.deepEqual(records.map((record) => [record.operation, record.status, record.event]), [
+      ['retain', 'ok', 'memory.retained'],
+      ['recall', 'ok', 'memory.recalled'],
+      ['retrieve', 'ok', 'memory.retrieved'],
+      ['remove', 'ok', 'memory.removed'],
+      ['recall', 'not_found', 'memory.recall_not_found'],
+    ]);
+    assert.deepEqual(records.map((record) => record.context.session_id), [
+      'host-session-7', 'host-session-7', 'host-session-7', 'host-session-7', 'host-session-7',
+    ]);
+    assert.equal(JSON.stringify(records).includes('private template memory'), false);
+    assert.equal(JSON.stringify(records).includes('private template'), false);
+    assert.equal(JSON.stringify(records).includes(retained.id), false);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('Pi project tools log blocked outcomes', async () => {
+  const cwd = temporaryDirectory('nmnm-pi-tools-blocked-logs-');
+  const records = [];
+  const logger = createPiLogger({ sink: (record) => records.push(record) });
+  const ctx = {
+    cwd,
+    isProjectTrusted: () => false,
+    sessionManager: { getSessionId: () => 'host-session-8' },
+  };
+  try {
+    const tools = registeredTools({ logger });
+    await assert.rejects(tools.get('retain_memory').execute('call', { content: 'blocked' }, undefined, undefined, ctx));
+    await assert.rejects(tools.get('recall_memory').execute('call', { id: '00000000-0000-4000-8000-000000000001' }, undefined, undefined, ctx));
+    await assert.rejects(tools.get('retrieve_memory').execute('call', {}, undefined, undefined, ctx));
+    await assert.rejects(tools.get('remove_memory').execute('call', { id: '00000000-0000-4000-8000-000000000001' }, undefined, undefined, ctx));
+
+    assert.deepEqual(records.map((record) => [record.operation, record.status, record.event, record.context.session_id]), [
+      ['retain', 'blocked', 'memory.retain_blocked', 'host-session-8'],
+      ['recall', 'blocked', 'memory.recall_blocked', 'host-session-8'],
+      ['retrieve', 'blocked', 'memory.retrieve_blocked', 'host-session-8'],
+      ['remove', 'blocked', 'memory.remove_blocked', 'host-session-8'],
+    ]);
+    assert.deepEqual(records.map((record) => [record.duration_ms, record.error]), [
+      [null, null], [null, null], [null, null], [null, null],
+    ]);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('Pi tools log sanitized core failures without changing the thrown error', async () => {
+  const cwd = temporaryDirectory('nmnm-pi-tools-failed-logs-');
+  const records = [];
+  const logger = createPiLogger({ sink: (record) => records.push(record) });
+  const ctx = {
+    cwd,
+    isProjectTrusted: () => true,
+    sessionManager: { getSessionId: () => 'host-session-9' },
+  };
+  try {
+    const tools = registeredTools({ logger });
+    await assert.rejects(
+      tools.get('retain_memory').execute('call', { content: '' }, undefined, undefined, ctx),
+      /content must be a non-empty string/i,
+    );
+
+    assert.deepEqual(records.map((record) => ({
+      operation: record.operation,
+      status: record.status,
+      event: record.event,
+      context: record.context,
+      duration_ms: typeof record.duration_ms,
+      error: record.error,
+    })), [{
+      operation: 'retain',
+      status: 'failed',
+      event: 'memory.retain_failed',
+      context: { session_id: 'host-session-9' },
+      duration_ms: 'number',
+      error: {
+        kind: 'unknown',
+        code: 'retain_failed',
+        message: 'Memory retention failed',
+        retryable: false,
+      },
+    }]);
+    assert.equal(JSON.stringify(records).includes('content must be a non-empty string'), false);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

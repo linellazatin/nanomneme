@@ -11,6 +11,7 @@ Pi package for the [nanomneme](https://github.com/linellazatin/nanomneme) SQLite
 ## Features
 
 - **Native memory tools:** model-invoked retain, recall, retrieve, and remove operations over `nmnm-core`; project operations require Pi project trust, while global operations remain available in untrusted projects. Model-visible JSON is bounded to 50 KiB, with explicit summaries for oversized results.
+- **Logslines diagnostics:** `src/logger.js` emits privacy-bounded `logslines/v1` outcomes for the four tools, using Pi's host session ID when available. It appends them to `~/.local/share/nanomneme/logs/nmnm-pi.jsonl`.
 - **Project and global memory:** explicit store selection with canonical records and no custom database-path parsing.
 - **Bounded automatic context:** transient autoretention guidance and the first-prompt memory index share one configurable character budget; pinned entries come first, with recent active fallback, store and recorded-source labels, unresolved-pin reporting, and refresh after successful compaction or memory mutations.
 - **Opt-in autoretention:** project/global JSONC rules guide the active model's `retain_memory` calls without a nested model, worker, or direct adapter write.
@@ -33,7 +34,7 @@ Pi package for the [nanomneme](https://github.com/linellazatin/nanomneme) SQLite
 
 ## Quickstart
 
-Version 0.2.1 targets Pi 0.87.0 or newer and Node.js 22.19 or newer. Install it globally with Pi:
+Version 0.3.0 targets Pi 0.87.0 or newer and Node.js 22.19 or newer. Install it globally with Pi:
 
 ```sh
 pi install npm:@openlines/nmnm-pi

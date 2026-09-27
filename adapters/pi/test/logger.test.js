@@ -124,6 +124,23 @@ test('only valid global Pi settings opt in to diagnostics', () => {
   }
 });
 
+test('browser mutation outcomes use separate allowlisted operations and sanitized failures', () => {
+  const records = [];
+  const logger = createPiLogger({ enabled: true, sink: (record) => records.push(record) });
+  const cases = [
+    ['browser_pin', 'ok', 'memory.browser.pin', 'info'],
+    ['browser_unpin', 'not_found', 'memory.browser.unpin_not_found', 'info'],
+    ['browser_remove', 'failed', 'memory.browser.remove_failed', 'error'],
+  ];
+  for (const [operation, status] of cases) {
+    assert.equal(logger.record({ ctx: {}, operation, status, duration_ms: 2, id: 'private-id', error: new Error('private details') }), true);
+  }
+  assert.deepEqual(records.map(({ operation, status, event, level }) => [operation, status, event, level]), cases);
+  assert.deepEqual(records[2].error, { kind: 'unknown', code: 'browser_remove_failed', message: 'Browser removal failed', retryable: false });
+  assert.equal(JSON.stringify(records).includes('private'), false);
+  assert.equal(logger.record({ ctx: {}, operation: 'browser_pin', status: 'blocked', duration_ms: 2 }), false);
+});
+
 test('lazy Pi logger samples global settings on first use and again after a new registration', async () => {
   const { getPiLogger } = await import('../src/logger.js');
   const home = mkdtempSync(join(tmpdir(), 'nmnm-pi-lazy-'));

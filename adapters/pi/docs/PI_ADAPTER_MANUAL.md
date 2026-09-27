@@ -36,21 +36,15 @@ Pi exposes four tools to the model. Model-facing project operations require the 
 
 ## Logslines diagnostics
 
-`src/logger.js` is the model-tool logging boundary for the Pi adapter and the reference template for later Nanomneme adapters. When enabled, it emits one closed `logslines/v1` outcome record for each model-facing retain, recall, retrieve, or remove attempt that reaches a terminal adapter outcome. The shared Nanomneme logger source and Logslines runtime are bundled into Pi; `src/logger.js` retains Pi's event catalog and host-session lookup.
+`src/logger.js` is the Pi diagnostics boundary and the reference template for later Nanomneme adapters. When enabled, it emits one closed `logslines/v1` outcome record per terminal model-facing 4R attempt or browser Pin, Unpin, or attempted soft Remove that is confirmed or fails while confirming. The shared Nanomneme logger source and Logslines runtime are bundled into Pi; `src/logger.js` retains Pi's event catalog and host-session lookup.
 
-This instrumentation currently covers only the four tools in [Native memory tools](#native-memory-tools). Session and tool registration share a lazy logger: the first model-tool outcome reads global logging settings, and `/reload` creates a fresh logger that reads them again. Session lifecycle events, user-invoked `/memory` commands, the native memory browser, automatic context injection, pin operations, and other non-model adapter paths do not emit Logslines records yet.
+Session and tools share a lazy logger: the first recorded outcome reads global logging settings, and `/reload` creates a fresh logger that reads them again. Browser navigation, search, Back, canceled removal, and a stale Remove selection that never reaches confirmation do not emit records. Session lifecycle events, standalone `/memory` mutations, automatic context injection, and other non-model adapter paths remain outside this phase's diagnostics.
 
 ### Emission and destination
 
 Diagnostics are off by default. To opt in, add `"logging": { "enabled": true }` to the **global** `<Pi agent directory>/nmnm.jsonc` (normally `~/.pi/agent/nmnm.jsonc`) and run `/reload` in an active Pi session. Project settings cannot enable logging. Missing or invalid global logging settings leave diagnostics disabled without affecting memory operations. When enabled, the bundled logger appends JSON Lines to `~/.local/share/nanomneme/logs/nmnm-pi.jsonl`: one complete JSON object followed by a newline per outcome. The `logs` directory is created on the first emitted record, not while logging is off. The filename derives from the service component `nmnm-pi`. There is no stderr fallback, rotation, transport, indexing, search, dashboard, or telemetry.
 
-The adapter records one of these terminal outcomes:
-
-- A core memory operation completes, including an empty retrieval or a requested memory that is absent.
-- Pi project-trust policy blocks a model-facing project operation before the core is called.
-- The core operation throws.
-
-A logger, validation, sink, serialization, or host-session lookup failure is contained. It returns no record and does not change the memory tool's result, error, mutation refresh, or trust decision. The normal tool operation remains the authority for success or failure.
+The adapter records a terminal outcome when a model-tool operation completes, is blocked by project trust, or throws; or when a browser Pin, Unpin, or confirmed Remove succeeds, finds the selected memory inactive, or throws. A logger, validation, sink, serialization, or host-session lookup failure is contained. It returns no record and does not change the memory operation's result, error, notification, refresh, or trust decision. The memory operation remains the authority for success or failure.
 
 ### Record shape
 
@@ -65,8 +59,8 @@ Every emitted record has exactly the following 12 top-level fields. `logslines/v
 | `message` | Fixed non-empty summary string | Human-readable outcome summary selected from the operation outcome mapping below. |
 | `service` | Closed object | Constant adapter identity described in [Service identity](#service-identity). |
 | `context` | Closed object with `session_id` only | Opaque Pi host-session correlation described in [Session context](#session-context). |
-| `operation` | One of `retain`, `recall`, `retrieve`, or `remove` | Logical Nanomneme 4R action. |
-| `status` | `ok`, `empty`, `not_found`, `blocked`, or `failed` | Terminal outcome. The full Logslines vocabulary also includes `skipped` and `partial`, but the current Pi model-tool surface does not emit them. |
+| `operation` | One of the four 4R names or `browser_pin`, `browser_unpin`, `browser_remove` | Distinguishes model-tool actions from browser mutations. |
+| `status` | `ok`, `empty`, `not_found`, `blocked`, or `failed` | Terminal outcome. Browser mutations use `ok`, `not_found`, or `failed`; `skipped` and `partial` are not emitted. |
 | `duration_ms` | Finite non-negative number or `null` | Measured core-operation duration, or `null` for a policy block that has no meaningful operation duration. |
 | `attributes` | Always `{}` | The current event catalog defines no event-specific attributes. |
 | `error` | `null` except for `failed` | Generic normalized failure object described in [Failure records](#failure-records). |
@@ -100,7 +94,7 @@ When available, the adapter obtains the value from Pi's `ctx.sessionManager.getS
 
 For `retain`, `recall`, `retrieve`, and `remove` calls that pass the trust boundary, the adapter starts a monotonic timer immediately before invoking the core and records the elapsed milliseconds after it returns or throws. The recorded value is clamped to zero or greater. It includes the synchronous adapter-to-core operation, including selected-store presence checks that occur inside the logged operation.
 
-A `blocked` record has `duration_ms: null`: Pi project trust rejected the model-facing project operation before a core memory operation began. The adapter does not fabricate a duration for this policy result.
+Browser mutation durations include the selected-memory check and attempted mutation. Confirmed removal timing restarts after user confirmation, excluding the time spent deciding in the dialog. A `blocked` record has `duration_ms: null`: Pi project trust rejected the model-facing project operation before a core memory operation began.
 
 ### Operation outcomes and events
 
@@ -123,6 +117,15 @@ The event catalog is closed by `src/logger.js`. The table lists every currently 
 | `remove` | `not_found` | `info` | `memory.remove_not_found` | `Memory was not found` | The requested memory is absent, inactive, expired, or the selected store does not exist. |
 | `remove` | `blocked` | `warn` | `memory.remove_blocked` | `Memory removal blocked` | Pi project trust blocks the selected project store. |
 | `remove` | `failed` | `error` | `memory.remove_failed` | `Memory removal failed` | The core remove operation throws. |
+| `browser_pin` | `ok` | `info` | `memory.browser.pin` | `Browser pin completed` | Selected active memory pinned. |
+| `browser_pin` | `not_found` | `info` | `memory.browser.pin_not_found` | `Browser memory was not found` | Selected memory became inactive. |
+| `browser_pin` | `failed` | `error` | `memory.browser.pin_failed` | `Browser pin failed` | Selected-memory check or pin action throws. |
+| `browser_unpin` | `ok` | `info` | `memory.browser.unpin` | `Browser unpin completed` | Selected active memory unpinned. |
+| `browser_unpin` | `not_found` | `info` | `memory.browser.unpin_not_found` | `Browser memory was not found` | Selected memory became inactive. |
+| `browser_unpin` | `failed` | `error` | `memory.browser.unpin_failed` | `Browser unpin failed` | Selected-memory check or unpin action throws. |
+| `browser_remove` | `ok` | `info` | `memory.browser.remove` | `Browser removal completed` | Confirmed soft removal succeeded. |
+| `browser_remove` | `not_found` | `info` | `memory.browser.remove_not_found` | `Browser memory was not found` | The memory became inactive after confirmation but before removal. |
+| `browser_remove` | `failed` | `error` | `memory.browser.remove_failed` | `Browser removal failed` | Selected-memory check, confirmation, or removal throws. |
 
 `ok`, `empty`, and `not_found` are successful logical outcomes and therefore use `error: null`. A project-policy block is also not a core failure and uses `error: null`.
 
@@ -134,12 +137,12 @@ Only `status: "failed"` has a non-null `error` object. It is closed and currentl
 {
   "kind": "unknown",
   "code": "<operation>_failed",
-  "message": "Memory <operation label> failed",
+  "message": "<fixed message from the event table>",
   "retryable": false
 }
 ```
 
-Examples include `retain_failed`, `recall_failed`, `retrieve_failed`, and `remove_failed`. The message is the same fixed message in the outcome table. No `cause_kind` is emitted today. The adapter deliberately does not classify underlying core exceptions, expose their error class, copy their message, include a stack trace, or infer whether a retry may work.
+Examples include `retain_failed`, `remove_failed`, `browser_pin_failed`, and `browser_remove_failed`. The message is the same fixed message in the outcome table. No `cause_kind` is emitted today. The adapter does not classify underlying core or UI exceptions, expose their error class, copy their message, include a stack trace, or infer whether a retry may work.
 
 For every status other than `failed`, `error` is exactly `null`. In particular, `blocked`, `empty`, and `not_found` do not carry errors.
 
@@ -153,7 +156,7 @@ The logger uses an empty `attributes` object for every current event. Records do
 - Memory kind, scope, namespace, confidence, importance, expiry, or metadata.
 - Selected store, database path, working directory, home directory, settings, or pins.
 - Tool arguments, model messages, prompts, or model-visible tool responses.
-- Raw core error messages, error classes, causes, or stack traces.
+- Raw core or UI error messages, error classes, causes, or stack traces.
 
 The only potentially correlating value is Pi's opaque host-provided `context.session_id`. Operators must handle that opaque value in the append-only diagnostics file according to their own retention and privacy policy.
 
@@ -275,7 +278,7 @@ On extension load and session start, the adapter registers its tools and hooks o
 | `retain_memory` | Scope-selected store when patching | Selected `memory.db` and core-derived rows | The core creates a missing selected database; a successful mutation queues next-prompt index rebuild; no Pi settings or pin file changes. |
 | `recall_memory` or `retrieve_memory` | Selected existing `memory.db` | Nothing | Missing stores return `null` or an empty page without creating a database. |
 | `remove_memory` | Selected existing `memory.db` | Selected `memory.db` and core-derived rows | Missing stores return `null`; successful removal queues next-prompt index rebuild; no Pi settings or pin file changes. |
-| `/memory` or `/memory browse` | Existing settings, pins, and stores | Nothing unless the user pins, unpins, or confirms soft removal | In the Pi TUI, opens the model-free custom tab browser. Status is its own tab; All, Project, and Global provide search, source, records, paging, and safe management actions. Missing stores remain absent. |
+| `/memory` or `/memory browse` | Existing settings, pins, and stores | Pins or stores only on explicit mutation; if global diagnostics are enabled, a JSONL outcome for a browser mutation | Opens the model-free memory browser. Navigation, search, and canceled removal do not write diagnostic records; missing stores remain absent. |
 | `/memory status` | Existing settings, pins, and stores | Nothing | Pi shows pin counts, effective budget, current full-payload character count (including the separator when both context sections exist), unresolved count, and transient injection lifecycle metadata; it never shows injected memory content. |
 | `/memory refresh` | Nothing immediately | Nothing | The next user prompt rebuilds the hidden index. |
 | `/memory list ...` | Both default stores, or the selected `memory.db` and pins | Nothing | Displays a bounded, paginated active-memory page without invoking the model. |

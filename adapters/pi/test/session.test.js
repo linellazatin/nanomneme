@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pinsPath, readPins, settingsPath, writePins } from '../src/context.js';
+import { createPiLogger } from '../src/logger.js';
 import { registerPiMemory } from '../src/session.js';
 import { databasePath, runMemory } from '../src/store.js';
 
@@ -595,10 +596,13 @@ test('memory browser keeps the nearest row selected after removing the current r
         },
       ],
     });
-    registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, { home, platform: 'darwin' });
+    const records = [];
+    const logger = createPiLogger({ enabled: true, sink: (record) => records.push(record) });
+    registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, { home, platform: 'darwin', logger });
 
     await commands.get('memory').handler('browse', { cwd: project, mode: 'tui', hasUI: true, ui: scripted.ui });
 
+    assert.deepEqual(records.map(({ operation, status }) => [operation, status]), [['browser_remove', 'ok']]);
     assert.equal(runMemory({ cwd: project, store: 'project', operation: 'recall', input: { id: removed.id } }), null);
   } finally {
     rmSync(project, { recursive: true, force: true });
@@ -853,11 +857,17 @@ test('memory browser pins and unpins the exact selected store', async () => {
     const retained = runMemory({ cwd: project, home, platform: 'darwin', store: 'global', operation: 'retain', input: { content: 'Global browser pin' } });
     const chooseMemory = (options) => options.find((option) => option.includes('Global browser pin'));
     const scripted = scriptedUi({ selections: [chooseMemory, 'Pin', chooseMemory, 'Unpin', undefined] });
-    registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, { home, platform: 'darwin' });
+    const records = [];
+    const logger = createPiLogger({ enabled: true, sink: (record) => records.push(record) });
+    registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, { home, platform: 'darwin', logger });
 
     await commands.get('memory').handler('browse', { cwd: project, hasUI: true, ui: scripted.ui });
 
     assert.deepEqual(readPins(pinsPath({ cwd: project, home, store: 'global' })), []);
+    assert.deepEqual(records.map(({ operation, status }) => [operation, status]), [['browser_pin', 'ok'], ['browser_unpin', 'ok']]);
+    assert.equal(JSON.stringify(records).includes(retained.id), false);
+    assert.equal(JSON.stringify(records).includes('Global browser pin'), false);
+    assert.equal(JSON.stringify(records).includes('global'), false);
     assert.ok(scripted.notices.some((message) => message.includes(`pinned [global] ${retained.id}`)));
     assert.ok(scripted.notices.some((message) => message.includes(`unpinned [global] ${retained.id}`)));
   } finally {
@@ -876,10 +886,13 @@ test('memory browser cancellation leaves the selected memory active', async () =
       selections: [(options) => options.find((option) => option.includes('Do not remove browser memory')), 'Remove', undefined],
       confirmations: [false],
     });
-    registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, { home, platform: 'darwin' });
+    const records = [];
+    const logger = createPiLogger({ enabled: true, sink: (record) => records.push(record) });
+    registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, { home, platform: 'darwin', logger });
 
     await commands.get('memory').handler('', { cwd: project, hasUI: true, ui: scripted.ui });
 
+    assert.deepEqual(records, []);
     assert.equal(scripted.confirmCalls.length, 1);
     assert.equal(runMemory({ cwd: project, store: 'project', operation: 'recall', input: { id: retained.id } }).content, 'Do not remove browser memory');
   } finally {
@@ -900,10 +913,13 @@ test('memory browser confirms soft removal and preserves its pin', async () => {
       selections: [(options) => options.find((option) => option.includes('Confirmed browser removal')), 'Remove', undefined],
       confirmations: [true],
     });
-    registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, { home, platform: 'darwin' });
+    const records = [];
+    const logger = createPiLogger({ enabled: true, sink: (record) => records.push(record) });
+    registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, { home, platform: 'darwin', logger });
 
     await commands.get('memory').handler('browse', { cwd: project, hasUI: true, ui: scripted.ui });
 
+    assert.deepEqual(records.map(({ operation, status }) => [operation, status]), [['browser_remove', 'ok']]);
     assert.equal(runMemory({ cwd: project, store: 'project', operation: 'recall', input: { id: retained.id } }), null);
     assert.deepEqual(readPins(pinFile), [retained.id]);
     assert.ok(scripted.notices.some((message) => /pin remains configured.*unresolved/i.test(message)));
@@ -929,12 +945,177 @@ test('memory browser refuses to mutate a record that became inactive', async () 
         undefined,
       ],
     });
-    registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, { home, platform: 'darwin' });
+    const records = [];
+    const logger = createPiLogger({ enabled: true, sink: (record) => records.push(record) });
+    registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, { home, platform: 'darwin', logger });
 
     await commands.get('memory').handler('browse', { cwd: project, hasUI: true, ui: scripted.ui });
 
+    assert.deepEqual(records.map(({ operation, status }) => [operation, status]), [['browser_pin', 'not_found']]);
     assert.deepEqual(readPins(pinsPath({ cwd: project, home, store: 'project' })), []);
     assert.ok(scripted.notices.some((message) => /no longer active/.test(message)));
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('browser removal never logs an inactive selection before confirmation', async () => {
+  const project = temporaryDirectory('nmnm-pi-browser-preconfirm-stale-');
+  const home = temporaryDirectory('nmnm-pi-browser-preconfirm-stale-home-');
+  try {
+    const commands = new Map();
+    const memory = runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Inactive before confirmation' } });
+    const records = [];
+    const scripted = scriptedUi({ selections: [
+      (options) => options.find((option) => option.includes('Inactive before confirmation')),
+      () => {
+        runMemory({ cwd: project, store: 'project', operation: 'remove', input: { id: memory.id, mode: 'soft' } });
+        return 'Remove';
+      },
+      undefined,
+    ] });
+    registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, {
+      home, platform: 'darwin', logger: createPiLogger({ enabled: true, sink: (record) => records.push(record) }),
+    });
+
+    await commands.get('memory').handler('browse', { cwd: project, hasUI: true, ui: scripted.ui });
+
+    assert.equal(scripted.confirmCalls.length, 0);
+    assert.deepEqual(records, []);
+    assert.ok(scripted.notices.some((message) => message.includes('no longer active')));
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('browser removal reports not_found when a confirmed record became inactive', async () => {
+  const project = temporaryDirectory('nmnm-pi-browser-remove-stale-');
+  const home = temporaryDirectory('nmnm-pi-browser-remove-stale-home-');
+  try {
+    const commands = new Map();
+    const memory = runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Stale removal content' } });
+    const records = [];
+    const scripted = scriptedUi({ selections: [(options) => options.find((option) => option.includes('Stale removal content')), 'Remove', undefined] });
+    scripted.ui.confirm = async () => {
+      runMemory({ cwd: project, store: 'project', operation: 'remove', input: { id: memory.id, mode: 'soft' } });
+      return true;
+    };
+    registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, {
+      home, platform: 'darwin', logger: createPiLogger({ enabled: true, sink: (record) => records.push(record) }),
+    });
+
+    await commands.get('memory').handler('browse', { cwd: project, hasUI: true, ui: scripted.ui });
+
+    assert.deepEqual(records.map(({ operation, status }) => [operation, status]), [['browser_remove', 'not_found']]);
+    assert.match(scripted.notices.at(-1), /no longer active/);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('browser pin failures retain their thrown error and log only a sanitized outcome', async () => {
+  const project = temporaryDirectory('nmnm-pi-browser-pin-failure-');
+  const home = temporaryDirectory('nmnm-pi-browser-pin-failure-home-');
+  try {
+    const commands = new Map();
+    const memory = runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Private pin failure content' } });
+    const records = [];
+    const pinFile = pinsPath({ cwd: project, home, store: 'project' });
+    const scripted = scriptedUi({ selections: [
+      (options) => options.find((option) => option.includes('Private pin failure content')),
+      () => { mkdirSync(pinFile); return 'Pin'; },
+    ] });
+    registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, {
+      home, platform: 'darwin', logger: createPiLogger({ enabled: true, sink: (record) => records.push(record) }),
+    });
+
+    await assert.rejects(commands.get('memory').handler('browse', { cwd: project, hasUI: true, ui: scripted.ui }), /EISDIR/);
+
+    assert.deepEqual(records.map(({ operation, status }) => [operation, status]), [['browser_pin', 'failed']]);
+    assert.deepEqual(records[0].error, { kind: 'unknown', code: 'browser_pin_failed', message: 'Browser pin failed', retryable: false });
+    assert.equal(JSON.stringify(records).includes(memory.id), false);
+    assert.equal(JSON.stringify(records).includes('Private pin failure content'), false);
+    assert.equal(JSON.stringify(records).includes(project), false);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('browser unpin reports not_found when the selected record became inactive', async () => {
+  const project = temporaryDirectory('nmnm-pi-browser-unpin-stale-');
+  const home = temporaryDirectory('nmnm-pi-browser-unpin-stale-home-');
+  try {
+    const commands = new Map();
+    const memory = runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Stale unpin content' } });
+    writePins(pinsPath({ cwd: project, home, store: 'project' }), [memory.id]);
+    const records = [];
+    const scripted = scriptedUi({ selections: [
+      (options) => options.find((option) => option.includes('Stale unpin content')),
+      () => {
+        runMemory({ cwd: project, store: 'project', operation: 'remove', input: { id: memory.id, mode: 'soft' } });
+        return 'Unpin';
+      },
+      undefined,
+    ] });
+    registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, {
+      home, platform: 'darwin', logger: createPiLogger({ enabled: true, sink: (record) => records.push(record) }),
+    });
+
+    await commands.get('memory').handler('browse', { cwd: project, hasUI: true, ui: scripted.ui });
+
+    assert.deepEqual(records.map(({ operation, status }) => [operation, status]), [['browser_unpin', 'not_found']]);
+    assert.deepEqual(readPins(pinsPath({ cwd: project, home, store: 'project' })), [memory.id]);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('browser removal failure preserves its thrown error and records no private details', async () => {
+  const project = temporaryDirectory('nmnm-pi-browser-remove-failure-');
+  const home = temporaryDirectory('nmnm-pi-browser-remove-failure-home-');
+  try {
+    const commands = new Map();
+    const memory = runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Private remove failure content' } });
+    const records = [];
+    const error = new Error('Private confirmation failure');
+    const scripted = scriptedUi({ selections: [(options) => options.find((option) => option.includes('Private remove failure content')), 'Remove'] });
+    scripted.ui.confirm = async () => { throw error; };
+    registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, {
+      home, platform: 'darwin', logger: createPiLogger({ enabled: true, sink: (record) => records.push(record) }),
+    });
+
+    await assert.rejects(commands.get('memory').handler('browse', { cwd: project, hasUI: true, ui: scripted.ui }), (caught) => caught === error);
+
+    assert.deepEqual(records.map(({ operation, status }) => [operation, status]), [['browser_remove', 'failed']]);
+    assert.equal(JSON.stringify(records).includes('Private'), false);
+    assert.equal(JSON.stringify(records).includes(memory.id), false);
+    assert.equal(runMemory({ cwd: project, store: 'project', operation: 'recall', input: { id: memory.id } }).content, 'Private remove failure content');
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('a throwing browser diagnostic sink cannot change a successful pin', async () => {
+  const project = temporaryDirectory('nmnm-pi-browser-sink-failure-');
+  const home = temporaryDirectory('nmnm-pi-browser-sink-failure-home-');
+  try {
+    const commands = new Map();
+    const memory = runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Sink failure browser memory' } });
+    const scripted = scriptedUi({ selections: [(options) => options.find((option) => option.includes('Sink failure browser memory')), 'Pin', undefined] });
+    registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, {
+      home, platform: 'darwin', logger: createPiLogger({ enabled: true, sink: () => { throw new Error('Private sink failure'); } }),
+    });
+
+    await assert.doesNotReject(commands.get('memory').handler('browse', { cwd: project, hasUI: true, ui: scripted.ui }));
+
+    assert.deepEqual(readPins(pinsPath({ cwd: project, home, store: 'project' })), [memory.id]);
+    assert.ok(scripted.notices.some((message) => message.includes(`pinned [project] ${memory.id}`)));
   } finally {
     rmSync(project, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });

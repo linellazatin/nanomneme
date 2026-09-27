@@ -141,6 +141,25 @@ test('browser mutation outcomes use separate allowlisted operations and sanitize
   assert.equal(logger.record({ ctx: {}, operation: 'browser_pin', status: 'blocked', duration_ms: 2 }), false);
 });
 
+test('command mutation outcomes have distinct fixed events and no raw argument fields', () => {
+  const records = [];
+  const logger = createPiLogger({ enabled: true, sink: (record) => records.push(record) });
+  const cases = [
+    ['command_pin', 'ok', 'memory.command.pin', 'info'],
+    ['command_pin', 'not_found', 'memory.command.pin_not_found', 'info'],
+    ['command_unpin', 'not_found', 'memory.command.unpin_not_found', 'info'],
+    ['command_remove', 'blocked', 'memory.command.remove_blocked', 'warn'],
+    ['command_remove', 'failed', 'memory.command.remove_failed', 'error'],
+  ];
+  for (const [operation, status] of cases) {
+    assert.equal(logger.record({ ctx: {}, operation, status, duration_ms: 2, id: 'private-id', query: 'private-query', error: new Error('private error') }), true);
+  }
+  assert.deepEqual(records.map(({ operation, status, event, level }) => [operation, status, event, level]), cases);
+  assert.deepEqual(records[4].error, { kind: 'unknown', code: 'command_remove_failed', message: 'Command removal failed', retryable: false });
+  assert.equal(records[3].error, null);
+  assert.equal(JSON.stringify(records).includes('private'), false);
+});
+
 test('lazy Pi logger samples global settings on first use and again after a new registration', async () => {
   const { getPiLogger } = await import('../src/logger.js');
   const home = mkdtempSync(join(tmpdir(), 'nmnm-pi-lazy-'));

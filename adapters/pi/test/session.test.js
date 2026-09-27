@@ -441,7 +441,9 @@ test('memory pin validates the selected store before writing a pin', async () =>
     mkdirSync(join(project, '.nanomneme'), { recursive: true });
     mkdirSync(agentDir, { recursive: true });
     writeFileSync(settingsPath({ cwd: project, agentDir, store: 'project' }), '{ "injection_budget": 321 }\n');
-    registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, { home, agentDir, platform: 'darwin' });
+    const records = [];
+    const logger = createPiLogger({ enabled: true, sink: (record) => records.push(record) });
+    registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, { home, agentDir, platform: 'darwin', logger });
     const ctx = { cwd: project, ui: { notify: (message) => notices.push(message) } };
 
     await commands.get('memory').handler(`pin ${globalMemory.id}`, ctx);
@@ -457,6 +459,15 @@ test('memory pin validates the selected store before writing a pin', async () =>
     assert.match(notices.at(-1), /Index                     budget: 321 · current: \d+ · unresolved: 0/);
     await commands.get('memory').handler(`unpin global ${globalMemory.id}`, ctx);
     assert.deepEqual(readPins(pinsPath({ cwd: project, home, store: 'global' })), []);
+    await commands.get('memory').handler(`unpin global ${globalMemory.id}`, ctx);
+    assert.match(notices.at(-1), /unpinned/);
+    assert.deepEqual(records.map(({ operation, status }) => [operation, status]), [
+      ['command_pin', 'not_found'], ['command_pin', 'ok'], ['command_pin', 'ok'],
+      ['command_pin', 'not_found'], ['command_unpin', 'ok'], ['command_unpin', 'not_found'],
+    ]);
+    assert.equal(JSON.stringify(records).includes(projectMemory.id), false);
+    assert.equal(JSON.stringify(records).includes(globalMemory.id), false);
+    assert.equal(JSON.stringify(records).includes('global'), false);
   } finally {
     rmSync(project, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });
@@ -1260,11 +1271,15 @@ test('memory remove soft-removes an entry and retains a matching durable pin', a
     const retained = runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Remove through slash command' } });
     const pinFile = pinsPath({ cwd: project, home, store: 'project' });
     writePins(pinFile, [retained.id]);
-    registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, { home, platform: 'darwin' });
+    const records = [];
+    registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, {
+      home, platform: 'darwin', logger: createPiLogger({ enabled: true, sink: (record) => records.push(record) }),
+    });
     const ctx = { cwd: project, ui: { notify: (message) => notices.push(message) } };
 
     await commands.get('memory').handler(`remove ${retained.id}`, ctx);
 
+    assert.deepEqual(records.map(({ operation, status }) => [operation, status]), [['command_remove', 'ok']]);
     assert.equal(runMemory({ cwd: project, store: 'project', operation: 'recall', input: { id: retained.id } }), null);
     assert.deepEqual(readPins(pinFile), [retained.id]);
     assert.match(notices.at(-1), new RegExp(`removed \\[project\\] ${retained.id}`));
@@ -1295,6 +1310,106 @@ test('memory remove resolves an unqualified ID when exactly one store contains i
   }
 });
 
+test('command diagnostics ignore read-only and usage paths but report missing removal targets', async () => {
+  const project = temporaryDirectory('nmnm-pi-command-not-found-project-');
+  const home = temporaryDirectory('nmnm-pi-command-not-found-home-');
+  try {
+    const commands = new Map();
+    const records = [];
+    const notices = [];
+    const logger = createPiLogger({ enabled: true, sink: (record) => records.push(record) });
+    registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, { home, platform: 'darwin', logger });
+    const ctx = { cwd: project, ui: { notify: (message) => notices.push(message) } };
+    const command = commands.get('memory').handler;
+    await command('status', ctx);
+    await command('list', ctx);
+    await command('refresh', ctx);
+    await command('pin', ctx);
+    await command('remove', ctx);
+    assert.deepEqual(records, []);
+
+    const id = '00000000-0000-4000-8000-000000000001';
+    await command(`remove ${id}`, ctx);
+    await command(`remove project ${id}`, ctx);
+    assert.deepEqual(records.map(({ operation, status }) => [operation, status]), [
+      ['command_remove', 'not_found'], ['command_remove', 'not_found'],
+    ]);
+    assert.equal(JSON.stringify(records).includes(id), false);
+    assert.match(notices.at(-1), /not found/);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('command pin failure preserves the error and emits one sanitized failure', async () => {
+  const project = temporaryDirectory('nmnm-pi-command-failed-project-');
+  const home = temporaryDirectory('nmnm-pi-command-failed-home-');
+  try {
+    const commands = new Map();
+    const records = [];
+    const memory = runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Private command pin' } });
+    writeFileSync(pinsPath({ cwd: project, home, store: 'project' }), '{ invalid json');
+    registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, {
+      home, platform: 'darwin', logger: createPiLogger({ enabled: true, sink: (record) => records.push(record) }),
+    });
+
+    await assert.rejects(commands.get('memory').handler(`pin ${memory.id}`, { cwd: project, ui: { notify: () => {} } }), SyntaxError);
+    assert.deepEqual(records.map(({ operation, status }) => [operation, status]), [['command_pin', 'failed']]);
+    assert.deepEqual(records[0].error, { kind: 'unknown', code: 'command_pin_failed', message: 'Command pin failed', retryable: false });
+    assert.equal(JSON.stringify(records).includes(memory.id), false);
+    assert.equal(JSON.stringify(records).includes('Private command pin'), false);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('command removal failures keep core errors authoritative and sanitize the record', async () => {
+  const project = temporaryDirectory('nmnm-pi-command-remove-failed-project-');
+  const home = temporaryDirectory('nmnm-pi-command-remove-failed-home-');
+  try {
+    const commands = new Map();
+    const records = [];
+    const memory = runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Private command removal' } });
+    registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, {
+      home, platform: 'darwin', logger: createPiLogger({ enabled: true, sink: (record) => records.push(record) }),
+    });
+
+    await assert.rejects(commands.get('memory').handler('remove project invalid-id', { cwd: project, ui: { notify: () => {} } }), TypeError);
+
+    assert.deepEqual(records.map(({ operation, status }) => [operation, status]), [['command_remove', 'failed']]);
+    assert.deepEqual(records[0].error, { kind: 'unknown', code: 'command_remove_failed', message: 'Command removal failed', retryable: false });
+    assert.equal(JSON.stringify(records).includes('invalid-id'), false);
+    assert.equal(JSON.stringify(records).includes('Private command removal'), false);
+    assert.equal(runMemory({ cwd: project, store: 'project', operation: 'recall', input: { id: memory.id } }).content, 'Private command removal');
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('a throwing command diagnostic sink does not change pin behavior', async () => {
+  const project = temporaryDirectory('nmnm-pi-command-sink-project-');
+  const home = temporaryDirectory('nmnm-pi-command-sink-home-');
+  try {
+    const commands = new Map();
+    const notices = [];
+    const memory = runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Command sink failure' } });
+    registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, {
+      home, platform: 'darwin', logger: createPiLogger({ enabled: true, sink: () => { throw new Error('Private sink failure'); } }),
+    });
+
+    await assert.doesNotReject(commands.get('memory').handler(`pin ${memory.id}`, { cwd: project, ui: { notify: (message) => notices.push(message) } }));
+
+    assert.deepEqual(readPins(pinsPath({ cwd: project, home, store: 'project' })), [memory.id]);
+    assert.match(notices.at(-1), /pinned/);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test('memory remove refuses an unqualified ID present in both stores', async () => {
   const project = temporaryDirectory('nmnm-pi-session-project-');
   const home = temporaryDirectory('nmnm-pi-session-home-');
@@ -1309,11 +1424,16 @@ test('memory remove refuses an unqualified ID present in both stores', async () 
     } finally {
       globalStore.close();
     }
-    registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, { home, platform: 'darwin' });
+    const records = [];
+    registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, {
+      home, platform: 'darwin', logger: createPiLogger({ enabled: true, sink: (record) => records.push(record) }),
+    });
     const ctx = { cwd: project, ui: { notify: (message) => notices.push(message) } };
 
     await commands.get('memory').handler(`remove ${id}`, ctx);
 
+    assert.deepEqual(records.map(({ operation, status }) => [operation, status]), [['command_remove', 'blocked']]);
+    assert.equal(JSON.stringify(records).includes(id), false);
     assert.equal(runMemory({ cwd: project, store: 'project', operation: 'recall', input: { id } }).content, 'Project duplicate ID');
     assert.equal(runMemory({ cwd: project, home, platform: 'darwin', store: 'global', operation: 'recall', input: { id } }).content, 'Global duplicate ID');
     assert.match(notices.at(-1), /ambiguous/);

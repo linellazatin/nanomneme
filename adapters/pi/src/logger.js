@@ -50,6 +50,22 @@ const OUTCOMES = {
     not_found: ['info', 'memory.browser.remove_not_found', 'Browser memory was not found'],
     failed: ['error', 'memory.browser.remove_failed', 'Browser removal failed'],
   },
+  command_pin: {
+    ok: ['info', 'memory.command.pin', 'Command pin completed'],
+    not_found: ['info', 'memory.command.pin_not_found', 'Command memory was not found'],
+    failed: ['error', 'memory.command.pin_failed', 'Command pin failed'],
+  },
+  command_unpin: {
+    ok: ['info', 'memory.command.unpin', 'Command unpin completed'],
+    not_found: ['info', 'memory.command.unpin_not_found', 'Command pin was not found'],
+    failed: ['error', 'memory.command.unpin_failed', 'Command unpin failed'],
+  },
+  command_remove: {
+    ok: ['info', 'memory.command.remove', 'Command removal completed'],
+    not_found: ['info', 'memory.command.remove_not_found', 'Command memory was not found'],
+    blocked: ['warn', 'memory.command.remove_blocked', 'Command removal blocked'],
+    failed: ['error', 'memory.command.remove_failed', 'Command removal failed'],
+  },
 };
 
 function sessionId(ctx) {
@@ -122,6 +138,13 @@ const BROWSER_OPERATIONS = { Pin: 'browser_pin', Unpin: 'browser_unpin', Remove:
 
 export function recordPiBrowserOperation(logger, ctx, action, status, duration_ms) {
   const operation = BROWSER_OPERATIONS[action];
+  return operation ? safeRecord(logger, { ctx, operation, status, duration_ms }) : false;
+}
+
+const COMMAND_OPERATIONS = { pin: 'command_pin', unpin: 'command_unpin', remove: 'command_remove' };
+
+export function recordPiCommandOperation(logger, ctx, action, status, duration_ms) {
+  const operation = COMMAND_OPERATIONS[action];
   return operation ? safeRecord(logger, { ctx, operation, status, duration_ms }) : false;
 }
 

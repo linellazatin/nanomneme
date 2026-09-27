@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createPiLogger } from '../src/logger.js';
@@ -15,6 +15,7 @@ const service = {
 test('records a successful retention with a host session ID and no payload attributes', () => {
   const records = [];
   const logger = createPiLogger({
+    enabled: true,
     sink: (record) => records.push(record),
     now: () => new Date('2026-09-27T04:30:00.000Z'),
   });
@@ -43,7 +44,7 @@ test('records a successful retention with a host session ID and no payload attri
 
 test('records empty retrieval without a session ID', () => {
   const records = [];
-  const logger = createPiLogger({ sink: (record) => records.push(record) });
+  const logger = createPiLogger({ enabled: true, sink: (record) => records.push(record) });
 
   assert.equal(logger.record({ ctx: {}, operation: 'retrieve', status: 'empty', duration_ms: 1 }), true);
   assert.deepEqual(records[0], {
@@ -64,7 +65,7 @@ test('records empty retrieval without a session ID', () => {
 
 test('records failed removal with a generic normalized error', () => {
   const records = [];
-  const logger = createPiLogger({ sink: (record) => records.push(record) });
+  const logger = createPiLogger({ enabled: true, sink: (record) => records.push(record) });
 
   assert.equal(logger.record({ ctx: {}, operation: 'remove', status: 'failed', duration_ms: 1 }), true);
   assert.deepEqual(records[0].error, {
@@ -79,7 +80,7 @@ test('records failed removal with a generic normalized error', () => {
 
 test('a throwing host session lookup emits a null session ID', () => {
   const records = [];
-  const logger = createPiLogger({ sink: (record) => records.push(record) });
+  const logger = createPiLogger({ enabled: true, sink: (record) => records.push(record) });
 
   assert.equal(logger.record({
     ctx: { sessionManager: { getSessionId: () => { throw new Error('private host failure'); } } },
@@ -92,11 +93,43 @@ test('a throwing host session lookup emits a null session ID', () => {
   assert.equal(JSON.stringify(records[0]).includes('private host failure'), false);
 });
 
+test('only valid global Pi settings opt in to diagnostics', () => {
+  const home = mkdtempSync(join(tmpdir(), 'nmnm-pi-opt-in-'));
+  const agentDir = join(home, 'pi-agent');
+  const project = join(home, 'project');
+  const file = join(home, '.local', 'share', 'nanomneme', 'logs', 'nmnm-pi.jsonl');
+  const fields = { ctx: { cwd: project }, operation: 'retain', status: 'ok', duration_ms: 1 };
+  try {
+    mkdirSync(join(project, '.nanomneme'), { recursive: true });
+    mkdirSync(agentDir);
+    writeFileSync(join(project, '.nanomneme', 'nmnm.jsonc'), '{ "logging": { "enabled": true } }\n');
+    assert.equal(createPiLogger({ home, agentDir }).record(fields), false);
+    assert.equal(existsSync(file), false);
+
+    const globalSettings = join(agentDir, 'nmnm.jsonc');
+    writeFileSync(globalSettings, '{ "logging": { "enabled": "true" } }\n');
+    assert.equal(createPiLogger({ home, agentDir }).record(fields), false);
+    writeFileSync(globalSettings, '{ broken jsonc');
+    assert.equal(createPiLogger({ home, agentDir }).record(fields), false);
+    assert.equal(existsSync(file), false);
+
+    writeFileSync(globalSettings, '{ "logging": { "enabled": true } }\n');
+    assert.equal(createPiLogger({ home, agentDir }).record(fields), true);
+    assert.equal(JSON.parse(readFileSync(file, 'utf8').trim()).event, 'memory.retained');
+    writeFileSync(globalSettings, '{ "logging": { "enabled": false } }\n');
+    assert.equal(createPiLogger({ home, agentDir }).record(fields), false);
+    assert.equal(readFileSync(file, 'utf8').trim().split('\n').length, 1);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test('appends default records to the Pi adapter global Nanomneme log file', () => {
   const home = mkdtempSync(join(tmpdir(), 'nmnm-pi-logger-'));
   const path = join(home, '.local', 'share', 'nanomneme', 'logs', 'nmnm-pi.jsonl');
   const logger = createPiLogger({
     home,
+    enabled: true,
     now: () => new Date('2026-09-27T04:30:00.000Z'),
   });
 

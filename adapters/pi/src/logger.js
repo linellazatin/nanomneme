@@ -1,8 +1,7 @@
-import { appendFileSync, mkdirSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { createErrorRecord, createLogger } from '@openlines/logslines';
 import adapterPackage from '../package.json' with { type: 'json' };
+
+import { piAgentDir, readSettings, settingsPath } from './context.js';
+import { createProjectLogger } from './logger-runtime.generated.js';
 
 // Adapter logging template: identity, host correlation, outcome mapping, and safe emission live here.
 const SERVICE = {
@@ -38,15 +37,6 @@ const OUTCOMES = {
   },
 };
 
-function createPiFileSink({ home = homedir() } = {}) {
-  const path = join(home, '.local', 'share', 'nanomneme', 'logs', `${SERVICE.component}.jsonl`);
-  return (record) => {
-    mkdirSync(dirname(path), { recursive: true });
-    appendFileSync(path, `${JSON.stringify(record)}\n`, 'utf8');
-    return true;
-  };
-}
-
 function sessionId(ctx) {
   try {
     const value = ctx?.sessionManager?.getSessionId?.();
@@ -56,12 +46,17 @@ function sessionId(ctx) {
   }
 }
 
-export function createPiLogger({ sink, now, home } = {}) {
-  const logger = createLogger({
-    service: SERVICE,
-    sink: sink === undefined ? createPiFileSink({ home }) : sink,
-    now,
-  });
+export function createPiLogger({ enabled, sink, now, home, agentDir } = {}) {
+  let optIn = enabled === true;
+  if (enabled === undefined) {
+    try {
+      const path = settingsPath({ store: 'global', agentDir: agentDir ?? piAgentDir({ home }) });
+      optIn = readSettings(path, { includeLogging: true }).logging?.enabled === true;
+    } catch {
+      optIn = false;
+    }
+  }
+  const logger = createProjectLogger({ service: SERVICE, enabled: optIn, sink, now, home });
 
   return {
     record({ ctx, operation, status, duration_ms }) {
@@ -80,12 +75,7 @@ export function createPiLogger({ sink, now, home } = {}) {
           duration_ms,
           attributes: {},
           error: status === 'failed'
-            ? createErrorRecord({
-              kind: 'unknown',
-              code: `${operation}_failed`,
-              message,
-              retryable: false,
-            })
+            ? { kind: 'unknown', code: `${operation}_failed`, message, retryable: false }
             : null,
         });
       } catch {

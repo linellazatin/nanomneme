@@ -36,13 +36,13 @@ Pi exposes four tools to the model. Model-facing project operations require the 
 
 ## Logslines diagnostics
 
-`src/logger.js` is the model-tool logging boundary for the Pi adapter and the reference template for later Nanomneme adapters. It emits one closed `logslines/v1` outcome record for each model-facing retain, recall, retrieve, or remove attempt that reaches a terminal adapter outcome. The adapter delegates record validation and envelope construction to `@openlines/logslines`.
+`src/logger.js` is the model-tool logging boundary for the Pi adapter and the reference template for later Nanomneme adapters. When enabled, it emits one closed `logslines/v1` outcome record for each model-facing retain, recall, retrieve, or remove attempt that reaches a terminal adapter outcome. The shared Nanomneme logger source and Logslines runtime are bundled into Pi; `src/logger.js` retains Pi's event catalog and host-session lookup.
 
 This instrumentation currently covers only the four tools in [Native memory tools](#native-memory-tools). User-invoked `/memory` commands, the native memory browser, automatic context injection, pin operations, and other non-model adapter paths do not emit Logslines records yet.
 
 ### Emission and destination
 
-The default Pi sink appends JSON Lines to `~/.local/share/nanomneme/logs/nmnm-pi.jsonl`: one complete JSON object followed by a newline for each emitted record. The `logs` directory is created on the first emitted record. The filename is derived from the owning Logslines service component, `nmnm-pi`. The adapter does not configure rotation, transport, indexing, search, dashboards, or telemetry.
+Diagnostics are off by default. To opt in, add `"logging": { "enabled": true }` to the **global** `<Pi agent directory>/nmnm.jsonc` (normally `~/.pi/agent/nmnm.jsonc`) and run `/reload` in an active Pi session. Project settings cannot enable logging. Missing or invalid global logging settings leave diagnostics disabled without affecting memory operations. When enabled, the bundled logger appends JSON Lines to `~/.local/share/nanomneme/logs/nmnm-pi.jsonl`: one complete JSON object followed by a newline per outcome. The `logs` directory is created on the first emitted record, not while logging is off. The filename derives from the service component `nmnm-pi`. There is no stderr fallback, rotation, transport, indexing, search, dashboard, or telemetry.
 
 The adapter records one of these terminal outcomes:
 
@@ -209,7 +209,7 @@ Pi's agent directory defaults to `~/.pi/agent`; current Pi uses `PI_CODING_AGENT
 
 ### Complete settings template
 
-This is the complete supported `nmnm.jsonc` shape for v0.1.9. Copy it to either settings location above, then adjust the budget or opt in to autoretention. This template is the maintained place to add future adapter parameters.
+This is the supported `nmnm.jsonc` shape. Copy it to either settings location above for context options. Only the global file can opt in to logging.
 
 ```jsonc
 {
@@ -221,6 +221,9 @@ This is the complete supported `nmnm.jsonc` shape for v0.1.9. Copy it to either 
     "enabled": false,
     "every_n_prompts": 5,
   },
+
+  // Read from global Pi settings only. Reload Pi after changing it.
+  "logging": { "enabled": false },
 
   // Disabled unless explicitly true. Rules guide the active model's retain_memory calls.
   "autoretention": {
@@ -261,11 +264,11 @@ Pin files are plain JSON arrays, written only by `/memory pin` and `/memory unpi
 
 ### Normal file lifecycle
 
-On extension load and session start, the adapter registers its tools and hooks only. It does not create a settings file, a pin file, or a database. `nmnm.jsonc` is optional and user-authored: create it only to override the default index budget, opt into autoretention, or opt into periodic reinjection. If it is absent, the adapter uses the defaults. The adapter never rewrites it.
+On extension load and session start, the adapter registers its tools and hooks only. It does not create a settings file, a pin file, or a database. `nmnm.jsonc` is optional and user-authored: create it only to override the default index budget or opt into autoretention, periodic reinjection, or global-only logging. If it is absent, the adapter uses the defaults. The adapter never rewrites it.
 
 | Event or action | Reads | Writes | What to expect |
 |---|---|---|---|
-| Extension load | Nothing | Nothing | No nanomneme files appear. |
+| Extension load | Existing global Pi settings for logging opt-in | Nothing | No nanomneme files appear; logging remains off unless explicitly enabled. |
 | Session start | Existing settings and pins | Nothing | Read-only validation reports malformed configuration without preventing Pi startup. |
 | First user prompt, queued refresh, or enabled cadence | Existing settings, pins, and SQLite stores | Nothing | A bounded index, and enabled autoretention rules, are appended transiently to the system prompt. Cadence is disabled by default and counts user prompts only. Missing files and stores are empty. |
 | Successful Pi compaction | Nothing immediately | Nothing | The next user prompt rebuilds the transient index and enabled rules. Pi's own compaction summary preserves session continuity. |

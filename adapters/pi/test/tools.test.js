@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Type } from 'typebox';
@@ -114,10 +114,42 @@ test('Pi mutation tools notify the adapter, while reads do not', async () => {
   }
 });
 
+test('registered Pi tools require global opt-in before writing diagnostics', async () => {
+  const cwd = temporaryDirectory('nmnm-pi-opt-in-project-');
+  const home = temporaryDirectory('nmnm-pi-opt-in-home-');
+  const agentDir = join(home, 'pi-agent');
+  const file = join(home, '.local', 'share', 'nanomneme', 'logs', 'nmnm-pi.jsonl');
+  try {
+    mkdirSync(agentDir);
+    const disabled = registeredTools({ logger: createPiLogger({ home, agentDir }) });
+    const first = await execute(disabled.get('retain_memory'), { content: 'No logging without opt-in' }, cwd);
+    assert.equal(first.content, 'No logging without opt-in');
+    assert.equal(existsSync(file), false);
+
+    writeFileSync(join(agentDir, 'nmnm.jsonc'), '{ "logging": { "enabled": true } }\n');
+    const enabled = registeredTools({ logger: createPiLogger({ home, agentDir }) });
+    const second = await execute(enabled.get('retain_memory'), { content: 'Opted-in private content' }, cwd);
+    assert.equal(second.content, 'Opted-in private content');
+    const row = JSON.parse(readFileSync(file, 'utf8').trim());
+    assert.deepEqual([row.operation, row.status, row.event], ['retain', 'ok', 'memory.retained']);
+    assert.equal(JSON.stringify(row).includes(second.id), false);
+    assert.equal(JSON.stringify(row).includes('Opted-in private content'), false);
+
+    writeFileSync(join(agentDir, 'nmnm.jsonc'), '{ "logging": { "enabled": 1 } }\n');
+    const invalid = registeredTools({ logger: createPiLogger({ home, agentDir }) });
+    assert.equal((await execute(invalid.get('retain_memory'), { content: 'Invalid config still retains' }, cwd)).content, 'Invalid config still retains');
+    assert.equal(readFileSync(file, 'utf8').trim().split('\n').length, 1);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test('Pi tools emit privacy-bounded outcomes for the 4Rs', async () => {
   const cwd = temporaryDirectory('nmnm-pi-tools-logs-');
   const records = [];
   const logger = createPiLogger({
+    enabled: true,
     sink: (record) => records.push(record),
     now: () => new Date('2026-09-27T04:30:00.000Z'),
   });
@@ -158,7 +190,7 @@ test('Pi tools emit privacy-bounded outcomes for the 4Rs', async () => {
 test('Pi project tools log blocked outcomes', async () => {
   const cwd = temporaryDirectory('nmnm-pi-tools-blocked-logs-');
   const records = [];
-  const logger = createPiLogger({ sink: (record) => records.push(record) });
+  const logger = createPiLogger({ enabled: true, sink: (record) => records.push(record) });
   const ctx = {
     cwd,
     isProjectTrusted: () => false,
@@ -188,7 +220,7 @@ test('Pi project tools log blocked outcomes', async () => {
 test('Pi tools log sanitized core failures without changing the thrown error', async () => {
   const cwd = temporaryDirectory('nmnm-pi-tools-failed-logs-');
   const records = [];
-  const logger = createPiLogger({ sink: (record) => records.push(record) });
+  const logger = createPiLogger({ enabled: true, sink: (record) => records.push(record) });
   const ctx = {
     cwd,
     isProjectTrusted: () => true,
@@ -229,7 +261,7 @@ test('Pi tools log sanitized core failures without changing the thrown error', a
 
 test('a throwing diagnostic sink does not change successful or failed tool operations', async () => {
   const cwd = temporaryDirectory('nmnm-pi-tools-sink-failure-');
-  const logger = createPiLogger({ sink: () => { throw new Error('private sink failure'); } });
+  const logger = createPiLogger({ enabled: true, sink: () => { throw new Error('private sink failure'); } });
   const tools = registeredTools({ logger });
   const ctx = { cwd, isProjectTrusted: () => true };
   try {

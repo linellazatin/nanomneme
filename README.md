@@ -99,17 +99,7 @@ Nanomneme helps agents remember without pretending to be human memory.
 
 ## Architecture
 
-```text
-chosen adapter or nmnm CLI
-          |
-          v
-       nmnm-core
-          |
-          v
-node:sqlite + SQLite FTS5
-```
-
-`nmnm-core` owns the schema, validation, transactional writes, tags, FTS synchronization, portability, verification, and repair. The CLI is the operator interface. Harness adapters are thin core clients: they never write SQLite directly or parse CLI output.
+Nanomneme keeps SQLite persistence and memory lifecycle logic in `nmnm-core`; the CLI and harness adapters are thin core clients that never write SQLite directly or parse CLI output. The detailed component, diagnostics, persistence, and SQLite data-model reference is in [Architecture](docs/ARCHITECTURE.md).
 
 ## Packages
 
@@ -163,6 +153,7 @@ Pi settings and pins are adapter-owned files outside SQLite. First load creates 
 | Document | Owns |
 |---|---|
 | [Core and CLI Manual](docs/CORE_CLI_MANUAL.md) | Core API, CLI, data contract, agent use, portability, and recovery. |
+| [Architecture](docs/ARCHITECTURE.md) | Component boundaries, Pi diagnostics build/runtime path, SQLite persistence lifecycle, and ER model. |
 | [Core README](packages/nmnm-core/README.md) | Core package installation and API discovery. |
 | [CLI README](packages/nmnm-cli/README.md) | CLI package installation and command discovery. |
 | [Pi quick start](adapters/pi/README.md) | Package-local Pi entry point. |

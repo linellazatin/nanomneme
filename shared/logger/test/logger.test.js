@@ -85,3 +85,11 @@ test('unwritable target and throwing sink fail without stderr fallback', () => {
     rmSync(home, { recursive: true, force: true });
   }
 });
+
+test('shared logger consumes the external source while Pi ships a self-contained runtime', () => {
+  const sharedSource = readFileSync(new URL('../index.js', import.meta.url), 'utf8');
+  const generatedSource = readFileSync(new URL('../../../adapters/pi/src/logger-runtime.generated.js', import.meta.url), 'utf8');
+  assert.match(sharedSource, /from '\.\.\/\.\.\/external\/logslines\/src\/logger\.js'/);
+  assert.doesNotMatch(sharedSource, /@openlines\/logslines/);
+  assert.doesNotMatch(generatedSource, /@openlines\/logslines|\.\.\/\.\.\/external\/logslines/);
+});

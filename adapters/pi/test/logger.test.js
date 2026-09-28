@@ -124,19 +124,27 @@ test('only valid global Pi settings opt in to diagnostics', () => {
   }
 });
 
-test('browser mutation outcomes use separate allowlisted operations and sanitized failures', () => {
+test('browser mutation messages describe memory actions, while events identify the browser', () => {
   const records = [];
   const logger = createPiLogger({ enabled: true, sink: (record) => records.push(record) });
   const cases = [
-    ['browser_pin', 'ok', 'memory.browser.pin', 'info'],
-    ['browser_unpin', 'not_found', 'memory.browser.unpin_not_found', 'info'],
-    ['browser_remove', 'failed', 'memory.browser.remove_failed', 'error'],
+    ['browser_pin', 'ok', 'memory.browser.pin', 'info', 'Memory pin completed'],
+    ['browser_pin', 'not_found', 'memory.browser.pin_not_found', 'info', 'Memory was not found'],
+    ['browser_pin', 'failed', 'memory.browser.pin_failed', 'error', 'Memory pin failed'],
+    ['browser_unpin', 'ok', 'memory.browser.unpin', 'info', 'Memory unpin completed'],
+    ['browser_unpin', 'not_found', 'memory.browser.unpin_not_found', 'info', 'Memory was not found'],
+    ['browser_unpin', 'failed', 'memory.browser.unpin_failed', 'error', 'Memory unpin failed'],
+    ['browser_remove', 'ok', 'memory.browser.remove', 'info', 'Memory removal completed'],
+    ['browser_remove', 'not_found', 'memory.browser.remove_not_found', 'info', 'Memory was not found'],
+    ['browser_remove', 'failed', 'memory.browser.remove_failed', 'error', 'Memory removal failed'],
   ];
   for (const [operation, status] of cases) {
     assert.equal(logger.record({ ctx: {}, operation, status, duration_ms: 2, id: 'private-id', error: new Error('private details') }), true);
   }
-  assert.deepEqual(records.map(({ operation, status, event, level }) => [operation, status, event, level]), cases);
-  assert.deepEqual(records[2].error, { kind: 'unknown', code: 'browser_remove_failed', message: 'Browser removal failed', retryable: false });
+  assert.deepEqual(records.map(({ operation, status, event, level, message }) => [operation, status, event, level, message]), cases);
+  for (const record of records.filter(({ status }) => status === 'failed')) {
+    assert.deepEqual(record.error, { kind: 'unknown', code: `${record.operation}_failed`, message: record.message, retryable: false });
+  }
   assert.equal(JSON.stringify(records).includes('private'), false);
   assert.equal(logger.record({ ctx: {}, operation: 'browser_pin', status: 'blocked', duration_ms: 2 }), false);
 });

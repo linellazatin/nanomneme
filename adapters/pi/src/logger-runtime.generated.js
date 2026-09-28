@@ -1,9 +1,34 @@
+/* Logslines v0.1.0
+
+MIT License
+
+Copyright (c) 2026 Linel Lazatin
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
+
 // shared/logger/index.js
 import { appendFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-// ../logslines/src/sinks/stderr.js
+// external/logslines/src/sinks/stderr.js
 function createStderrSink({ stream = process.stderr } = {}) {
   return (record) => {
     try {
@@ -18,7 +43,7 @@ function createStderrSink({ stream = process.stderr } = {}) {
   };
 }
 
-// ../logslines/src/logger.js
+// external/logslines/src/logger.js
 var LEVELS = /* @__PURE__ */ new Set(["debug", "info", "warn", "error"]);
 var STATUSES = /* @__PURE__ */ new Set(["ok", "empty", "not_found", "skipped", "blocked", "partial", "failed"]);
 var ERROR_KINDS = /* @__PURE__ */ new Set([
@@ -124,10 +149,6 @@ function createLogger({ service, sink = createStderrSink(), now = () => /* @__PU
     }
   };
 }
-
-// ../logslines/src/errors.js
-var REQUIRED_KEYS = ["kind", "code", "message", "retryable"];
-var ALLOWED_KEYS = /* @__PURE__ */ new Set([...REQUIRED_KEYS, "cause_kind"]);
 
 // shared/logger/index.js
 var COMPONENT = /^[a-z][a-z0-9-]*$/;

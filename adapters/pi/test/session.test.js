@@ -1046,7 +1046,7 @@ test('browser pin failures retain their thrown error and log only a sanitized ou
     await assert.rejects(commands.get('memory').handler('browse', { cwd: project, hasUI: true, ui: scripted.ui }), /EISDIR/);
 
     assert.deepEqual(records.map(({ operation, status }) => [operation, status]), [['browser_pin', 'failed']]);
-    assert.deepEqual(records[0].error, { kind: 'unknown', code: 'browser_pin_failed', message: 'Browser pin failed', retryable: false });
+    assert.deepEqual(records[0].error, { kind: 'unknown', code: 'browser_pin_failed', message: 'Memory pin failed', retryable: false });
     assert.equal(JSON.stringify(records).includes(memory.id), false);
     assert.equal(JSON.stringify(records).includes('Private pin failure content'), false);
     assert.equal(JSON.stringify(records).includes(project), false);

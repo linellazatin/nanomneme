@@ -1,7 +1,7 @@
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { createLogger } from '@openlines/logslines';
+import { createLogger } from '../../external/logslines/src/logger.js';
 
 const COMPONENT = /^[a-z][a-z0-9-]*$/;
 

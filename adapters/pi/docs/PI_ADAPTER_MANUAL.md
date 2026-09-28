@@ -36,7 +36,7 @@ Pi exposes four tools to the model. Model-facing project operations require the 
 
 ## Logslines diagnostics
 
-`src/logger.js` is the Pi diagnostics boundary and the reference template for later Nanomneme adapters. When enabled, it emits one closed `logslines/v1` outcome record per terminal model-facing 4R attempt, browser mutation, or `/memory pin`, `unpin`, or `remove` command. The shared Nanomneme logger source and Logslines runtime are bundled into Pi; `src/logger.js` retains Pi's event catalog and host-session lookup.
+`src/logger.js` is the Pi diagnostics boundary and the reference template for later Nanomneme adapters. When enabled, it emits one closed `logslines/v1` outcome record per terminal model-facing 4R attempt, browser mutation, or `/memory pin`, `unpin`, or `remove` command. The shared Nanomneme logger source and checked-in external Logslines runtime are bundled into Pi; `src/logger.js` retains Pi's event catalog and host-session lookup. Pi installation never fetches Logslines source.
 
 Session and tools share a lazy logger: the first recorded outcome reads global logging settings, and `/reload` creates a fresh logger that reads them again. Browser navigation, search, Back, canceled removal, and a stale Remove selection that never reaches confirmation do not emit records. Read-only `/memory` commands, invalid command usage, internal resolution reads, session lifecycle events, and automatic context injection also remain unlogged. Context diagnostics were assessed and deferred: prompt-time hooks could produce frequent records and expose session activity or configuration failures, while `/memory status` already reports injection state and errors. A separate privacy design is required before adding them.
 
@@ -117,15 +117,15 @@ The event catalog is closed by `src/logger.js`. The table lists every currently 
 | `remove` | `not_found` | `info` | `memory.remove_not_found` | `Memory was not found` | The requested memory is absent, inactive, expired, or the selected store does not exist. |
 | `remove` | `blocked` | `warn` | `memory.remove_blocked` | `Memory removal blocked` | Pi project trust blocks the selected project store. |
 | `remove` | `failed` | `error` | `memory.remove_failed` | `Memory removal failed` | The core remove operation throws. |
-| `browser_pin` | `ok` | `info` | `memory.browser.pin` | `Browser pin completed` | Selected active memory pinned. |
-| `browser_pin` | `not_found` | `info` | `memory.browser.pin_not_found` | `Browser memory was not found` | Selected memory became inactive. |
-| `browser_pin` | `failed` | `error` | `memory.browser.pin_failed` | `Browser pin failed` | Selected-memory check or pin action throws. |
-| `browser_unpin` | `ok` | `info` | `memory.browser.unpin` | `Browser unpin completed` | Selected active memory unpinned. |
-| `browser_unpin` | `not_found` | `info` | `memory.browser.unpin_not_found` | `Browser memory was not found` | Selected memory became inactive. |
-| `browser_unpin` | `failed` | `error` | `memory.browser.unpin_failed` | `Browser unpin failed` | Selected-memory check or unpin action throws. |
-| `browser_remove` | `ok` | `info` | `memory.browser.remove` | `Browser removal completed` | Confirmed soft removal succeeded. |
-| `browser_remove` | `not_found` | `info` | `memory.browser.remove_not_found` | `Browser memory was not found` | The memory became inactive after confirmation but before removal. |
-| `browser_remove` | `failed` | `error` | `memory.browser.remove_failed` | `Browser removal failed` | Selected-memory check, confirmation, or removal throws. |
+| `browser_pin` | `ok` | `info` | `memory.browser.pin` | `Memory pin completed` | Selected active memory pinned. |
+| `browser_pin` | `not_found` | `info` | `memory.browser.pin_not_found` | `Memory was not found` | Selected memory became inactive. |
+| `browser_pin` | `failed` | `error` | `memory.browser.pin_failed` | `Memory pin failed` | Selected-memory check or pin action throws. |
+| `browser_unpin` | `ok` | `info` | `memory.browser.unpin` | `Memory unpin completed` | Selected active memory unpinned. |
+| `browser_unpin` | `not_found` | `info` | `memory.browser.unpin_not_found` | `Memory was not found` | Selected memory became inactive. |
+| `browser_unpin` | `failed` | `error` | `memory.browser.unpin_failed` | `Memory unpin failed` | Selected-memory check or unpin action throws. |
+| `browser_remove` | `ok` | `info` | `memory.browser.remove` | `Memory removal completed` | Confirmed soft removal succeeded. |
+| `browser_remove` | `not_found` | `info` | `memory.browser.remove_not_found` | `Memory was not found` | The memory became inactive after confirmation but before removal. |
+| `browser_remove` | `failed` | `error` | `memory.browser.remove_failed` | `Memory removal failed` | Selected-memory check, confirmation, or removal throws. |
 | `command_pin` | `ok` | `info` | `memory.command.pin` | `Command pin completed` | Active memory pinned (or already pinned). |
 | `command_pin` | `not_found` | `info` | `memory.command.pin_not_found` | `Command memory was not found` | Selected store lacks an active memory, including a global-only ID requested as project. |
 | `command_pin` | `failed` | `error` | `memory.command.pin_failed` | `Command pin failed` | Pin resolution or write throws. |

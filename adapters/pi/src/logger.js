@@ -36,19 +36,19 @@ const OUTCOMES = {
     failed: ['error', 'memory.remove_failed', 'Memory removal failed'],
   },
   browser_pin: {
-    ok: ['info', 'memory.browser.pin', 'Browser pin completed'],
-    not_found: ['info', 'memory.browser.pin_not_found', 'Browser memory was not found'],
-    failed: ['error', 'memory.browser.pin_failed', 'Browser pin failed'],
+    ok: ['info', 'memory.browser.pin', 'Memory pin completed'],
+    not_found: ['info', 'memory.browser.pin_not_found', 'Memory was not found'],
+    failed: ['error', 'memory.browser.pin_failed', 'Memory pin failed'],
   },
   browser_unpin: {
-    ok: ['info', 'memory.browser.unpin', 'Browser unpin completed'],
-    not_found: ['info', 'memory.browser.unpin_not_found', 'Browser memory was not found'],
-    failed: ['error', 'memory.browser.unpin_failed', 'Browser unpin failed'],
+    ok: ['info', 'memory.browser.unpin', 'Memory unpin completed'],
+    not_found: ['info', 'memory.browser.unpin_not_found', 'Memory was not found'],
+    failed: ['error', 'memory.browser.unpin_failed', 'Memory unpin failed'],
   },
   browser_remove: {
-    ok: ['info', 'memory.browser.remove', 'Browser removal completed'],
-    not_found: ['info', 'memory.browser.remove_not_found', 'Browser memory was not found'],
-    failed: ['error', 'memory.browser.remove_failed', 'Browser removal failed'],
+    ok: ['info', 'memory.browser.remove', 'Memory removal completed'],
+    not_found: ['info', 'memory.browser.remove_not_found', 'Memory was not found'],
+    failed: ['error', 'memory.browser.remove_failed', 'Memory removal failed'],
   },
   command_pin: {
     ok: ['info', 'memory.command.pin', 'Command pin completed'],

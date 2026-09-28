@@ -99,7 +99,11 @@ Nanomneme helps agents remember without pretending to be human memory.
 
 ## Architecture
 
-Nanomneme keeps SQLite persistence and memory lifecycle logic in `nmnm-core`; the CLI and harness adapters are thin core clients that never write SQLite directly or parse CLI output. The detailed component, diagnostics, persistence, and SQLite data-model reference is in [Architecture](docs/ARCHITECTURE.md).
+`Nanomneme` keeps SQLite persistence and memory lifecycle logic in `nmnm-core`; the CLI and harness adapters are thin core clients that never write SQLite directly or parse CLI output. The detailed component, diagnostics, persistence, and SQLite data-model reference is in [Architecture](docs/ARCHITECTURE.md).
+
+## Memory Operations Sequence
+
+Every `nanomneme` interface selects one physical store before calling the core. The detailed, implemented memory operation paths in the CLI and every adapter as of the current project state, is in [Memory operations](docs/SEQUENCE_MEMORY_HANDLING.md).
 
 ## Packages
 
@@ -173,7 +177,7 @@ Pi settings and pins are adapter-owned files outside SQLite. First load creates 
 ```sh
 npm test
 pi -e ./adapters/pi/extensions/index.js --help
-npm pack --dry-run --workspace @openlines/nmnm-core --workspace @openlines/nmnm-cli --workspace @openlines/nmnm-codex
+npm pack --dry-run --workspace @openlines/nmnm-core --workspace @openlines/nmnm-cli --workspace @openlines/nmnm-codex ... <namespace>/<adapter/package>
 ```
 
-Logslines source is checked in under `external/logslines/`, selected by its upstream Git tag rather than an npm dependency. Maintainers can validate or refresh that explicit source snapshot with `npm run external:check -- v0.1.0` and `npm run external:update -- v0.1.0`; after an update, run `node scripts/build-logger.js` to refresh Pi’s checked-in runtime, then `npm test`. Neither external command runs during installation, CI, or Pi package use. Run `npm test` before submitting changes. Do not commit `.nanomneme/`, personal global databases, or Pi settings and pin files containing local data. Use canonical JSONL for transfer and closed SQLite copies for exact backups. See the manuals for validation, recovery, and adapter-specific safety boundaries.
+Logslines source is checked in under `external/logslines/`, selected by its upstream Git tag rather than an npm dependency. `npm run external:check -- v0.1.0` fetches that release and verifies the checked-in files and provenance match it; `npm run external:update -- v0.1.0` refreshes the snapshot and its SHA-256 manifest. After an update, run `node scripts/build-logger.js` to refresh Pi’s checked-in runtime, update the pinned hashes in `test/external-logslines.test.js`, then run `npm test`. The offline hash verification runs in CI through `npm test`; the two external commands do not run during CI, installation, or Pi package use. Run `npm test` before submitting changes. Do not commit `.nanomneme/`, personal global databases, or Pi settings and pin files containing local data. Use canonical JSONL for transfer and closed SQLite copies for exact backups. See the manuals for validation, recovery, and adapter-specific safety boundaries.

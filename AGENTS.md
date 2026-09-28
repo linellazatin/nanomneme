@@ -16,13 +16,15 @@ npm test
 
 This first verifies generated logger output, then runs Node’s built-in test runner across scripts, shared logger tests, package tests, adapter tests, and top-level tests.
 
-Check the external Logslines source selected by release tag:
+Check that the checked-in Logslines snapshot and provenance exactly match the selected upstream release tag:
 
 ```sh
 npm run external:check -- v0.1.0
 ```
 
-Update the external Logslines source to a selected release tag:
+This command fetches the tagged upstream files and compares their contents and hashes with the local snapshot. The offline pinned-hash test runs under `npm test` and CI; CI does not fetch external Logslines sources.
+
+Update the external Logslines source and SHA-256 provenance to a selected release tag:
 
 ```sh
 npm run external:update -- v0.1.0

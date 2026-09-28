@@ -12,6 +12,8 @@
   - Browser Pin, Unpin, and confirmed soft Remove now emit one sanitized outcome (`ok`, `not_found`, or `failed`) per attempted action; navigation and canceled removal emit none. Browser messages name the memory action; the event identifies its origin.
   - Explicit `/memory` pin, unpin, and soft remove emit separate sanitized outcomes. Ambiguous removal is `blocked`, absent pins on unpin are `not_found`, and read-only commands emit none.
   - Logslines now ships as a checked-in `external/logslines/` source snapshot selected by upstream Git tag `v0.1.0`, replacing the sibling `file:` npm build dependency. Maintainers explicitly validate or refresh the snapshot; CI and Pi installation do not fetch it, and the generated Pi runtime includes its MIT attribution.
+  - Hardened `logslines` diagnostics storage with an owner-only `logs/` directory and owner-only JSONL files, tightening existing logs on first use. 
+    - Added SHA-256 provenance for the checked-in logslines source; maintainer checks compare the snapshot with the selected upstream release, and offline pinned-hash checks run in CI.
 
 ## 0.4.0 - Codex adapter prototype
 

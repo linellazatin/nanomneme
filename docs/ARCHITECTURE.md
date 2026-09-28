@@ -21,6 +21,7 @@ flowchart TB
   subgraph persistence[Local persistence]
     PROJECT["Project store\n&lt;cwd&gt;/.nanomneme/memory.db"]
     GLOBAL["Global store\n~/.local/share/nanomneme/memory.db\nLinux and macOS"]
+    CUSTOM["Custom store\nexplicit core path or CLI --db"]
   end
 
   subgraph diagnostics[logslines opt-in diagnostics]
@@ -49,6 +50,7 @@ flowchart TB
 
   API --> PROJECT
   API --> GLOBAL
+  API --> CUSTOM
 
   SETTINGS -.-> PI
   PINS -.-> PI
@@ -65,7 +67,7 @@ flowchart TB
 ### Ownership and runtime boundaries
 
 - **Core:** [`packages/nmnm-core`](../packages/nmnm-core/) validates inputs, opens or migrates versioned databases, and performs reads and writes in SQLite transactions. It has no CLI parsing, harness behavior, logging policy, HTTP, MCP, embedding, or LLM-provider dependency.
-- **Clients:** the CLI and adapters select stores, map their host surfaces to core operations, and own their host-specific configuration. Project and global stores are separate SQLite files; a caller selects one explicitly or composes them where its interface supports both.
+- **Clients:** the CLI and adapters select stores, map their host surfaces to core operations, and own their host-specific configuration. Project and global stores are separate SQLite files; the core also accepts an explicit path, which the CLI exposes as `--db`. A caller selects one store explicitly or composes project then global results where its interface supports both.
 - **Pi configuration:** Pi uses `nmnm.jsonc` for settings and `nmnm-pi.json` for pins. Only the global Pi settings file may enable diagnostics. Project settings cannot authorize logging.
 - **Pi diagnostics:** `adapters/pi/src/logger.js` owns the fixed event catalog, service identity, timing, session correlation, and privacy boundary. `shared/logger/` owns disabled-by-default emission and the Nanomneme JSONL file sink. The checked-in generated runtime contains both that shared behavior and Logslines validation/emission.
 - **External source lifecycle:** `external/logslines/` is a checked-in snapshot selected by upstream release tag. Maintainers run `npm run external:check -- <tag>` or `npm run external:update -- <tag>`, regenerate Pi’s runtime with `node scripts/build-logger.js`, and run tests. CI, package installation, and Pi runtime do not fetch Logslines.

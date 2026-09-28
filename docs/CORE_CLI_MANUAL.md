@@ -32,8 +32,6 @@ Use the agent path for deterministic CLI calls, stable JSON responses, explicit 
 | Portability and recovery | Both | Export, import, back up, verify, repair, and restore. |
 | Troubleshooting | Both | Diagnose common input, storage, FTS, and schema failures. |
 
-The tracked delivery phases are maintained in [ROADMAP.md](../ROADMAP.md).
-
 ## Getting started
 
 ### Requirements and installation

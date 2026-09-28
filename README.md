@@ -4,7 +4,7 @@
 
 [![gh stars](https://img.shields.io/github/stars/linellazatin/nanomneme?logo=github&color=ffffe0)](https://github.com/linellazatin/nanomneme)
 [![gh release](https://img.shields.io/github/v/release/linellazatin/nanomneme?label=release&logo=github&color=ffffe0)](https://github.com/linellazatin/nanomneme)
-[![license](https://img.shields.io/npm/l/@openlines/opl-pi-sht)](./LICENSE)
+[![license](https://img.shields.io/github/license/linellazatin/nanomneme)](./LICENSE)
 
 ### memory core
 [![nmnm-cli version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-cli?label=cli&logo=npm&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-cli)
@@ -164,7 +164,6 @@ Pi settings and pins are adapter-owned files outside SQLite. First load creates 
 | [Codex Adapter Manual](adapters/codex/docs/CODEX_ADAPTER_MANUAL.md) | Codex local-prototype installation, trusted hook, shell-backed 4Rs, and token boundaries. |
 | [OpenCode quick start](adapters/opencode/README.md) | Package-local OpenCode server plugin entry point. |
 | [OpenCode Adapter Manual](adapters/opencode/docs/OPENCODE_ADAPTER_MANUAL.md) | OpenCode plugin install, native tools, transient injection, the `nmnm-opencode` CLI, the TUI memory browser, pins, configuration, and compatibility probes. |
-| [Roadmap](ROADMAP.md) | Phased delivery and deferred work. |
 | [Changelog](CHANGELOG.md) | Released and unreleased changes. |
 
 `nmnm --help` is authoritative for CLI flags. Runtime code and tests are authoritative when documentation disagrees with behavior.

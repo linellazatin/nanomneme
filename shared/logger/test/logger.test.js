@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -50,6 +50,51 @@ test('enabled logger creates a service-named JSONL file on first emission and ap
   }
 });
 
+test('creates an owner-only logs directory and file without changing parent permissions', { skip: process.platform === 'win32' }, () => {
+  const home = temporaryHome();
+  const dataDirectory = join(home, '.local', 'share', 'nanomneme');
+  const directory = join(dataDirectory, 'logs');
+  const path = join(directory, 'nmnm-pi.jsonl');
+  try {
+    const logger = createProjectLogger({ service, enabled: true, home });
+    assert.equal(logger.emit(input), true);
+
+    assert.equal(statSync(dataDirectory).mode & 0o777, 0o777 & ~process.umask());
+    assert.equal(statSync(directory).mode & 0o777, 0o700);
+    assert.equal(statSync(path).mode & 0o777, 0o600);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('tightens the logs directory and existing JSONL files before appending', { skip: process.platform === 'win32' }, () => {
+  const home = temporaryHome();
+  const directory = join(home, '.local', 'share', 'nanomneme', 'logs');
+  const currentLog = join(directory, 'nmnm-pi.jsonl');
+  const olderLog = join(directory, 'older-component.jsonl');
+  const unrelatedFile = join(directory, 'notes.txt');
+  try {
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(currentLog, 'old current log\n');
+    writeFileSync(olderLog, 'old component log\n');
+    writeFileSync(unrelatedFile, 'not a log\n');
+    chmodSync(directory, 0o755);
+    chmodSync(currentLog, 0o644);
+    chmodSync(olderLog, 0o644);
+    chmodSync(unrelatedFile, 0o644);
+
+    const logger = createProjectLogger({ service, enabled: true, home });
+    assert.equal(logger.emit(input), true);
+
+    assert.equal(statSync(directory).mode & 0o777, 0o700);
+    assert.equal(statSync(currentLog).mode & 0o777, 0o600);
+    assert.equal(statSync(olderLog).mode & 0o777, 0o600);
+    assert.equal(statSync(unrelatedFile).mode & 0o777, 0o644);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test('enabled logger supports injected sink and clock without file output', () => {
   const home = temporaryHome();
   const records = [];
@@ -63,9 +108,10 @@ test('enabled logger supports injected sink and clock without file output', () =
   }
 });
 
-test('unsafe service component cannot write outside the logs directory', () => {
+test('invalid service identity cannot write outside the logs directory', () => {
   const home = temporaryHome();
   try {
+    assert.equal(createProjectLogger({ enabled: true, home }).emit(input), false);
     const logger = createProjectLogger({ service: { ...service, component: '../escape' }, enabled: true, home });
     assert.equal(logger.emit(input), false);
     assert.equal(existsSync(join(home, '.local')), false);

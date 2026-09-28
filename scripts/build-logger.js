@@ -5,6 +5,7 @@ import { build } from 'esbuild';
 
 const entry = fileURLToPath(new URL('../shared/logger/index.js', import.meta.url));
 const output = fileURLToPath(new URL('../adapters/pi/src/logger-runtime.generated.js', import.meta.url));
+const license = readFileSync(fileURLToPath(new URL('../external/logslines/LICENSE', import.meta.url)), 'utf8').trimEnd();
 const result = await build({
   entryPoints: [entry],
   outfile: output,
@@ -13,6 +14,7 @@ const result = await build({
   format: 'esm',
   target: 'node22',
   legalComments: 'none',
+  banner: { js: `/* Logslines v0.1.0\n\n${license}\n*/` },
   write: false,
 });
 const generated = result.outputFiles[0].text;

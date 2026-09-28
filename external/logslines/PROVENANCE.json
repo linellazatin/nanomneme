@@ -1,0 +1,10 @@
+{
+  "repository": "https://github.com/linellazatin/logslines",
+  "tag": "v0.1.0",
+  "release_url": "https://github.com/linellazatin/logslines/releases/tag/v0.1.0",
+  "files": [
+    "LICENSE",
+    "src/logger.js",
+    "src/sinks/stderr.js"
+  ]
+}

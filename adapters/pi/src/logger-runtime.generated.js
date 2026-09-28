@@ -24,7 +24,7 @@ SOFTWARE.
 */
 
 // shared/logger/index.js
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, chmodSync, mkdirSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -155,11 +155,23 @@ var COMPONENT = /^[a-z][a-z0-9-]*$/;
 function createProjectLogger({ service, enabled = false, home, sink, now } = {}) {
   if (!enabled) return { emit: () => false };
   const safeComponent = typeof service?.component === "string" && COMPONENT.test(service.component);
+  const path = safeComponent ? join(home ?? homedir(), ".local", "share", "nanomneme", "logs", `${service.component}.jsonl`) : void 0;
+  const directory = path === void 0 ? void 0 : dirname(path);
+  let directorySecured = false;
   const fileSink = (record) => {
-    const path = join(home ?? homedir(), ".local", "share", "nanomneme", "logs", `${service.component}.jsonl`);
-    mkdirSync(dirname(path), { recursive: true });
+    if (!directorySecured) {
+      mkdirSync(dirname(directory), { recursive: true });
+      mkdirSync(directory, { recursive: true, mode: 448 });
+      chmodSync(directory, 448);
+      for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        if (entry.isFile() && entry.name.endsWith(".jsonl")) {
+          chmodSync(join(directory, entry.name), 384);
+        }
+      }
+      directorySecured = true;
+    }
     appendFileSync(path, `${JSON.stringify(record)}
-`, "utf8");
+`, { encoding: "utf8", mode: 384 });
     return true;
   };
   const logger = createLogger({ service, sink: sink === void 0 ? fileSink : sink, now });

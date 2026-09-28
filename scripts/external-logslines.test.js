@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { checkExternalLogslines, updateExternalLogslines } from './external-logslines.js';
 
@@ -13,6 +13,11 @@ const files = {
   LICENSE: 'MIT License\n',
   'src/logger.js': "export function createLogger() {}\n",
   'src/sinks/stderr.js': "export function createStderrSink() {}\n",
+};
+const sha256 = {
+  LICENSE: '267f7a2e19dfa9df99af774520985a0e521925293ea5b7e767ab06969d06bf91',
+  'src/logger.js': '619e39da3ee72ab983cb9ba080c2e42125635788d162b1502674bb4f894ed59b',
+  'src/sinks/stderr.js': '7104cf6f8779531f61192c5978d3e2b7afe27692d69adfb79e21ab3108087831',
 };
 
 function response({ status = 200, body = '', contentType = 'text/plain' } = {}) {
@@ -41,6 +46,22 @@ function temporaryDestination() {
   return { root, destination };
 }
 
+function writeSnapshot(destination, sourceFiles = files) {
+  mkdirSync(destination, { recursive: true });
+  for (const [path, source] of Object.entries(sourceFiles)) {
+    const target = join(destination, path);
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, source, 'utf8');
+  }
+  writeFileSync(join(destination, 'PROVENANCE.json'), `${JSON.stringify({
+    repository,
+    tag,
+    release_url: releaseUrl,
+    files: Object.keys(files),
+    sha256,
+  }, null, 2)}\n`, 'utf8');
+}
+
 function assertUnchanged(destination) {
   assert.equal(readFileSync(destination, 'utf8'), 'sentinel');
 }
@@ -48,15 +69,32 @@ function assertUnchanged(destination) {
 test('checks an existing tagged release and atomically writes the required external source snapshot', async () => {
   const { root, destination } = temporaryDestination();
   try {
-    const checked = await checkExternalLogslines({ tag, fetchImpl: validFetch() });
+    const checkedInSnapshot = join(root, 'snapshot');
+    writeSnapshot(checkedInSnapshot);
+    const checked = await checkExternalLogslines({ tag, destination: checkedInSnapshot, fetchImpl: validFetch() });
     assert.deepEqual(checked, { tag, releaseUrl, files });
     await updateExternalLogslines({ tag, destination, fetchImpl: validFetch() });
     assert.equal(readFileSync(join(destination, 'LICENSE'), 'utf8'), files.LICENSE);
     assert.equal(readFileSync(join(destination, 'src/logger.js'), 'utf8'), files['src/logger.js']);
     assert.equal(readFileSync(join(destination, 'src/sinks/stderr.js'), 'utf8'), files['src/sinks/stderr.js']);
     assert.deepEqual(JSON.parse(readFileSync(join(destination, 'PROVENANCE.json'), 'utf8')), {
-      repository, tag, release_url: releaseUrl, files: Object.keys(files),
+      repository, tag, release_url: releaseUrl, files: Object.keys(files), sha256,
     });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('rejects a checked-in source file that differs from the requested upstream tag', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'nmnm-external-logslines-drift-'));
+  const destination = join(root, 'snapshot');
+  try {
+    writeSnapshot(destination);
+    writeFileSync(join(destination, 'src/logger.js'), 'drifted source\\n');
+    await assert.rejects(
+      checkExternalLogslines({ tag, destination, fetchImpl: validFetch() }),
+      /checked-in Logslines source differs/,
+    );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

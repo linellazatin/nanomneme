@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -24,7 +25,14 @@ async function fetchResponse(fetchImpl, url, unavailableMessage, unavailableNetw
   return response;
 }
 
-export async function checkExternalLogslines({ tag, fetchImpl = fetch } = {}) {
+function hashesFor(files) {
+  return Object.fromEntries(requiredPaths.map((path) => [
+    path,
+    createHash('sha256').update(files[path], 'utf8').digest('hex'),
+  ]));
+}
+
+async function fetchExternalLogslines({ tag, fetchImpl = fetch } = {}) {
   if (typeof tag !== 'string' || !/^v\d+\.\d+\.\d+$/.test(tag)) throw new Error('tag must be an exact v<major>.<minor>.<patch> release tag');
   if (typeof fetchImpl !== 'function') throw new Error('fetch implementation must be a function');
 
@@ -56,8 +64,42 @@ export async function checkExternalLogslines({ tag, fetchImpl = fetch } = {}) {
   return { tag, releaseUrl, files };
 }
 
+export async function checkExternalLogslines({ tag, destination = fileURLToPath(new URL('../external/logslines', import.meta.url)), fetchImpl = fetch } = {}) {
+  const result = await fetchExternalLogslines({ tag, fetchImpl });
+  const expectedHashes = hashesFor(result.files);
+  let provenance;
+  try {
+    provenance = JSON.parse(readFileSync(join(destination, 'PROVENANCE.json'), 'utf8'));
+  } catch {
+    throw new Error('checked-in Logslines provenance is unavailable or invalid');
+  }
+  const provenanceKeys = ['repository', 'tag', 'release_url', 'files', 'sha256'];
+  if (!provenance || typeof provenance !== 'object' || Array.isArray(provenance)
+    || Object.keys(provenance).length !== provenanceKeys.length
+    || provenanceKeys.some((key) => !Object.hasOwn(provenance, key))
+    || provenance.repository !== repository
+    || provenance.tag !== result.tag
+    || provenance.release_url !== result.releaseUrl
+    || JSON.stringify(provenance.files) !== JSON.stringify(requiredPaths)
+    || !provenance.sha256 || typeof provenance.sha256 !== 'object' || Array.isArray(provenance.sha256)
+    || Object.keys(provenance.sha256).length !== requiredPaths.length
+    || requiredPaths.some((path) => provenance.sha256[path] !== expectedHashes[path])) {
+    throw new Error(`checked-in Logslines provenance does not match release ${result.tag}`);
+  }
+  for (const path of requiredPaths) {
+    let source;
+    try {
+      source = readFileSync(join(destination, path), 'utf8');
+    } catch {
+      throw new Error(`checked-in Logslines source is unavailable: ${path}`);
+    }
+    if (source !== result.files[path]) throw new Error(`checked-in Logslines source differs: ${path}`);
+  }
+  return result;
+}
+
 export async function updateExternalLogslines({ tag, destination = fileURLToPath(new URL('../external/logslines', import.meta.url)), fetchImpl = fetch } = {}) {
-  const result = await checkExternalLogslines({ tag, fetchImpl });
+  const result = await fetchExternalLogslines({ tag, fetchImpl });
   const parent = dirname(destination);
   const name = basename(destination);
   const temporary = join(parent, `.${name}.tmp-${process.pid}-${Date.now()}`);
@@ -74,6 +116,7 @@ export async function updateExternalLogslines({ tag, destination = fileURLToPath
       tag: result.tag,
       release_url: result.releaseUrl,
       files: requiredPaths,
+      sha256: hashesFor(result.files),
     }, null, 2)}\n`, 'utf8');
 
     if (existsSync(destination)) renameSync(destination, backup);

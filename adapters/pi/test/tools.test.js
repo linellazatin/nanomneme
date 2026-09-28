@@ -1,10 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Type } from 'typebox';
 import { MAX_TOOL_RESULT_BYTES } from '../src/response.js';
+import { createPiLogger } from '../src/logger.js';
+import { registerPiMemory } from '../src/session.js';
 import { databasePath, runMemory } from '../src/store.js';
 import { registerPiTools } from '../src/tools.js';
 
@@ -12,9 +14,12 @@ function temporaryDirectory(name) {
   return mkdtempSync(join(tmpdir(), name));
 }
 
-function registeredTools(options) {
+function registeredTools(options = {}) {
   const tools = [];
-  registerPiTools({ registerTool: (tool) => tools.push(tool) }, Type, options);
+  registerPiTools({ registerTool: (tool) => tools.push(tool) }, Type, {
+    logger: createPiLogger({ sink: () => true }),
+    ...options,
+  });
   return new Map(tools.map((tool) => [tool.name, tool]));
 }
 
@@ -105,6 +110,212 @@ test('Pi mutation tools notify the adapter, while reads do not', async () => {
     assert.deepEqual(mutations, ['retain', 'remove']);
     await execute(tools.get('remove_memory'), { id: '00000000-0000-4000-8000-000000000001' }, cwd);
     assert.deepEqual(mutations, ['retain', 'remove']);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('session and tools share one lazy logger without session records; fresh registration applies settings', async () => {
+  const cwd = temporaryDirectory('nmnm-pi-shared-project-');
+  const home = temporaryDirectory('nmnm-pi-shared-home-');
+  const agentDir = join(home, 'pi-agent');
+  const file = join(home, '.local', 'share', 'nanomneme', 'logs', 'nmnm-pi.jsonl');
+  const ctx = { cwd, isProjectTrusted: () => true, ui: { notify: () => {} } };
+  const register = () => {
+    const tools = new Map();
+    const events = new Map();
+    const commands = new Map();
+    const pi = {
+      registerTool: (tool) => tools.set(tool.name, tool),
+      registerCommand: (name, command) => commands.set(name, command),
+      on: (name, handler) => events.set(name, handler),
+    };
+    const memory = registerPiMemory(pi, { home, agentDir });
+    registerPiTools(pi, Type, { logger: memory.logger, onMutation: memory.refresh });
+    return { tools, events, commands };
+  };
+  try {
+    mkdirSync(agentDir);
+    writeFileSync(join(agentDir, 'nmnm.jsonc'), '{ "logging": { "enabled": true } }');
+    const first = register();
+    first.events.get('session_start')({}, ctx);
+    await first.commands.get('memory').handler('status', ctx);
+    assert.equal(existsSync(file), false);
+    const retained = await execute(first.tools.get('retain_memory'), { content: 'One model tool outcome' }, cwd);
+    assert.equal(retained.content, 'One model tool outcome');
+    assert.equal(readFileSync(file, 'utf8').trim().split('\n').length, 1);
+
+    writeFileSync(join(agentDir, 'nmnm.jsonc'), '{ "logging": { "enabled": false } }');
+    const reloaded = register();
+    reloaded.events.get('session_start')({}, ctx);
+    assert.equal((await execute(reloaded.tools.get('retain_memory'), { content: 'No diagnostic after reload' }, cwd)).content, 'No diagnostic after reload');
+    assert.equal(readFileSync(file, 'utf8').trim().split('\n').length, 1);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('registered Pi tools require global opt-in before writing diagnostics', async () => {
+  const cwd = temporaryDirectory('nmnm-pi-opt-in-project-');
+  const home = temporaryDirectory('nmnm-pi-opt-in-home-');
+  const agentDir = join(home, 'pi-agent');
+  const file = join(home, '.local', 'share', 'nanomneme', 'logs', 'nmnm-pi.jsonl');
+  try {
+    mkdirSync(agentDir);
+    const disabled = registeredTools({ logger: createPiLogger({ home, agentDir }) });
+    const first = await execute(disabled.get('retain_memory'), { content: 'No logging without opt-in' }, cwd);
+    assert.equal(first.content, 'No logging without opt-in');
+    assert.equal(existsSync(file), false);
+
+    writeFileSync(join(agentDir, 'nmnm.jsonc'), '{ "logging": { "enabled": true } }\n');
+    const enabled = registeredTools({ logger: createPiLogger({ home, agentDir }) });
+    const second = await execute(enabled.get('retain_memory'), { content: 'Opted-in private content' }, cwd);
+    assert.equal(second.content, 'Opted-in private content');
+    const row = JSON.parse(readFileSync(file, 'utf8').trim());
+    assert.deepEqual([row.operation, row.status, row.event], ['retain', 'ok', 'memory.retained']);
+    assert.equal(JSON.stringify(row).includes(second.id), false);
+    assert.equal(JSON.stringify(row).includes('Opted-in private content'), false);
+
+    writeFileSync(join(agentDir, 'nmnm.jsonc'), '{ "logging": { "enabled": 1 } }\n');
+    const invalid = registeredTools({ logger: createPiLogger({ home, agentDir }) });
+    assert.equal((await execute(invalid.get('retain_memory'), { content: 'Invalid config still retains' }, cwd)).content, 'Invalid config still retains');
+    assert.equal(readFileSync(file, 'utf8').trim().split('\n').length, 1);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('Pi tools emit privacy-bounded outcomes for the 4Rs', async () => {
+  const cwd = temporaryDirectory('nmnm-pi-tools-logs-');
+  const records = [];
+  const logger = createPiLogger({
+    enabled: true,
+    sink: (record) => records.push(record),
+    now: () => new Date('2026-09-27T04:30:00.000Z'),
+  });
+  const ctx = {
+    cwd,
+    isProjectTrusted: () => true,
+    sessionManager: { getSessionId: () => 'host-session-7' },
+  };
+  try {
+    const tools = registeredTools({ logger });
+    const retained = JSON.parse((await tools.get('retain_memory').execute('call', {
+      content: 'private template memory',
+      tags: ['private'],
+    }, undefined, undefined, ctx)).content[0].text);
+    await tools.get('recall_memory').execute('call', { id: retained.id }, undefined, undefined, ctx);
+    await tools.get('retrieve_memory').execute('call', { query: 'private template' }, undefined, undefined, ctx);
+    await tools.get('remove_memory').execute('call', { id: retained.id }, undefined, undefined, ctx);
+    await tools.get('recall_memory').execute('call', { id: retained.id }, undefined, undefined, ctx);
+
+    assert.deepEqual(records.map((record) => [record.operation, record.status, record.event]), [
+      ['retain', 'ok', 'memory.retained'],
+      ['recall', 'ok', 'memory.recalled'],
+      ['retrieve', 'ok', 'memory.retrieved'],
+      ['remove', 'ok', 'memory.removed'],
+      ['recall', 'not_found', 'memory.recall_not_found'],
+    ]);
+    assert.deepEqual(records.map((record) => record.context.session_id), [
+      'host-session-7', 'host-session-7', 'host-session-7', 'host-session-7', 'host-session-7',
+    ]);
+    assert.equal(JSON.stringify(records).includes('private template memory'), false);
+    assert.equal(JSON.stringify(records).includes('private template'), false);
+    assert.equal(JSON.stringify(records).includes(retained.id), false);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('Pi project tools log blocked outcomes', async () => {
+  const cwd = temporaryDirectory('nmnm-pi-tools-blocked-logs-');
+  const records = [];
+  const logger = createPiLogger({ enabled: true, sink: (record) => records.push(record) });
+  const ctx = {
+    cwd,
+    isProjectTrusted: () => false,
+    sessionManager: { getSessionId: () => 'host-session-8' },
+  };
+  try {
+    const tools = registeredTools({ logger });
+    await assert.rejects(tools.get('retain_memory').execute('call', { content: 'blocked' }, undefined, undefined, ctx));
+    await assert.rejects(tools.get('recall_memory').execute('call', { id: '00000000-0000-4000-8000-000000000001' }, undefined, undefined, ctx));
+    await assert.rejects(tools.get('retrieve_memory').execute('call', {}, undefined, undefined, ctx));
+    await assert.rejects(tools.get('remove_memory').execute('call', { id: '00000000-0000-4000-8000-000000000001' }, undefined, undefined, ctx));
+
+    assert.deepEqual(records.map((record) => [record.operation, record.status, record.event, record.context.session_id]), [
+      ['retain', 'blocked', 'memory.retain_blocked', 'host-session-8'],
+      ['recall', 'blocked', 'memory.recall_blocked', 'host-session-8'],
+      ['retrieve', 'blocked', 'memory.retrieve_blocked', 'host-session-8'],
+      ['remove', 'blocked', 'memory.remove_blocked', 'host-session-8'],
+    ]);
+    assert.deepEqual(records.map((record) => [record.duration_ms, record.error]), [
+      [null, null], [null, null], [null, null], [null, null],
+    ]);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('Pi tools log sanitized core failures without changing the thrown error', async () => {
+  const cwd = temporaryDirectory('nmnm-pi-tools-failed-logs-');
+  const records = [];
+  const logger = createPiLogger({ enabled: true, sink: (record) => records.push(record) });
+  const ctx = {
+    cwd,
+    isProjectTrusted: () => true,
+    sessionManager: { getSessionId: () => 'host-session-9' },
+  };
+  try {
+    const tools = registeredTools({ logger });
+    await assert.rejects(
+      tools.get('retain_memory').execute('call', { content: '' }, undefined, undefined, ctx),
+      /content must be a non-empty string/i,
+    );
+
+    assert.deepEqual(records.map((record) => ({
+      operation: record.operation,
+      status: record.status,
+      event: record.event,
+      context: record.context,
+      duration_ms: typeof record.duration_ms,
+      error: record.error,
+    })), [{
+      operation: 'retain',
+      status: 'failed',
+      event: 'memory.retain_failed',
+      context: { session_id: 'host-session-9' },
+      duration_ms: 'number',
+      error: {
+        kind: 'unknown',
+        code: 'retain_failed',
+        message: 'Memory retention failed',
+        retryable: false,
+      },
+    }]);
+    assert.equal(JSON.stringify(records).includes('content must be a non-empty string'), false);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('a throwing diagnostic sink does not change successful or failed tool operations', async () => {
+  const cwd = temporaryDirectory('nmnm-pi-tools-sink-failure-');
+  const logger = createPiLogger({ enabled: true, sink: () => { throw new Error('private sink failure'); } });
+  const tools = registeredTools({ logger });
+  const ctx = { cwd, isProjectTrusted: () => true };
+  try {
+    const retained = JSON.parse((await tools.get('retain_memory').execute('call', {
+      content: 'Sink failure must not block retention',
+    }, undefined, undefined, ctx)).content[0].text);
+    const recalled = await tools.get('recall_memory').execute('call', { id: retained.id }, undefined, undefined, ctx);
+    assert.equal(JSON.parse(recalled.content[0].text).id, retained.id);
+    await assert.rejects(
+      tools.get('retain_memory').execute('call', { content: '' }, undefined, undefined, ctx),
+      /content must be a non-empty string/i,
+    );
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

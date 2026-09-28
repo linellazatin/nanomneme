@@ -39,16 +39,24 @@ function normalizedReinjection(value) {
   };
 }
 
-function normalizedSettings(value) {
+function normalizedLogging(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('Pi memory logging must be an object');
+  if (value.enabled !== undefined && typeof value.enabled !== 'boolean') throw new TypeError('Pi memory logging enabled must be a boolean');
+  return value.enabled === undefined ? {} : { enabled: value.enabled };
+}
+
+function normalizedSettings(value, { includeLogging = false } = {}) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('Pi memory settings must be an object');
   const budget = value.injection_budget;
   if (budget !== undefined && (!Number.isSafeInteger(budget) || budget < 0)) throw new TypeError('Pi memory injection_budget must be a non-negative integer');
   const autoretention = value.autoretention;
   const reinjection = value.reinjection;
+  const logging = includeLogging ? value.logging : undefined;
   return {
     ...(budget === undefined ? {} : { injection_budget: budget }),
     ...(reinjection === undefined ? {} : { reinjection: normalizedReinjection(reinjection) }),
     ...(autoretention === undefined ? {} : { autoretention: normalizedAutoretention(autoretention) }),
+    ...(logging === undefined ? {} : { logging: normalizedLogging(logging) }),
   };
 }
 
@@ -79,12 +87,12 @@ export function pinsPath({ cwd, home = homedir(), store }) {
   throw new TypeError('store must be project or global');
 }
 
-export function readSettings(path) {
+export function readSettings(path, { includeLogging = false } = {}) {
   if (!existsSync(path)) return {};
   const errors = [];
   const value = parse(readFileSync(path, 'utf8'), errors, { allowTrailingComma: true, disallowComments: false });
   if (errors.length) throw new TypeError('Pi memory settings contain invalid JSONC');
-  return normalizedSettings(value);
+  return normalizedSettings(value, { includeLogging });
 }
 
 export function readPins(path) {

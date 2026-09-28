@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildMemoryIndex, pin, pinsPath, readPins, readSettings, settingsPath, unpin, writePins } from '../src/context.js';
+import { buildMemoryIndex, pin, piAgentDir, pinsPath, readPins, readSettings, settingsPath, unpin, writePins } from '../src/context.js';
 import { runMemory } from '../src/store.js';
 
 function temporaryDirectory(name) {
@@ -35,6 +35,43 @@ test('keeps JSONC settings and JSON pins in their requested project and global l
     assert.equal(globalSettings, join(agentDir, 'nmnm.jsonc'));
     assert.equal(projectPins, join(project, '.nanomneme', 'nmnm-pi.json'));
     assert.equal(globalPins, join(home, '.local', 'share', 'nanomneme', 'nmnm-pi.json'));
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('resolves a custom global Pi agent directory for logging settings', () => {
+  assert.equal(piAgentDir({ home: '/isolated/home', env: { PI_CODING_AGENT_DIR: '/isolated/pi-agent' } }), '/isolated/pi-agent');
+});
+
+test('validates the optional logging opt-in setting', () => {
+  const home = temporaryDirectory('nmnm-pi-logging-settings-');
+  const path = join(home, 'nmnm.jsonc');
+  try {
+    writeFileSync(path, '{ "logging": { "enabled": true } }\n');
+    assert.deepEqual(readSettings(path, { includeLogging: true }), { logging: { enabled: true } });
+    writeFileSync(path, '{ "logging": { "enabled": false } }\n');
+    assert.deepEqual(readSettings(path, { includeLogging: true }), { logging: { enabled: false } });
+    writeFileSync(path, '{ "logging": { "enabled": "true" } }\n');
+    assert.throws(() => readSettings(path, { includeLogging: true }), /logging enabled must be a boolean/);
+    writeFileSync(path, '{ "logging": [] }\n');
+    assert.throws(() => readSettings(path, { includeLogging: true }), /logging must be an object/);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('invalid logging fields cannot disrupt memory context', () => {
+  const project = temporaryDirectory('nmnm-pi-logging-project-');
+  const home = temporaryDirectory('nmnm-pi-logging-home-');
+  const agentDir = join(home, 'pi-agent');
+  try {
+    mkdirSync(join(project, '.nanomneme'));
+    mkdirSync(agentDir);
+    writeFileSync(settingsPath({ cwd: project, agentDir, store: 'project' }), '{ "logging": { "enabled": "invalid" } }');
+    writeFileSync(settingsPath({ cwd: project, agentDir, store: 'global' }), '{ "logging": [], "injection_budget": 500 }');
+    assert.equal(buildMemoryIndex({ cwd: project, home, agentDir }).budget, 500);
   } finally {
     rmSync(project, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });

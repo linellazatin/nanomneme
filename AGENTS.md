@@ -1,51 +1,62 @@
-# Nanomneme Repository Guide
+# nanomneme Repository Guide
 
 ## What this is
 
-Nanomneme is a local, deterministic memory system for coding agents. Canonical memory records live in SQLite and are exposed through a reusable core library, a CLI, and thin Claude Code, OpenCode, and Pi adapters. It has no LLM, embeddings, server, or network dependency. Node.js 22.13+ is required for ESM and built-in `node:sqlite` with FTS5.
+nanomneme (`nmnm`) is a small, deterministic SQLite core for coding-agent memory. It is intended to preserve useful context across sessions without requiring an opaque service.
+
+The repository includes the memory core and CLI packages, adapters for supported coding agents, shared utilities, scripts, tests, documentation, and external-data tooling.
 
 ## Commands
 
+Run the complete test suite:
+
 ```sh
-npm install
 npm test
-node packages/nmnm-cli/bin/nmnm.js --help
-node packages/nmnm-cli/bin/nmnm.js export --out memory.jsonl
-npm pack --dry-run --workspace @openlines/nmnm-core --workspace @openlines/nmnm-cli
-pi -e ./adapters/pi/extensions/index.js
 ```
 
-`npm test` runs Node's built-in test runner across core, CLI, and all adapter tests. There are no configured build, lint, or typecheck scripts.
+This first verifies generated logger output, then runs Node’s built-in test runner across scripts, shared logger tests, package tests, adapter tests, and top-level tests.
+
+Check that the checked-in Logslines snapshot and provenance exactly match the selected upstream release tag:
+
+```sh
+npm run external:check -- v0.1.0
+```
+
+This command fetches the tagged upstream files and compares their contents and hashes with the local snapshot. The offline pinned-hash test runs under `npm test` and CI; CI does not fetch external Logslines sources.
+
+Update the external Logslines source and SHA-256 provenance to a selected release tag:
+
+```sh
+npm run external:update -- v0.1.0
+```
 
 ## Architecture
 
-- `packages/nmnm-core/src/index.js` owns the SQLite schema, validation, memory lifecycle, JSONL portability, verification, and FTS repair.
-- `packages/nmnm-cli/bin/nmnm.js` implements the `nmnm` command.
-- `adapters/pi/` is a private Pi extension package; `extensions/index.js` is its entry point.
-- `adapters/claude/` provides a Claude Code plugin with command, hooks, MCP server, skill guidance, and adapter source.
-- `adapters/opencode/` provides an OpenCode plugin, bridge, browser UI, and TUI integration.
-- Tests sit beside their components under `packages/*/test/` and `adapters/*/test/`.
-
-Keep core independent of CLI parsing, harness behavior, HTTP, MCP, embeddings, and LLM providers. Adapters must call the core API rather than write SQLite directly or parse CLI output.
-
-## Configuration and installation
-
-The root workspace contains `packages/*` and `adapters/*`. Core and CLI are publishable packages; adapters are private and depend on a matching core version. Publish core before CLI.
-
-The CLI default store is `./.nanomneme/memory.db`; `--global` selects the user-global database. Pi configuration and pins are adapter-owned files outside SQLite. Claude Code plugin metadata lives in `adapters/claude/.claude-plugin/`; the repository marketplace is `.claude-plugin/marketplace.json`.
+- `packages/` contains the memory core, CLI, and related package code.
+- `adapters/` contains integrations for coding-agent environments, including Pi, OpenCode, Claude, and Codex.
+- `shared/` contains shared implementation and tests, including the logger.
+- `scripts/` contains repository tooling such as logger generation checks and external data maintenance.
+- `test/` contains top-level tests.
+- `docs/` and `research/` contain documentation and research material.
+- `external/` contains externally sourced material managed by the external check/update scripts.
 
 ## Testing and operational quirks
 
-Use `node:test` and `node:assert/strict`, temporary databases, and isolated home directories for global-store tests. `memories` rows are canonical; tags and FTS rows are derived. Prefer CLI mutations because direct SQLite updates can desynchronize derived data.
+The `test` script requires logger-generated output to be current:
 
-Removal is soft and reversible by default; purge is irreversible. Validate canonical imports before opening a new destination. Use JSONL for transfer or restore; exact backups require a closed SQLite copy. Exports must not alias their source and must use same-directory atomic replacement. Do not commit `.nanomneme/`, personal global databases, or local Claude, OpenCode, or Pi settings and pin files.
+```sh
+node scripts/build-logger.js --check
+```
+
+If this check fails, inspect the logger build tooling before changing generated files. Run the narrowest relevant test while developing, then run `npm test` for cross-package changes.
+
+The repository includes SQLite database files and log files; inspect surrounding code and configuration before changing their handling. Keep secrets and generated output out of tracked configuration.
 
 ## Key files
 
-- `README.md`: project overview and quick start.
-- `docs/CORE_CLI_MANUAL.md`: core, CLI, data contract, and recovery details.
-- `adapters/pi/docs/PI_ADAPTER_MANUAL.md`: Pi setup, configuration, pins, and context behavior.
-- `adapters/claude/docs/CLAUDE_ADAPTER_MANUAL.md`: Claude Code setup and behavior.
-- `adapters/opencode/docs/OPENCODE_ADAPTER_MANUAL.md`: OpenCode setup and behavior.
-- `ROADMAP.md` and `CHANGELOG.md`: planned and released behavior.
-<!-- opl-init:fp 1dc870c284c9de41 -->
+- `README.md` — project overview and package/adaptor references.
+- `package.json` — repository scripts.
+- `scripts/build-logger.js` — logger generation/check tooling.
+- `scripts/external-logslines.js` — external data check and update tool.
+- `AGENTS.md` — additional repository-specific agent instructions.
+<!-- opl-init:fp c6e0ec4c308f16e7 -->

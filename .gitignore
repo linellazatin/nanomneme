@@ -8,3 +8,6 @@ research/
 coverage/
 plans/
 specs/
+
+## annoying
+.DS_Store

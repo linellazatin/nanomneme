@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.5.0 - Pi Logslines diagnostics
+
+### Added
+
+- `@openlines/nmnm-pi` 0.3.0 adds opt-in `logslines/v1` diagnostics for the model-facing retain, recall, retrieve, and remove tools. The shared logger and Logslines runtime are bundled into Pi; enable logging in global Pi settings. Each terminal 4R outcome carries the Pi host session ID when supplied, operation timing where meaningful, a stable event, and a normalized outcome.
+  - Added dedicated Pi logger and tool-boundary regression coverage for successful, empty, not-found, blocked, and failed outcomes.
+  - Added a complete Pi Logslines reference: the closed 12-field record shape, fixed service identity, session correlation, duration rules, event catalog, normalized failure shape, privacy boundary, append-only global Nanomneme JSON Lines file, and current scope.
+  - Logging is contained so an emitter, sink, validation, serialization, or session-ID lookup failure does not alter model-tool memory behavior.
+  - Pi session and tools share a lazy logger; `/reload` re-reads global logging settings without adding session records.
+  - Browser Pin, Unpin, and confirmed soft Remove now emit one sanitized outcome (`ok`, `not_found`, or `failed`) per attempted action; navigation and canceled removal emit none. Browser messages name the memory action; the event identifies its origin.
+  - Explicit `/memory` pin, unpin, and soft remove emit separate sanitized outcomes. Ambiguous removal is `blocked`, absent pins on unpin are `not_found`, and read-only commands emit none.
+  - Logslines now ships as a checked-in `external/logslines/` source snapshot selected by upstream Git tag `v0.1.0`, replacing the sibling `file:` npm build dependency. Maintainers explicitly validate or refresh the snapshot; CI and Pi installation do not fetch it, and the generated Pi runtime includes its MIT attribution.
+  - Hardened `logslines` diagnostics storage with an owner-only `logs/` directory and owner-only JSONL files, tightening existing logs on first use. 
+    - Added SHA-256 provenance for the checked-in logslines source; maintainer checks compare the snapshot with the selected upstream release, and offline pinned-hash checks run in CI.
+
 ## 0.4.0 - Codex adapter prototype
 
 ### New

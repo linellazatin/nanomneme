@@ -16,16 +16,16 @@ npm test
 
 This first verifies generated logger output, then runs Node’s built-in test runner across scripts, shared logger tests, package tests, adapter tests, and top-level tests.
 
-Check external logs/lines data:
+Check the external Logslines source selected by release tag:
 
 ```sh
-npm run external:check
+npm run external:check -- v0.1.0
 ```
 
-Update external logs/lines data:
+Update the external Logslines source to a selected release tag:
 
 ```sh
-npm run external:update
+npm run external:update -- v0.1.0
 ```
 
 ## Architecture

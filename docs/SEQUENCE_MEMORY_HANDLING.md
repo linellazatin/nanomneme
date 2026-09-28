@@ -4,7 +4,7 @@ This document follows the operational path of a memory request, not the package 
 
 ## Shared core behavior
 
-Every interface selects one physical store before calling the core. Standard project storage is `<cwd>/.nanomneme/memory.db`; standard global storage is `~/.local/share/nanomneme/memory.db` on Linux and macOS. The CLI and direct core callers may also supply an explicit custom path. Each `open()` enables SQLite foreign keys, initializes a new schema or applies forward migrations on writable stores, and closes the connection after the operation.
+Each individual core call targets one physical store; CLI `retrieve --both` composes a project call followed by a global call. Standard project storage is `<cwd>/.nanomneme/memory.db`; standard global storage is `~/.local/share/nanomneme/memory.db` on Linux and macOS. The CLI and direct core callers may also supply an explicit custom path. Core `open()` enables SQLite foreign keys and returns a store handle; when creating a new store, it initializes the schema, and writable opens apply forward migrations. Callers close the handle after the operation.
 
 `retain` creates a UUID v4 record or patches a known ID. A retain transaction writes the canonical `memories` row, replaces normalized `memory_tags` rows, and synchronizes the FTS5 `memories_fts` row by SQLite rowid. A patch clears `removed_at`, thereby restoring a soft-removed memory. `recall` and `retrieve` operate on active records; reads are generally opened read-only by adapters to avoid creating a missing store. `remove` is soft by default: it removes the FTS row and timestamps the canonical row. Only the core API and CLI expose purge. `retrieve` joins FTS5 only when a text query exists and ranks within one database using BM25.
 
@@ -120,7 +120,7 @@ Diagnostics observe completed or blocked operations; they never supply memory be
 
 ## Pi adapter
 
-**Implemented path:** `adapters/pi/src/tools.js` registers the four model-facing tools. It maps retain scope or other-tool store parameters to the selected project/global store, rejects untrusted project operations, adds `metadata.source: "pi"` only on new retains, uses bounded tool responses, and queues a future context refresh after a successful retain/remove. `adapters/pi/src/logger.js` records exactly one terminal diagnostic outcome when logging is globally enabled.
+**Implemented path:** `adapters/pi/src/tools.js` registers the four model-facing tools. It maps retain scope or other-tool store parameters to the selected project/global store, rejects untrusted project operations, adds `metadata.source: "pi"` only on new retains, uses bounded tool responses, and queues a future context refresh after a successful retain/remove. `adapters/pi/src/logger.js` attempts to emit one terminal diagnostic outcome per instrumented 4R execution when logging is enabled.
 
 ```mermaid
 sequenceDiagram

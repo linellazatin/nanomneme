@@ -11,8 +11,9 @@ const { version: piTuiVersion } = require('@earendil-works/pi-tui/package.json')
 
 // Floor the adapter's loader-provided host dependency at the current Pi host
 // release. Bump this together with the Pi host version so the lockfile cannot
-// silently fall back to an older `@earendil-works/pi-tui` baseline.
-const MIN_PI_TUI = [0, 87, 0];
+// silently fall back to an older `@earendil-works/pi-tui` baseline. The
+// published compatibility floor stays at Pi 0.87.0; this guards the test host.
+const MIN_PI_TUI = [0, 99, 1];
 
 function versionParts(version) {
   return version.split('.').map((part) => Number.parseInt(part, 10));

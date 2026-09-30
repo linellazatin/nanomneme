@@ -9,7 +9,7 @@ const service = {
   namespace: 'openlines',
   name: 'nanomneme',
   component: 'nmnm-pi',
-  version: '0.3.0',
+  version: '0.3.1',
 };
 
 test('records a successful retention with a host session ID and no payload attributes', () => {

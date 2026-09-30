@@ -15,13 +15,13 @@ test('release metadata identifies the Logslines diagnostics release', () => {
   const claude = json(new URL('../adapters/claude/package.json', import.meta.url));
   const codex = json(new URL('../adapters/codex/package.json', import.meta.url));
   const opencode = json(new URL('../adapters/opencode/package.json', import.meta.url));
-  assert.equal(root.version, '0.5.0');
-  assert.equal(lock.version, '0.5.0');
+  assert.equal(root.version, '0.5.1');
+  assert.equal(lock.version, '0.5.1');
   assert.equal(lock.packages['adapters/codex'].name, '@openlines/nmnm-codex');
   assert.equal(lock.packages['node_modules/@openlines/nmnm-codex'].resolved, 'adapters/codex');
   assert.equal(core.version, '0.1.1');
   assert.equal(cli.version, '0.1.1');
-  assert.equal(pi.version, '0.3.0');
+  assert.equal(pi.version, '0.3.1');
   assert.equal(claude.name, '@openlines/nmnm-claude');
   assert.equal(claude.version, '0.1.2');
   assert.equal(codex.version, '0.1.0');
@@ -32,7 +32,7 @@ test('release metadata identifies the Logslines diagnostics release', () => {
   assert.equal(root.engines.node, '>=22.19.0');
   assert.equal(pi.engines.node, '>=22.19.0');
   assert.equal(root.devDependencies['@earendil-works/pi-coding-agent'], '>=0.87.0');
-  assert.equal(lock.packages['node_modules/@earendil-works/pi-coding-agent'].version, '0.87.1');
+  assert.equal(lock.packages['node_modules/@earendil-works/pi-coding-agent'].version, '0.99.1');
   assert.deepEqual(pi.peerDependencies, {
     '@earendil-works/pi-tui': '*',
     typebox: '*',

@@ -9,6 +9,11 @@
 ### Verification
 - Re-assessed against the Pi v0.99.0 and v0.99.1 changelogs and the installed host types: **NO BREAKING CHANGE** reaches `nmnm-pi`. All 97 Pi adapter tests pass on the v0.99.1 host, including the real extension-loader path and a `pi --mode rpc` load.
 
+### Security
+- Fixed both reachable `npm audit` findings in the lockfile: `fast-uri` 3.1.7 → 3.1.8 (GHSA-hrr3-gc8f-f4qj) and `ip-address` 10.7.0 → 10.7.2 (GHSA-j6r3-76f7-8jcv, GHSA-h3mg-xc3c-68pw). Each arrives only through the Claude adapter's `@modelcontextprotocol/sdk` tree (`ajv`, `express-rate-limit`); no published npm package ships either module, and Claude plugin users pick the patched copies up from the root lockfile.
+- Residual high finding `brace-expansion` 5.0.9 (GHSA-q2hr-2g5m-vwhr, GHSA-qhr7-859c-m2p7, GHSA-6j4f-fj2g-mc7p; patched in 5.0.12) is dev-only and not fixable from this repo: Pi's published `npm-shrinkwrap.json` pins it inside `@earendil-works/pi-coding-agent`, so neither `npm update` nor a root `overrides` entry can move it. It appears in no published tarball. It clears when Pi bumps the pin.
+- CI and release gates now block on the shipped tree (`npm audit --audit-level=high --omit=dev`) and report the full tree as an informational step, so the upstream dev-host pin stays visible without holding a release.
+
 ## 0.5.0 - Pi Logslines diagnostics
 
 ### Added

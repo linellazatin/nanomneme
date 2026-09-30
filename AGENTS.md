@@ -52,6 +52,8 @@ If this check fails, inspect the logger build tooling before changing generated 
 
 The repository includes SQLite database files and log files; inspect surrounding code and configuration before changing their handling. Keep secrets and generated output out of tracked configuration.
 
+Dependency auditing is scoped to what ships. CI and release block on `npm audit --audit-level=high --omit=dev` and run the full-tree audit as an informational step. The remaining high finding, `brace-expansion` inside `@earendil-works/pi-coding-agent`, is pinned by Pi's own published `npm-shrinkwrap.json`; neither `npm update` nor a root `overrides` entry can move it, so do not add one — it waits on a Pi release.
+
 ## Key files
 
 - `README.md` — project overview and package/adaptor references.

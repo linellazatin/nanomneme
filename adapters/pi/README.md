@@ -4,9 +4,11 @@
 
 [![nmnm-pi version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-pi?label=pi&logo=npm&color=ffffe0)](https://www.npmjs.com/package/@openlines/nmnm-pi) [![nmnm-pi downloads](https://img.shields.io/npm/dt/@openlines/nmnm-pi?label=downloads&logo=npm&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-pi)
 
+[![gh release](https://img.shields.io/github/v/release/linellazatin/nanomneme?label=nanomneme&logo=github&color=ffffe0)](https://github.com/linellazatin/nanomneme)
+
 </div>
 
-Pi package for the [nanomneme](https://github.com/linellazatin/nanomneme) SQLite memory adapter. It imports `@openlines/nmnm-core` directly and never shells out to the CLI.
+Pi package for the [nanomneme](https://nanomneme.openlines.dev) SQLite memory adapter. It imports `@openlines/nmnm-core` directly and never shells out to the CLI.
 
 ## Features
 
@@ -34,7 +36,7 @@ Pi package for the [nanomneme](https://github.com/linellazatin/nanomneme) SQLite
 
 ## Quickstart
 
-Version 0.3.0 targets Pi 0.87.0 or newer and Node.js 22.19 or newer. Install it globally with Pi:
+Version 0.3.1 targets Pi 0.87.0 or newer, verified through Pi 0.99.1, and Node.js 22.19 or newer. Install it globally with Pi:
 
 ```sh
 pi install npm:@openlines/nmnm-pi
@@ -52,6 +54,6 @@ To add this checkout as a project-local Pi package:
 pi install -l "$(pwd)/adapters/pi"
 ```
 
-New `retain_memory` entries record `metadata.source` as `"pi"`; ID-based patches preserve an existing source. In an untrusted Pi project, automatic context reads only global settings, pins, and memory. Model-facing project operations are rejected, global operations continue, and explicit user `/memory` project commands remain available. Oversized successful tool results return valid bounded summary JSON without changing the canonical stored record. Retain scope selects the matching write store: omit it for project or use `scope: "global"` for global. The browser and `/memory list` can show all records or Pi-source records. The model-facing `remove_memory` tool and `/memory remove` are soft-only; irreversible purge remains an explicit CLI operation. Run `/memory` or `/memory browse` for the model-free custom browser: left/right changes Status, All, Project, and Global tabs. Record details remain in a native action dialog; search and source controls remain in each store tab. `/memory status` remains available for an on-demand card. Explicit list, refresh, pin, unpin, and soft-remove subcommands remain available.
+Pi settings and pins are adapter-owned files outside SQLite. First load creates neither: `nmnm.jsonc` is optional and user-authored, and `nmnm-pi.json` appears only after a pin change. New `retain_memory` entries record `metadata.source` as `"pi"`; ID-based patches preserve an existing source. In an untrusted Pi project, automatic context reads only global settings, pins, and memory. Model-facing project operations (e.g. model tools) are rejected, global operations continue, and explicit user `/memory` project commands remain available. Oversized successful tool results return valid bounded summary JSON without changing the canonical stored record. Optional `autoretention` only guides the active model's `retain_memory`; disabled-by-default `reinjection` can rebuild the same context every five user prompts. Retain scope selects the matching write store: omit it for project or use `scope: "global"` for global. The browser and `/memory list` can show all records or Pi-source records. The model-facing `remove_memory` tool and `/memory remove` are soft-only; irreversible purge remains an explicit CLI operation. Run `/memory` or `/memory browse` for the model-free custom browser: left/right changes Status, All, Project, and Global tabs. Record details remain in a native action dialog; search and source controls remain in each store tab. `/memory status` remains available for an on-demand card. Explicit list, refresh, pin, unpin, and soft-remove subcommands remain available.
 
 See the [Pi Adapter Manual](docs/PI_ADAPTER_MANUAL.md) for npm, Git, and local installation, tools, JSONC settings, pins, list and removal controls, native-read behavior, reinjection, and transient index lifecycle.

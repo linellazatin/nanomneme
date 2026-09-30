@@ -19,6 +19,13 @@
 [![nmnm-claude version](https://img.shields.io/badge/claude-v0.1.2-orange?logo=claude)](https://github.com/linellazatin/nanomneme/tree/main/adapters/claude)
 [![nmnm-codex version](https://img.shields.io/badge/codex-v0.1.0-black?logo=codex)](https://github.com/linellazatin/nanomneme/tree/main/adapters/codex)
 
+>
+> ### v0.5.1 (30 Sept 2026) - **pi adapter v0.3.1** : Refreshed Pi development host to `@earendil-works/pi-coding-agent` `v0.99.1` in the lockfile. The compatibility range stays `>=0.87.0` (no v0.99-only API); `MIN_PI_TUI` now floors at v0.99.1 so the lockfile cannot fall back silently.
+> see [CHANGELOG](CHANGELOG.md) for more details.
+>
+
+<img src="docs/img/nanomneme-logo-dark-accent.svg" width="25%" alt="nmnm logo">
+
 </div>
 
 nanomneme is a small, deterministic SQLite core for coding-agent memory: useful context survives a session without becoming an opaque service. Inspired by [`openpi-memory`](https://github.com/linellazatin/openpi-memory) and [`openclaude-memory`](https://github.com/linellazatin/openclaude-memory), and their demonstration that memory can persist in inspectable files, it replaces per-harness memory formats with one shared system for `Pi`, `Claude Code`, Codex, and future adapters.
@@ -144,20 +151,12 @@ The tarball is for isolated artifact validation; use the repo-local `.agents/plu
 
 The CLI defaults to `./.nanomneme/memory.db`. `--global` uses `~/.local/share/nanomneme/memory.db` on Linux and macOS. Standard `retain` routes derive the matching scope; custom `--db` retains require `--scope project|global`. `retrieve --both` composes project results before global results; `(store, id)` identifies a retrieval item.
 
-Try the Pi adapter directly from a checkout:
-
-```sh
-pi -e ./adapters/pi/extensions/index.js
-```
-
-Pi settings and pins are adapter-owned files outside SQLite. First load creates neither: `nmnm.jsonc` is optional and user-authored, and `nmnm-pi.json` appears only after a pin change. The first prompt receives a bounded transient index, rebuilt after successful compaction or memory mutations. In an untrusted Pi project, automatic context is global-only and project files are not read; project model tools are refused, while explicit user `/memory` commands remain available. Optional `autoretention` only guides the active model's `retain_memory`; disabled-by-default `reinjection` can rebuild the same context every five user prompts. Direct controls provide a project-first `/memory list`, reversible ambiguity-safe `/memory remove`, and store-validated `/memory pin`. Only `retain_memory` creates a missing database; native reads and removal leave missing stores absent. See the Pi manual for the full lifecycle.
-
 ## Documentation
 
 | Document | Owns |
 |---|---|
-| [Core and CLI Manual](docs/CORE_CLI_MANUAL.md) | Core API, CLI, data contract, agent use, portability, and recovery. |
 | [Architecture](docs/ARCHITECTURE.md) | Component boundaries, Pi diagnostics build/runtime path, SQLite persistence lifecycle, and ER model. |
+| [Core and CLI Manual](docs/CORE_CLI_MANUAL.md) | Core API, CLI, data contract, agent use, portability, and recovery. |
 | [Core README](packages/nmnm-core/README.md) | Core package installation and API discovery. |
 | [CLI README](packages/nmnm-cli/README.md) | CLI package installation and command discovery. |
 | [Pi quick start](adapters/pi/README.md) | Package-local Pi entry point. |
@@ -168,16 +167,23 @@ Pi settings and pins are adapter-owned files outside SQLite. First load creates 
 | [Codex Adapter Manual](adapters/codex/docs/CODEX_ADAPTER_MANUAL.md) | Codex local-prototype installation, trusted hook, shell-backed 4Rs, and token boundaries. |
 | [OpenCode quick start](adapters/opencode/README.md) | Package-local OpenCode server plugin entry point. |
 | [OpenCode Adapter Manual](adapters/opencode/docs/OPENCODE_ADAPTER_MANUAL.md) | OpenCode plugin install, native tools, transient injection, the `nmnm-opencode` CLI, the TUI memory browser, pins, configuration, and compatibility probes. |
-| [Changelog](CHANGELOG.md) | Released and unreleased changes. |
+| [Changelog](CHANGELOG.md) | Released changes. |
 
 `nmnm --help` is authoritative for CLI flags. Runtime code and tests are authoritative when documentation disagrees with behavior.
 
 ## Development
 
 ```sh
+# full node tests
 npm test
-pi -e ./adapters/pi/extensions/index.js --help
-npm pack --dry-run --workspace @openlines/nmnm-core --workspace @openlines/nmnm-cli --workspace @openlines/nmnm-codex ... <namespace>/<adapter/package>
+# npm package dry run for validation
+npm pack --dry-run --workspace @openlines/nmnm-core --workspace @openlines/nmnm-cli --workspace @openlines/nmnm-... <namespace>/<adapter/package>
 ```
 
 Logslines source is checked in under `external/logslines/`, selected by its upstream Git tag rather than an npm dependency. `npm run external:check -- v0.1.0` fetches that release and verifies the checked-in files and provenance match it; `npm run external:update -- v0.1.0` refreshes the snapshot and its SHA-256 manifest. After an update, run `node scripts/build-logger.js` to refresh Pi’s checked-in runtime, update the pinned hashes in `test/external-logslines.test.js`, then run `npm test`. The offline hash verification runs in CI through `npm test`; the two external commands do not run during CI, installation, or Pi package use. Run `npm test` before submitting changes. Do not commit `.nanomneme/`, personal global databases, or Pi settings and pin files containing local data. Use canonical JSONL for transfer and closed SQLite copies for exact backups. See the manuals for validation, recovery, and adapter-specific safety boundaries.
+
+### Noted for future work
+
+#### Pi adapter
+
+- pi v0.99 prints tool arguments for tools without a custom call renderer, defaults undocumented tool annotations to non-read-only and possibly destructive, and enables the `codemode`, `tool_search`, and `mcp` built-in extensions.

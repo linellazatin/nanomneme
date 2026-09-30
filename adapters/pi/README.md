@@ -4,9 +4,11 @@
 
 [![nmnm-pi version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-pi?label=pi&logo=npm&color=ffffe0)](https://www.npmjs.com/package/@openlines/nmnm-pi) [![nmnm-pi downloads](https://img.shields.io/npm/dt/@openlines/nmnm-pi?label=downloads&logo=npm&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-pi)
 
+[![gh release](https://img.shields.io/github/v/release/linellazatin/nanomneme?label=nanomneme&logo=github&color=ffffe0)](https://github.com/linellazatin/nanomneme)
+
 </div>
 
-Pi package for the [nanomneme](https://github.com/linellazatin/nanomneme) SQLite memory adapter. It imports `@openlines/nmnm-core` directly and never shells out to the CLI.
+Pi package for the [nanomneme](https://nanomneme.openlines.dev) SQLite memory adapter. It imports `@openlines/nmnm-core` directly and never shells out to the CLI.
 
 ## Features
 

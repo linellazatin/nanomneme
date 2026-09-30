@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.1 - Pi v0.99 host baseline refresh
+
+### Changed
+- Refreshed Pi development host to `@earendil-works/pi-coding-agent` **v0.99.1** in the lockfile. The compatibility range stays `>=0.87.0` (no v0.99-only API); `MIN_PI_TUI` now floors at v0.99.1 so the lockfile cannot fall back silently.
+- `@openlines/nmnm-pi` **v0.3.1**: documentation and test baseline only, no runtime or memory-contract change.
+
+### Verification
+- Re-assessed against the Pi v0.99.0 and v0.99.1 changelogs and the installed host types: **NO BREAKING CHANGE** reaches `nmnm-pi`. All 97 Pi adapter tests pass on the v0.99.1 host, including the real extension-loader path and a `pi --mode rpc` load.
+
 ## 0.5.0 - Pi Logslines diagnostics
 
 ### Added

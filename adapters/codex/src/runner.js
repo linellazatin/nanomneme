@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { homedir, platform as currentPlatform } from 'node:os';
 import { join, resolve } from 'node:path';
 import { open } from '@openlines/nmnm-core';
-import { getMemoryLogger } from './logger.js';
+import { codexSessionId, getMemoryLogger } from './logger.js';
 
 const OPERATIONS = new Set(['retain', 'recall', 'retrieve', 'remove']);
 const EMPTY_RETRIEVAL = Object.freeze({ total: 0, items: [] });
@@ -49,7 +49,7 @@ export function handleRequest(request, { cwd = process.cwd(), home = homedir(), 
   if (!request || typeof request !== 'object' || Array.isArray(request)) throw new TypeError('request must be an object');
   const { operation, store = 'project' } = request;
   if (!OPERATIONS.has(operation)) throw new TypeError('operation must be retain, recall, retrieve, or remove');
-  return (logger ?? getMemoryLogger({ home, env })).run({ operation }, () => {
+  return (logger ?? getMemoryLogger({ home, env })).run({ operation, session_id: codexSessionId(env) }, () => {
     const input = requestInput(request.input ?? {});
     const path = databasePath({ cwd, home, platform, store });
 

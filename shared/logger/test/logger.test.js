@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -90,6 +91,39 @@ test('tightens the logs directory and existing JSONL files before appending', { 
     assert.equal(statSync(currentLog).mode & 0o777, 0o600);
     assert.equal(statSync(olderLog).mode & 0o777, 0o600);
     assert.equal(statSync(unrelatedFile).mode & 0o777, 0o644);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('concurrent processes append complete JSONL records to one component log', async () => {
+  const home = temporaryHome();
+  const path = join(home, '.local', 'share', 'nanomneme', 'logs', 'nmnm-pi.jsonl');
+  const workers = 16;
+  const program = `
+    import { createProjectLogger } from ${JSON.stringify(new URL('../sink.js', import.meta.url).href)};
+    const logger = createProjectLogger({
+      service: ${JSON.stringify(service)},
+      enabled: true,
+      home: process.env.NMNM_TEST_HOME,
+    });
+    const record = ${JSON.stringify(input)};
+    record.context.session_id = process.env.NMNM_TEST_SESSION;
+    process.exitCode = logger.emit(record) ? 0 : 1;
+  `;
+  const run = (session) => new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ['--input-type=module', '--eval', program], {
+      env: { ...process.env, NMNM_TEST_HOME: home, NMNM_TEST_SESSION: session },
+      stdio: 'ignore',
+    });
+    child.once('error', reject);
+    child.once('exit', (code) => code === 0 ? resolve() : reject(new Error(`writer exited ${code}`)));
+  });
+  try {
+    await Promise.all(Array.from({ length: workers }, (_, index) => run(`writer-${index}`)));
+    const records = readFileSync(path, 'utf8').trim().split('\n').map(JSON.parse);
+    assert.equal(records.length, workers);
+    assert.deepEqual(new Set(records.map((record) => record.context.session_id)), new Set(Array.from({ length: workers }, (_, index) => `writer-${index}`)));
   } finally {
     rmSync(home, { recursive: true, force: true });
   }

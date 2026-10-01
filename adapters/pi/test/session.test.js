@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { open } from '@openlines/nmnm-core';
+import fs from 'node:fs';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pinsPath, readPins, settingsPath, writePins } from '../src/context.js';
@@ -887,6 +889,25 @@ test('memory browser pins and unpins the exact selected store', async () => {
   }
 });
 
+test('memory browser refuses a pin while another writer holds the lock', async () => {
+  const project = temporaryDirectory('nmnm-pi-browser-lock-project-');
+  const home = temporaryDirectory('nmnm-pi-browser-lock-home-');
+  try {
+    const commands = new Map();
+    const retained = runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Locked browser pin' } });
+    const path = pinsPath({ cwd: project, home, store: 'project' });
+    writeFileSync(`${path}.lock`, JSON.stringify({ pid: process.pid }));
+    const scripted = scriptedUi({ selections: [(options) => options.find((option) => option.includes('Locked browser pin')), 'Pin'] });
+    registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, { home, platform: 'darwin' });
+
+    await assert.rejects(commands.get('memory').handler('browse', { cwd: project, hasUI: true, ui: scripted.ui }), /being updated/);
+    assert.deepEqual(readPins(path), []);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test('memory browser cancellation leaves the selected memory active', async () => {
   const project = temporaryDirectory('nmnm-pi-browser-cancel-project-');
   const home = temporaryDirectory('nmnm-pi-browser-cancel-home-');
@@ -1359,6 +1380,41 @@ test('memory pin refuses to overwrite pins held by another writer', async () => 
     );
     assert.deepEqual(readPins(path), ['existing-pin']);
   } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('command pin logs a sanitized failure when post-write lock cleanup fails', async (t) => {
+  const project = temporaryDirectory('nmnm-pi-command-cleanup-project-');
+  const home = temporaryDirectory('nmnm-pi-command-cleanup-home-');
+  const records = [];
+  const realRemove = fs.rmSync;
+  try {
+    const commands = new Map();
+    const memory = runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Cleanup failure pin' } });
+    const path = pinsPath({ cwd: project, home, store: 'project' });
+    t.mock.method(fs, 'rmSync', (target, ...args) => {
+      if (target === `${path}.lock`) throw Object.assign(new Error('lock cleanup failed'), { code: 'EBUSY' });
+      return realRemove(target, ...args);
+    });
+    syncBuiltinESMExports();
+    registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, {
+      home, platform: 'darwin', logger: createPiLogger({ enabled: true, sink: (record) => records.push(record) }),
+    });
+
+    await assert.rejects(
+      commands.get('memory').handler(`pin ${memory.id}`, { cwd: project, ui: { notify: () => {} } }),
+      error => error?.code === 'NMNM_PIN_LOCK_CLEANUP_FAILED' && /pins were updated.*cleanup failed/i.test(error.message),
+    );
+    assert.deepEqual(readPins(path), [memory.id]);
+    assert.equal(existsSync(`${path}.lock`), true);
+    assert.deepEqual(records.map(({ operation, status }) => [operation, status]), [['command_pin', 'failed']]);
+    assert.deepEqual(records[0].error, { kind: 'unknown', code: 'command_pin_failed', message: 'Command pin failed', retryable: false });
+    assert.equal(JSON.stringify(records).includes(memory.id), false);
+  } finally {
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
     rmSync(project, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });
   }

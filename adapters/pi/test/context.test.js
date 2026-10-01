@@ -279,7 +279,7 @@ test('updatePins reports retryable contention when the owner releases the lock',
   }
 });
 
-test('updatePins releases its lock when temporary cleanup fails', (t) => {
+test('updatePins reports a safe cleanup failure after committing pins', (t) => {
   const home = temporaryDirectory('nmnm-pi-pins-cleanup-failure-');
   const path = join(home, 'nmnm-pi.json');
   const lock = `${path}.lock`;
@@ -292,12 +292,30 @@ test('updatePins releases its lock when temporary cleanup fails', (t) => {
       return realRemove(target, ...args);
     });
     syncBuiltinESMExports();
-    assert.throws(() => updatePins(path, (pins) => pin(pins, 'next')), error => error === failure);
+    assert.throws(
+      () => updatePins(path, (pins) => pin(pins, 'next')),
+      error => error?.code === 'NMNM_PIN_LOCK_CLEANUP_FAILED' && /pins were updated.*cleanup failed/i.test(error.message),
+    );
     assert.equal(existsSync(lock), false);
     assert.deepEqual(readPins(path), ['existing', 'next']);
   } finally {
     t.mock.restoreAll();
     syncBuiltinESMExports();
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('updatePins releases the lock after a malformed pin file fails', () => {
+  const home = temporaryDirectory('nmnm-pi-pins-malformed-file-');
+  const path = join(home, 'nmnm-pi.json');
+  const lock = `${path}.lock`;
+  try {
+    writeFileSync(path, '{ invalid json');
+    assert.throws(() => updatePins(path, (pins) => pin(pins, 'next')), SyntaxError);
+    assert.equal(existsSync(lock), false);
+    writePins(path, ['existing']);
+    assert.deepEqual(updatePins(path, (pins) => pin(pins, 'next')), ['existing', 'next']);
+  } finally {
     rmSync(home, { recursive: true, force: true });
   }
 });

@@ -121,20 +121,26 @@ export function updatePins(path, update) {
   mkdirSync(dirname(path), { recursive: true });
   const { lock, descriptor } = acquirePinLock(path);
   const temporary = `${path}.${process.pid}.${Date.now()}.tmp`;
+  let committed = false;
   try {
     const next = normalizedPins(update(readPins(path)));
     writeFileSync(temporary, `${JSON.stringify(next, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
     renameSync(temporary, path);
+    committed = true;
     return next;
   } finally {
-    try {
-      rmSync(temporary, { force: true });
-    } finally {
-      try {
-        closeSync(descriptor);
-      } finally {
-        rmSync(lock, { force: true });
-      }
+    let cleanupError;
+    for (const cleanup of [
+      () => rmSync(temporary, { force: true }),
+      () => closeSync(descriptor),
+      () => rmSync(lock, { force: true }),
+    ]) {
+      try { cleanup(); } catch (error) { cleanupError ??= error; }
+    }
+    if (committed && cleanupError) {
+      const error = new Error('Nanomneme pins were updated, but cleanup failed. Stop Pi writers, remove the pin lock manually, then refresh or retry.', { cause: cleanupError });
+      error.code = 'NMNM_PIN_LOCK_CLEANUP_FAILED';
+      throw error;
     }
   }
 }

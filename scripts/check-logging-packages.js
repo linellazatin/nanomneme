@@ -13,7 +13,7 @@ export function assertLoggingContents(kind, files) {
   if (kind === 'codex') assert(files.some(path => path.includes('node_modules/jsonc-parser/') && path.endsWith('package.json')), 'missing bundled jsonc-parser');
 }
 
-export function checkLoggingPackages() {
+export function checkLoggingPackages({ prepareCodex = false } = {}) {
   const root = fileURLToPath(new URL('..', import.meta.url));
   const temporary = mkdtempSync(join(tmpdir(), 'nmnm-logging-packages-'));
   const npm = (args, cwd) => execFileSync('npm', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, HOME: temporary } });
@@ -47,11 +47,24 @@ export function checkLoggingPackages() {
     writeFileSync(join(pluginConsumer, 'package.json'), '{"private":true,"type":"module"}\n');
     npm([...install, join(temporary, plugin.filename)], pluginConsumer);
     execFileSync(process.execPath, ['--input-type=module', '-e', "import { getMemoryLogger } from './node_modules/@openlines/nmnm-codex/src/logger.js'; if (getMemoryLogger().run({operation:'retain'}, () => 7) !== 7) throw Error('logger');"], { cwd: pluginConsumer, env: { ...process.env, HOME: temporary }, stdio: 'pipe' });
+    if (prepareCodex) {
+      const source = join(root, 'adapters/codex');
+      const manifest = JSON.parse(readFileSync(join(source, '.codex-plugin/plugin.json'), 'utf8'));
+      const pkg = JSON.parse(readFileSync(join(source, 'package.json'), 'utf8'));
+      assert.equal(manifest.version, pkg.version, 'Codex plugin manifest version differs from package version');
+      cpSync(join(codex, 'node_modules'), join(source, 'node_modules'), {
+        recursive: true, dereference: true, filter: path => basename(path) !== '.package-lock.json',
+      });
+    }
     return packages.map(pkg => pkg.name).concat(plugin.name);
   } finally { rmSync(temporary, { recursive: true, force: true }); }
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  try { console.log(`Standalone logging packages verified: ${checkLoggingPackages().join(', ')}`); }
+  try {
+    const prepareCodex = process.argv.includes('--prepare-codex');
+    console.log(`Standalone logging packages verified: ${checkLoggingPackages({ prepareCodex }).join(', ')}`);
+    if (prepareCodex) console.log('Codex local plugin dependencies prepared in adapters/codex/node_modules; reinstall through its marketplace.');
+  }
   catch (error) { console.error(error.message); if (error.stderr) console.error(error.stderr.toString()); process.exitCode = 1; }
 }

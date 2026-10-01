@@ -1342,6 +1342,28 @@ test('command diagnostics ignore read-only and usage paths but report missing re
   }
 });
 
+test('memory pin refuses to overwrite pins held by another writer', async () => {
+  const project = temporaryDirectory('nmnm-pi-command-lock-project-');
+  const home = temporaryDirectory('nmnm-pi-command-lock-home-');
+  try {
+    const commands = new Map();
+    const memory = runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Locked pin target' } });
+    const path = pinsPath({ cwd: project, home, store: 'project' });
+    writePins(path, ['existing-pin']);
+    writeFileSync(`${path}.lock`, 'active');
+    registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, { home, platform: 'darwin' });
+
+    await assert.rejects(
+      commands.get('memory').handler(`pin ${memory.id}`, { cwd: project, ui: { notify: () => {} } }),
+      /being updated/,
+    );
+    assert.deepEqual(readPins(path), ['existing-pin']);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test('command pin failure preserves the error and emits one sanitized failure', async () => {
   const project = temporaryDirectory('nmnm-pi-command-failed-project-');
   const home = temporaryDirectory('nmnm-pi-command-failed-home-');

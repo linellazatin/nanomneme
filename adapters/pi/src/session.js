@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { matchesKey, truncateToWidth } from '@earendil-works/pi-tui';
 
-import { buildMemoryIndex, pin, piAgentDir, pinsPath, readPins, readSettings, settingsPath, unpin, writePins } from './context.js';
+import { buildMemoryIndex, pin, piAgentDir, pinsPath, readPins, readSettings, settingsPath, unpin, updatePins } from './context.js';
 import { getPiLogger, piSessionId } from './logger.js';
 import { databasePath, runMemory, supportsGlobalStore } from './store.js';
 
@@ -384,8 +384,7 @@ async function applyBrowserAction({ ctx, home, platform, refresh, logger, select
     if (action !== 'Remove' && !readActive()) { observation.setStatus('not_found'); return { message: missing }; }
     if (action === 'Pin' || action === 'Unpin') {
       const path = pinsPath({ cwd: ctx.cwd, home, store });
-      const pins = readPins(path);
-      writePins(path, action === 'Pin' ? pin(pins, memory.id) : unpin(pins, memory.id));
+      updatePins(path, (pins) => (action === 'Pin' ? pin(pins, memory.id) : unpin(pins, memory.id)));
       return { reason: action.toLowerCase(), message: `Nanomneme ${action.toLowerCase()}ned [${store}] ${memory.id}.` };
     }
     const result = existingStoreMemory({ cwd: ctx.cwd, home, platform, store, operation: 'remove', input: { id: memory.id, mode: 'soft' } });
@@ -581,8 +580,11 @@ export function registerPiMemory(pi, options = {}) {
               return { message: globalMemory ? `Nanomneme memory is global; use /memory pin global ${target.id}.` : `Nanomneme memory not found [${target.store}] ${target.id}.` };
             }
             const path = pinsPath({ cwd: ctx.cwd, home: options.home, store: target.store });
-            const pins = readPins(path);
-            writePins(path, action === 'pin' ? pin(pins, target.id) : unpin(pins, target.id));
+            let pins;
+            updatePins(path, (current) => {
+              pins = current;
+              return action === 'pin' ? pin(current, target.id) : unpin(current, target.id);
+            });
             observation.setStatus(action === 'unpin' && !pins.includes(target.id) ? 'not_found' : 'ok');
             return { reason: action, message: `Nanomneme ${action}ned [${target.store}] ${target.id}.` };
           });

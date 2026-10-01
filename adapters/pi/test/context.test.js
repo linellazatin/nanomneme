@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildMemoryIndex, pin, piAgentDir, pinsPath, readPins, readSettings, settingsPath, unpin, writePins } from '../src/context.js';
+import { buildMemoryIndex, pin, piAgentDir, pinsPath, readPins, readSettings, settingsPath, unpin, updatePins, writePins } from '../src/context.js';
 import { runMemory } from '../src/store.js';
 
 function temporaryDirectory(name) {
@@ -205,6 +205,28 @@ test('pins deduplicate and unpin removes only the requested ID', () => {
   const pinned = pin(pin([], 'one'), 'one');
   assert.deepEqual(pinned, ['one']);
   assert.deepEqual(unpin(pinned, 'one'), []);
+});
+
+test('updatePins preserves a held writer and recovers a stale lock', () => {
+  const home = temporaryDirectory('nmnm-pi-pins-lock-');
+  const path = join(home, 'nmnm-pi.json');
+  const lock = `${path}.lock`;
+  try {
+    writePins(path, ['existing']);
+    writeFileSync(lock, JSON.stringify({ pid: process.pid }));
+    assert.throws(() => updatePins(path, (pins) => pin(pins, 'lost-update')), /being updated/);
+    assert.deepEqual(readPins(path), ['existing']);
+
+    utimesSync(lock, new Date(0), new Date(0));
+    assert.throws(() => updatePins(path, (pins) => pin(pins, 'active-owner-update')), /being updated/);
+    writeFileSync(lock, JSON.stringify({ pid: 999_999_999 }));
+    utimesSync(lock, new Date(0), new Date(0));
+    assert.deepEqual(updatePins(path, (pins) => pin(pins, 'retained-update')), ['existing', 'retained-update']);
+    assert.deepEqual(readPins(path), ['existing', 'retained-update']);
+    assert.equal(existsSync(lock), false);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
 });
 
 test('buildMemoryIndex keeps project memory available when global storage is unsupported', () => {

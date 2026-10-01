@@ -24,7 +24,7 @@ SOFTWARE.
 */
 
 // shared/logger/sink.js
-import { appendFileSync, chmodSync, mkdirSync, readdirSync } from "node:fs";
+import { chmodSync, closeSync, mkdirSync, openSync, readdirSync, writeSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -170,9 +170,14 @@ function createProjectLogger({ service, enabled = false, home, sink, now } = {})
       }
       directorySecured = true;
     }
-    appendFileSync(path, `${JSON.stringify(record)}
-`, { encoding: "utf8", mode: 384 });
-    return true;
+    const line = Buffer.from(`${JSON.stringify(record)}
+`, "utf8");
+    const descriptor = openSync(path, "a", 384);
+    try {
+      return writeSync(descriptor, line) === line.length;
+    } finally {
+      closeSync(descriptor);
+    }
   };
   const logger = createLogger({ service, sink: sink === void 0 ? fileSink : sink, now });
   return { emit: (input) => safeComponent && logger.emit(input) };

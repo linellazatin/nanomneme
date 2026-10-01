@@ -1,4 +1,4 @@
-import { appendFileSync, chmodSync, mkdirSync, readdirSync } from 'node:fs';
+import { chmodSync, closeSync, mkdirSync, openSync, readdirSync, writeSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createLogger } from '../../external/logslines/src/logger.js';
@@ -25,8 +25,13 @@ export function createProjectLogger({ service, enabled = false, home, sink, now 
       }
       directorySecured = true;
     }
-    appendFileSync(path, `${JSON.stringify(record)}\n`, { encoding: 'utf8', mode: 0o600 });
-    return true;
+    const line = Buffer.from(`${JSON.stringify(record)}\n`, 'utf8');
+    const descriptor = openSync(path, 'a', 0o600);
+    try {
+      return writeSync(descriptor, line) === line.length;
+    } finally {
+      closeSync(descriptor);
+    }
   };
   const logger = createLogger({ service, sink: sink === undefined ? fileSink : sink, now });
   return { emit: (input) => safeComponent && logger.emit(input) };

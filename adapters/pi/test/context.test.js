@@ -209,7 +209,7 @@ test('pins deduplicate and unpin removes only the requested ID', () => {
   assert.deepEqual(unpin(pinned, 'one'), []);
 });
 
-test('updatePins preserves a held writer and recovers a stale lock', () => {
+test('updatePins preserves pins until a held lock is removed manually', () => {
   const home = temporaryDirectory('nmnm-pi-pins-lock-');
   const path = join(home, 'nmnm-pi.json');
   const lock = `${path}.lock`;
@@ -220,9 +220,10 @@ test('updatePins preserves a held writer and recovers a stale lock', () => {
     assert.deepEqual(readPins(path), ['existing']);
 
     utimesSync(lock, new Date(0), new Date(0));
-    assert.throws(() => updatePins(path, (pins) => pin(pins, 'active-owner-update')), /being updated/);
     writeFileSync(lock, JSON.stringify({ pid: 999_999_999 }));
-    utimesSync(lock, new Date(0), new Date(0));
+    assert.throws(() => updatePins(path, (pins) => pin(pins, 'retained-update')), /being updated/);
+    assert.deepEqual(readPins(path), ['existing']);
+    rmSync(lock);
     assert.deepEqual(updatePins(path, (pins) => pin(pins, 'retained-update')), ['existing', 'retained-update']);
     assert.deepEqual(readPins(path), ['existing', 'retained-update']);
     assert.equal(existsSync(lock), false);
@@ -231,22 +232,72 @@ test('updatePins preserves a held writer and recovers a stale lock', () => {
   }
 });
 
-test('updatePins recovers expired malformed ownership without stealing a fresh lock', () => {
+test('updatePins never reclaims malformed or exited ownership automatically', () => {
   const home = temporaryDirectory('nmnm-pi-pins-malformed-lock-');
   const path = join(home, 'nmnm-pi.json');
   const lock = `${path}.lock`;
   try {
     writePins(path, ['existing']);
-    for (const contents of ['', '{', '{}', '{"pid":0}', '{"pid":"invalid"}']) {
+    for (const contents of ['', '{', '{}', '{"pid":0}', '{"pid":"invalid"}', '{"pid":999999999}']) {
       writeFileSync(lock, contents);
+      utimesSync(lock, new Date(0), new Date(0));
       assert.throws(() => updatePins(path, (pins) => pin(pins, 'next')), /being updated/);
       assert.deepEqual(readPins(path), ['existing']);
-      utimesSync(lock, new Date(0), new Date(0));
-      assert.deepEqual(updatePins(path, (pins) => pin(pins, 'next')), ['existing', 'next']);
-      assert.equal(existsSync(lock), false);
-      writePins(path, ['existing']);
+      assert.equal(existsSync(lock), true);
+      rmSync(lock);
     }
   } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('updatePins reports retryable contention when the owner releases the lock', (t) => {
+  const home = temporaryDirectory('nmnm-pi-pins-release-race-');
+  const path = join(home, 'nmnm-pi.json');
+  const lock = `${path}.lock`;
+  const realOpen = fs.openSync;
+  try {
+    writePins(path, ['existing']);
+    writeFileSync(lock, JSON.stringify({ pid: process.pid }));
+    t.mock.method(fs, 'openSync', (target, flags, ...args) => {
+      if (target === lock && flags === 'wx') {
+        let error;
+        try { realOpen(target, flags, ...args); } catch (caught) { error = caught; }
+        rmSync(lock);
+        throw error;
+      }
+      return realOpen(target, flags, ...args);
+    });
+    syncBuiltinESMExports();
+    assert.throws(() => updatePins(path, (pins) => pin(pins, 'next')), /being updated/);
+    assert.deepEqual(readPins(path), ['existing']);
+    assert.equal(existsSync(lock), false);
+  } finally {
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('updatePins releases its lock when temporary cleanup fails', (t) => {
+  const home = temporaryDirectory('nmnm-pi-pins-cleanup-failure-');
+  const path = join(home, 'nmnm-pi.json');
+  const lock = `${path}.lock`;
+  const failure = Object.assign(new Error('temporary cleanup failed'), { code: 'EIO' });
+  const realRemove = fs.rmSync;
+  try {
+    writePins(path, ['existing']);
+    t.mock.method(fs, 'rmSync', (target, ...args) => {
+      if (String(target).endsWith('.tmp')) throw failure;
+      return realRemove(target, ...args);
+    });
+    syncBuiltinESMExports();
+    assert.throws(() => updatePins(path, (pins) => pin(pins, 'next')), error => error === failure);
+    assert.equal(existsSync(lock), false);
+    assert.deepEqual(readPins(path), ['existing', 'next']);
+  } finally {
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
     rmSync(home, { recursive: true, force: true });
   }
 });

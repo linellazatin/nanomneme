@@ -103,8 +103,8 @@ export function writePins(path, pins) {
 function pinLockOwnerIsAlive(lock) {
   let owner;
   try { owner = JSON.parse(readFileSync(lock, 'utf8')); }
-  catch { return true; }
-  if (!Number.isSafeInteger(owner?.pid) || owner.pid < 1) return true;
+  catch (error) { return !(error instanceof SyntaxError); }
+  if (!Number.isSafeInteger(owner?.pid) || owner.pid < 1) return false;
   try {
     process.kill(owner.pid, 0);
     return true;
@@ -117,7 +117,13 @@ function acquirePinLock(path) {
   const lock = `${path}.lock`;
   try {
     const descriptor = openSync(lock, 'wx', 0o600);
-    writeFileSync(descriptor, JSON.stringify({ pid: process.pid }));
+    try {
+      writeFileSync(descriptor, JSON.stringify({ pid: process.pid }));
+    } catch (error) {
+      try { closeSync(descriptor); } catch { /* Preserve the acquisition error. */ }
+      try { rmSync(lock, { force: true }); } catch { /* An expired malformed lock can be recovered later. */ }
+      throw error;
+    }
     return { lock, descriptor };
   } catch (error) {
     if (error?.code !== 'EEXIST') throw error;

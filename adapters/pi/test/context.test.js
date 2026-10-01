@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildMemoryIndex, pin, piAgentDir, pinsPath, readPins, readSettings, settingsPath, unpin, updatePins, writePins } from '../src/context.js';
@@ -225,6 +227,54 @@ test('updatePins preserves a held writer and recovers a stale lock', () => {
     assert.deepEqual(readPins(path), ['existing', 'retained-update']);
     assert.equal(existsSync(lock), false);
   } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('updatePins recovers expired malformed ownership without stealing a fresh lock', () => {
+  const home = temporaryDirectory('nmnm-pi-pins-malformed-lock-');
+  const path = join(home, 'nmnm-pi.json');
+  const lock = `${path}.lock`;
+  try {
+    writePins(path, ['existing']);
+    for (const contents of ['', '{', '{}', '{"pid":0}', '{"pid":"invalid"}']) {
+      writeFileSync(lock, contents);
+      assert.throws(() => updatePins(path, (pins) => pin(pins, 'next')), /being updated/);
+      assert.deepEqual(readPins(path), ['existing']);
+      utimesSync(lock, new Date(0), new Date(0));
+      assert.deepEqual(updatePins(path, (pins) => pin(pins, 'next')), ['existing', 'next']);
+      assert.equal(existsSync(lock), false);
+      writePins(path, ['existing']);
+    }
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('updatePins cleans up acquisition when writing lock ownership fails', (t) => {
+  const home = temporaryDirectory('nmnm-pi-pins-owner-failure-');
+  const path = join(home, 'nmnm-pi.json');
+  const original = Object.assign(new Error('ownership write failed'), { code: 'ENOSPC' });
+  const realWrite = fs.writeFileSync;
+  let descriptor;
+  try {
+    writePins(path, ['existing']);
+    t.mock.method(fs, 'writeFileSync', (file, ...args) => {
+      if (typeof file === 'number') { descriptor = file; throw original; }
+      return realWrite(file, ...args);
+    });
+    syncBuiltinESMExports();
+    assert.throws(() => updatePins(path, (pins) => pin(pins, 'next')), error => error === original);
+    assert.equal(existsSync(`${path}.lock`), false);
+    assert.throws(() => fs.fstatSync(descriptor), { code: 'EBADF' });
+    assert.deepEqual(readPins(path), ['existing']);
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
+    assert.deepEqual(updatePins(path, (pins) => pin(pins, 'next')), ['existing', 'next']);
+  } finally {
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
+    if (descriptor !== undefined) { try { fs.closeSync(descriptor); } catch {} }
     rmSync(home, { recursive: true, force: true });
   }
 });

@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { homedir, platform as currentPlatform } from 'node:os';
 import { join, resolve } from 'node:path';
 import { open } from '@openlines/nmnm-core';
+import { getMemoryLogger } from './logger.js';
 
 const OPERATIONS = new Set(['retain', 'recall', 'retrieve', 'remove']);
 const EMPTY_RETRIEVAL = Object.freeze({ total: 0, items: [] });
@@ -44,15 +45,17 @@ function callStore(path, options, operation, input) {
   }
 }
 
-export function handleRequest(request, { cwd = process.cwd(), home = homedir(), platform = currentPlatform() } = {}) {
+export function handleRequest(request, { cwd = process.cwd(), home = homedir(), platform = currentPlatform(), logger, env = process.env } = {}) {
   if (!request || typeof request !== 'object' || Array.isArray(request)) throw new TypeError('request must be an object');
   const { operation, store = 'project' } = request;
   if (!OPERATIONS.has(operation)) throw new TypeError('operation must be retain, recall, retrieve, or remove');
-  const input = requestInput(request.input ?? {});
-  const path = databasePath({ cwd, home, platform, store });
+  return (logger ?? getMemoryLogger({ home, env })).run({ operation }, () => {
+    const input = requestInput(request.input ?? {});
+    const path = databasePath({ cwd, home, platform, store });
 
-  if (operation === 'retain') return callStore(path, { create: true }, operation, retainInput(store === 'global' && input.scope === undefined ? { ...input, scope: 'global' } : input));
-  if (!existsSync(path)) return operation === 'retrieve' ? { ...EMPTY_RETRIEVAL } : null;
-  if (operation === 'remove') return callStore(path, { create: false }, operation, { id: input.id, mode: 'soft' });
-  return callStore(path, { create: false, readOnly: true }, operation, input);
+    if (operation === 'retain') return callStore(path, { create: true }, operation, retainInput(store === 'global' && input.scope === undefined ? { ...input, scope: 'global' } : input));
+    if (!existsSync(path)) return operation === 'retrieve' ? { ...EMPTY_RETRIEVAL } : null;
+    if (operation === 'remove') return callStore(path, { create: false }, operation, { id: input.id, mode: 'soft' });
+    return callStore(path, { create: false, readOnly: true }, operation, input);
+  });
 }

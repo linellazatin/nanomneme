@@ -1,16 +1,24 @@
 {
   "name": "@openlines/nmnm-core",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Deterministic local SQLite memory core for nanomneme",
   "type": "module",
-  "exports": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./logging": "./src/logging.js"
+  },
   "files": [
     "src/index.js",
+    "src/logging.js",
+    "src/logging-runtime.generated.js",
     "README.md",
     "LICENSE"
   ],
   "engines": {
     "node": ">=22.13.0"
+  },
+  "dependencies": {
+    "jsonc-parser": "3.3.1"
   },
   "license": "MIT",
   "publishConfig": {

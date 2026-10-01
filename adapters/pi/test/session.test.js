@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pinsPath, readPins, settingsPath, writePins } from '../src/context.js';
-import { createPiLogger } from '../src/logger.js';
+import { createPiLogger } from './logger-helper.js';
 import { registerPiMemory } from '../src/session.js';
 import { databasePath, runMemory } from '../src/store.js';
 

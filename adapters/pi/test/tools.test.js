@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Type } from 'typebox';
 import { MAX_TOOL_RESULT_BYTES } from '../src/response.js';
-import { createPiLogger } from '../src/logger.js';
+import { createPiLogger } from './logger-helper.js';
 import { registerPiMemory } from '../src/session.js';
 import { databasePath, runMemory } from '../src/store.js';
 import { registerPiTools } from '../src/tools.js';

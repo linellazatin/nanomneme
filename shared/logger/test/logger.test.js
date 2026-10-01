@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, st
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { createProjectLogger } from '../index.js';
+import { createProjectLogger } from '../sink.js';
 
 const service = { namespace: 'openlines', name: 'nanomneme', component: 'nmnm-pi', version: '0.3.0' };
 const input = {
@@ -132,9 +132,9 @@ test('unwritable target and throwing sink fail without stderr fallback', () => {
   }
 });
 
-test('shared logger consumes the external source while Pi ships a self-contained runtime', () => {
-  const sharedSource = readFileSync(new URL('../index.js', import.meta.url), 'utf8');
-  const generatedSource = readFileSync(new URL('../../../adapters/pi/src/logger-runtime.generated.js', import.meta.url), 'utf8');
+test('shared logger consumes the external source while core ships a self-contained runtime', () => {
+  const sharedSource = readFileSync(new URL('../sink.js', import.meta.url), 'utf8');
+  const generatedSource = readFileSync(new URL('../../../packages/nmnm-core/src/logging-runtime.generated.js', import.meta.url), 'utf8');
   assert.match(sharedSource, /from '\.\.\/\.\.\/external\/logslines\/src\/logger\.js'/);
   assert.doesNotMatch(sharedSource, /@openlines\/logslines/);
   assert.doesNotMatch(generatedSource, /@openlines\/logslines|\.\.\/\.\.\/external\/logslines/);

@@ -1,3 +1,4 @@
+import { getMemoryLogger } from './logger.js';
 import { existsSync } from 'node:fs';
 import {
   buildMemoryIndex,
@@ -207,7 +208,7 @@ function resolveStore(ctx, requested, id) {
   return matches.length === 1 ? matches[0] : { ambiguous: matches.length > 1 };
 }
 
-export function runCli({ argv = [], cwd, home, globalDir, platform } = {}) {
+function runCliRaw({ argv = [], cwd, home, globalDir, platform } = {}, observation) {
   const ctx = { cwd, home, globalDir, platform };
   const parsed = parseArgs(argv);
   if (parsed.error) return { text: parsed.error, ok: false };
@@ -221,8 +222,9 @@ export function runCli({ argv = [], cwd, home, globalDir, platform } = {}) {
   }
 
   const resolved = resolveStore(ctx, parsed.store, parsed.id);
-  if (resolved === null) return { text: `Nanomneme memory not found: ${parsed.id}`, ok: false };
+  if (resolved === null) { observation?.setStatus('not_found'); return { text: `Nanomneme memory not found: ${parsed.id}`, ok: false }; }
   if (typeof resolved === 'object') {
+    observation?.setStatus(resolved.ambiguous ? 'blocked' : 'not_found');
     return { text: `Nanomneme memory ID is ambiguous; add project or global: ${parsed.id}`, ok: false };
   }
   const store = resolved;
@@ -236,6 +238,7 @@ export function runCli({ argv = [], cwd, home, globalDir, platform } = {}) {
   if (parsed.command === 'pin' || parsed.command === 'unpin') {
     const path = pinsPath({ cwd: ctx.cwd, home: ctx.home, store });
     const pins = readPins(path);
+    if (parsed.command === 'unpin' && !pins.includes(parsed.id)) observation?.setStatus('not_found');
     writePins(path, parsed.command === 'pin' ? pin(pins, parsed.id) : unpin(pins, parsed.id));
     return { text: `Nanomneme ${parsed.command}ned [${store}] ${parsed.id}.`, ok: true };
   }
@@ -243,4 +246,11 @@ export function runCli({ argv = [], cwd, home, globalDir, platform } = {}) {
   // remove
   existingStoreMemory({ ctx, store, operation: 'remove', input: { id: parsed.id, mode: 'soft' }, readOnly: false });
   return { text: `Nanomneme removed [${store}] ${parsed.id}. Soft removal is reversible; purge stays CLI-only. Any matching pin remains configured until unpin.`, ok: true };
+}
+
+export function runCli(options = {}) {
+  const parsed = parseArgs(options.argv ?? []);
+  if (parsed.error || !['pin', 'unpin', 'remove'].includes(parsed.command)) return runCliRaw(options);
+  const logger = options.logger ?? getMemoryLogger(options);
+  return logger.run({ operation: `command_${parsed.command}` }, observation => runCliRaw(options, observation));
 }

@@ -26,7 +26,7 @@ function pinnedIds(ctx, store) {
   return readPins(pinsPath({ cwd: ctx.cwd, home: ctx.home, store }));
 }
 
-function decorate(ctx, store, memory) {
+function decorate(ctx, store, pins, memory) {
   return {
     store,
     id: memory.id,
@@ -43,7 +43,7 @@ function decorate(ctx, store, memory) {
     removed_at: memory.removed_at ?? null,
     source: memory.metadata?.source ?? null,
     metadata: memory.metadata && typeof memory.metadata === 'object' ? memory.metadata : {},
-    pinned: pinnedIds(ctx, store).includes(memory.id),
+    pinned: pins.has(memory.id),
   };
 }
 
@@ -57,22 +57,25 @@ function page(ctx, store, { source, query, limit, offset }) {
 
 export function browsePage({ ctx, store = 'both', source = 'all', query, limit = DEFAULT_LIMIT, offset = 0 }) {
   if (store !== 'both') {
+    const pins = new Set(pinnedIds(ctx, store));
     const result = page(ctx, store, { source, query, limit, offset });
-    return { store, total: result.total, items: result.items.map((memory) => decorate(ctx, store, memory)) };
+    return { store, total: result.total, items: result.items.map((memory) => decorate(ctx, store, pins, memory)) };
   }
   const projectProbe = page(ctx, 'project', { source, query, limit: 1, offset: 0 });
   const globalProbe = page(ctx, 'global', { source, query, limit: 1, offset: 0 });
+  const projectPins = new Set(pinnedIds(ctx, 'project'));
+  const globalPins = new Set(pinnedIds(ctx, 'global'));
   const items = [];
   if (offset < projectProbe.total) {
     const projectPage = page(ctx, 'project', { source, query, limit, offset });
-    items.push(...projectPage.items.map((memory) => decorate(ctx, 'project', memory)));
+    items.push(...projectPage.items.map((memory) => decorate(ctx, 'project', projectPins, memory)));
     if (items.length < limit) {
       const globalPage = page(ctx, 'global', { source, query, limit: limit - items.length, offset: 0 });
-      items.push(...globalPage.items.map((memory) => decorate(ctx, 'global', memory)));
+      items.push(...globalPage.items.map((memory) => decorate(ctx, 'global', globalPins, memory)));
     }
   } else {
     const globalPage = page(ctx, 'global', { source, query, limit, offset: offset - projectProbe.total });
-    items.push(...globalPage.items.map((memory) => decorate(ctx, 'global', memory)));
+    items.push(...globalPage.items.map((memory) => decorate(ctx, 'global', globalPins, memory)));
   }
   return { store: 'both', total: projectProbe.total + globalProbe.total, items };
 }
@@ -80,10 +83,10 @@ export function browsePage({ ctx, store = 'both', source = 'all', query, limit =
 export function detail({ ctx, store, id }) {
   const memory = read(ctx, store, 'recall', { id });
   if (!memory) return { memory: null };
-  return { record: decorate(ctx, store, memory) };
+  return { record: decorate(ctx, store, new Set(pinnedIds(ctx, store)), memory) };
 }
 
-function mutateRaw({ ctx, store, id, on, mutation }, observation) {
+function mutateRaw({ ctx, store, id, mutation }, observation) {
   if (mutation === 'pin' || mutation === 'unpin') {
     if (!read(ctx, store, 'recall', { id })) { observation.setStatus('not_found'); return { error: `Nanomneme memory not found: ${id}` }; }
     const path = pinsPath({ cwd: ctx.cwd, home: ctx.home, store });

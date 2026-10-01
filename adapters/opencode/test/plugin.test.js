@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { NanomnemePlugin } from '../index.js';
@@ -95,3 +95,29 @@ test('invalid settings omit context without blocking the chat', run(async ({ hoo
   await transform(hooks, output);
   assert.equal(output.system.length, 0);
 }));
+
+test('tool calls correlate the host session id into diagnostics', run(async ({ hooks, project, home }) => {
+  const base = join(home, '.local/share/nanomneme');
+  mkdirSync(base, { recursive: true });
+  writeFileSync(join(base, 'config.jsonc'), '{"logging":{"enabled":true}}');
+  await hooks.tool.retain_memory.execute({ content: 'correlated via plugin' }, { sessionID: 'sess-1', directory: project });
+  const records = readFileSync(join(base, 'logs/nmnm-opencode.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+  assert.equal(records[0].operation, 'retain');
+  assert.equal(records[0].context.session_id, 'sess-1');
+}));
+
+test('tool writes to the per-call tool-context directory, not the plugin directory', async (t) => {
+  const other = mkdtempSync(join(tmpdir(), 'nmnm-opencode-other-'));
+  const project = mkdtempSync(join(tmpdir(), 'nmnm-opencode-project-'));
+  const home = mkdtempSync(join(tmpdir(), 'nmnm-opencode-home-'));
+  t.after(() => {
+    rmSync(other, { recursive: true, force: true });
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  });
+  const hooks = await NanomnemePlugin({ directory: project, home, platform: 'darwin' });
+  const text = await hooks.tool.retain_memory.execute({ content: 'routed to other' }, { sessionID: 's1', directory: other });
+  const retained = JSON.parse(text);
+  const stored = runMemory({ cwd: other, home, platform: 'darwin', store: 'project', operation: 'recall', input: { id: retained.id }, create: false, readOnly: true });
+  assert.equal(stored.content, 'routed to other');
+});

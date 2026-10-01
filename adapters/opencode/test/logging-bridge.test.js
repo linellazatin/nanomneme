@@ -24,3 +24,16 @@ test('Node bridge observes tool and browser mutations once without trusting mode
     assert.equal(JSON.stringify(records).includes('PRIVATE'), false);
   } finally { rmSync(home, { recursive: true, force: true }); }
 });
+
+test('a valid diagnostic_context session id correlates tool records', () => {
+  const home = mkdtempSync(join(tmpdir(), 'nmnm-bridge-correlation-'));
+  const base = join(home, '.local/share/nanomneme');
+  const ctx = { cwd: home, home, globalDir: join(home, 'agent') };
+  try {
+    mkdirSync(base, { recursive: true }); writeFileSync(join(base, 'config.jsonc'), '{"logging":{"enabled":true}}');
+    runBridge({ op: 'tool', name: 'retain_memory', params: { content: 'correlated' }, ctx, diagnostic_context: { session_id: 'sess-1' } });
+    const records = readFileSync(join(base, 'logs/nmnm-opencode.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.equal(records[0].operation, 'retain');
+    assert.equal(records[0].context.session_id, 'sess-1');
+  } finally { rmSync(home, { recursive: true, force: true }); }
+});

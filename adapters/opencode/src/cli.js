@@ -208,8 +208,12 @@ function runCliRaw({ argv = [], cwd, home, globalDir, platform } = {}, observati
   const resolved = resolveStore(ctx, parsed.store, parsed.id);
   if (resolved === null) { observation?.setStatus('not_found'); return { text: `Nanomneme memory not found: ${parsed.id}`, ok: false }; }
   if (typeof resolved === 'object') {
-    observation?.setStatus(resolved.ambiguous ? 'blocked' : 'not_found');
-    return { text: `Nanomneme memory ID is ambiguous; add project or global: ${parsed.id}`, ok: false };
+    if (resolved.ambiguous) {
+      observation?.setStatus('blocked');
+      return { text: `Nanomneme memory ID is ambiguous; add project or global: ${parsed.id}`, ok: false };
+    }
+    observation?.setStatus('not_found');
+    return { text: `Nanomneme memory not found: ${parsed.id}`, ok: false };
   }
   const store = resolved;
 

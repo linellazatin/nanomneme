@@ -264,7 +264,7 @@ var OUTCOMES = {
   command_unpin: {
     ok: ["info", "memory.command.unpin", "Command unpin completed"],
     blocked: ["warn", "memory.command.unpin_blocked", "Command unpin blocked"],
-    not_found: ["info", "memory.command.unpin_not_found", "Command pin was not found"],
+    not_found: ["info", "memory.command.unpin_not_found", "Command memory was not found"],
     failed: ["error", "memory.command.unpin_failed", "Command unpin failed"]
   },
   command_remove: {

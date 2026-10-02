@@ -1,8 +1,8 @@
 import { existsSync } from 'node:fs';
 import { matchesKey, truncateToWidth } from '@earendil-works/pi-tui';
 
-import { buildMemoryIndex, pin, piAgentDir, pinsPath, readPins, readSettings, settingsPath, unpin, writePins } from './context.js';
-import { getPiLogger, recordPiBrowserOperation, recordPiCommandOperation } from './logger.js';
+import { buildMemoryIndex, pin, piAgentDir, pinsPath, readPins, readSettings, settingsPath, unpin, updatePins } from './context.js';
+import { getPiLogger, piSessionId } from './logger.js';
 import { databasePath, runMemory, supportsGlobalStore } from './store.js';
 
 const DEFAULT_LIST_LIMIT = 20;
@@ -368,64 +368,33 @@ async function browseMemory({ ctx, home, platform, refresh, status, logger }) {
 
 async function applyBrowserAction({ ctx, home, platform, refresh, logger, selected, pinned, action }) {
   const { store, memory } = selected;
-  let started = performance.now();
-  let outcome;
-  try {
-    const active = existingStoreMemory({
-      cwd: ctx.cwd,
-      home,
-      platform,
-      store,
-      operation: 'recall',
-      input: { id: memory.id },
+  const readActive = () => existingStoreMemory({ cwd: ctx.cwd, home, platform, store, operation: 'recall', input: { id: memory.id } });
+  const missing = `Nanomneme memory is no longer active [${store}] ${memory.id}.`;
+  if (action === 'Remove') {
+    const confirmed = await logger.run({ operation: 'browser_remove', session_id: piSessionId(ctx) }, async observation => {
+      // Successful preflight and cancellation have no terminal mutation record.
+      const result = readActive() ? await ctx.ui.confirm('Remove nanomneme memory?', `[${store}] ${memory.id}\n${preview(memory.content)}\n\nThis is reversible soft removal.`) : null;
+      observation.setStatus('skipped');
+      return result;
     });
-    if (!active) {
-      if (action !== 'Remove') outcome = 'not_found';
-      notify(ctx, `Nanomneme memory is no longer active [${store}] ${memory.id}.`);
-      return;
-    }
-
+    if (confirmed === null) { notify(ctx, missing); return; }
+    if (!confirmed) return;
+  }
+  const mutation = logger.run({ operation: `browser_${action.toLowerCase()}`, session_id: piSessionId(ctx) }, observation => {
+    if (action !== 'Remove' && !readActive()) { observation.setStatus('not_found'); return { message: missing }; }
     if (action === 'Pin' || action === 'Unpin') {
       const path = pinsPath({ cwd: ctx.cwd, home, store });
-      const pins = readPins(path);
-      writePins(path, action === 'Pin' ? pin(pins, memory.id) : unpin(pins, memory.id));
-      outcome = 'ok';
-      refresh(action.toLowerCase());
-      notify(ctx, `Nanomneme ${action.toLowerCase()}ned [${store}] ${memory.id}.`);
-      return;
+      updatePins(path, (pins) => (action === 'Pin' ? pin(pins, memory.id) : unpin(pins, memory.id)));
+      return { reason: action.toLowerCase(), message: `Nanomneme ${action.toLowerCase()}ned [${store}] ${memory.id}.` };
     }
-
-    if (action !== 'Remove') return;
-    const confirmed = await ctx.ui.confirm(
-      'Remove nanomneme memory?',
-      `[${store}] ${memory.id}\n${preview(memory.content)}\n\nThis is reversible soft removal.`,
-    );
-    if (!confirmed) return;
-    started = performance.now();
-    const result = existingStoreMemory({
-      cwd: ctx.cwd,
-      home,
-      platform,
-      store,
-      operation: 'remove',
-      input: { id: memory.id, mode: 'soft' },
-    });
-    if (!result) {
-      outcome = 'not_found';
-      notify(ctx, `Nanomneme memory is no longer active [${store}] ${memory.id}.`);
-      return;
-    }
-    outcome = 'ok';
-    refresh('remove');
-    notify(ctx, pinned
+    const result = existingStoreMemory({ cwd: ctx.cwd, home, platform, store, operation: 'remove', input: { id: memory.id, mode: 'soft' } });
+    if (!result) { observation.setStatus('not_found'); return { message: missing }; }
+    return { reason: 'remove', message: pinned
       ? `Nanomneme removed [${store}] ${memory.id}. Its pin remains configured and is now unresolved until unpinned.`
-      : `Nanomneme removed [${store}] ${memory.id}.`);
-  } catch (error) {
-    outcome = 'failed';
-    throw error;
-  } finally {
-    if (outcome) recordPiBrowserOperation(logger, ctx, action, outcome, Math.max(0, performance.now() - started));
-  }
+      : `Nanomneme removed [${store}] ${memory.id}.` };
+  });
+  if (mutation.reason) refresh(mutation.reason);
+  notify(ctx, mutation.message);
 }
 
 function notify(ctx, message) {
@@ -583,74 +552,45 @@ export function registerPiMemory(pi, options = {}) {
       if (action === 'remove') {
         const target = removeTarget(values);
         if (target) {
-          const started = performance.now();
-          let outcome;
-          try {
-            const matches = target.store
-              ? [target.store]
-              : ['project', 'global'].filter((store) => existingStoreMemory({
-                cwd: ctx.cwd, home: options.home, platform: options.platform, store,
-                operation: 'recall', input: { id: target.id },
-              }));
+          const mutation = logger.run({ operation: 'command_remove', session_id: piSessionId(ctx) }, observation => {
+            const matches = target.store ? [target.store] : ['project', 'global'].filter(store => existingStoreMemory({
+              cwd: ctx.cwd, home: options.home, platform: options.platform, store, operation: 'recall', input: { id: target.id },
+            }));
             if (matches.length !== 1) {
-              outcome = matches.length ? 'blocked' : 'not_found';
-              notify(ctx, matches.length ? `Nanomneme memory ID is ambiguous; use /memory remove project ${target.id} or /memory remove global ${target.id}.` : `Nanomneme memory not found in project or global stores: ${target.id}.`);
-              return;
+              observation.setStatus(matches.length ? 'blocked' : 'not_found');
+              return { message: matches.length ? `Nanomneme memory ID is ambiguous; use /memory remove project ${target.id} or /memory remove global ${target.id}.` : `Nanomneme memory not found in project or global stores: ${target.id}.` };
             }
             const store = matches[0];
-            const result = existingStoreMemory({
-              cwd: ctx.cwd, home: options.home, platform: options.platform, store,
-              operation: 'remove', input: { id: target.id, mode: 'soft' },
-            });
-            outcome = result ? 'ok' : 'not_found';
-            if (result) {
-              refresh('remove');
-              notify(ctx, `Nanomneme removed [${store}] ${target.id}. Any matching pin remains configured until /memory unpin.`);
-            } else {
-              notify(ctx, `Nanomneme memory not found [${store}] ${target.id}.`);
-            }
-            return;
-          } catch (error) {
-            outcome = 'failed';
-            throw error;
-          } finally {
-            if (outcome) recordPiCommandOperation(logger, ctx, action, outcome, Math.max(0, performance.now() - started));
-          }
+            const result = existingStoreMemory({ cwd: ctx.cwd, home: options.home, platform: options.platform, store, operation: 'remove', input: { id: target.id, mode: 'soft' } });
+            if (!result) observation.setStatus('not_found');
+            return result ? { reason: 'remove', message: `Nanomneme removed [${store}] ${target.id}. Any matching pin remains configured until /memory unpin.` } : { message: `Nanomneme memory not found [${store}] ${target.id}.` };
+          });
+          if (mutation.reason) refresh(mutation.reason);
+          notify(ctx, mutation.message);
+          return;
         }
       }
       if (['pin', 'unpin'].includes(action)) {
         const target = pinTarget(values);
         if (target) {
-          const started = performance.now();
-          let outcome;
-          try {
-            if (action === 'pin' && !existingStoreMemory({
-              cwd: ctx.cwd, home: options.home, platform: options.platform, store: target.store,
-              operation: 'recall', input: { id: target.id },
-            })) {
-              const globalMemory = target.store === 'project' && values.length === 1 && existingStoreMemory({
-                cwd: ctx.cwd, home: options.home, platform: options.platform, store: 'global',
-                operation: 'recall', input: { id: target.id },
-              });
-              outcome = 'not_found';
-              notify(ctx, globalMemory
-                ? `Nanomneme memory is global; use /memory pin global ${target.id}.`
-                : `Nanomneme memory not found [${target.store}] ${target.id}.`);
-              return;
+          const mutation = logger.run({ operation: `command_${action}`, session_id: piSessionId(ctx) }, observation => {
+            if (action === 'pin' && !existingStoreMemory({ cwd: ctx.cwd, home: options.home, platform: options.platform, store: target.store, operation: 'recall', input: { id: target.id } })) {
+              const globalMemory = target.store === 'project' && values.length === 1 && existingStoreMemory({ cwd: ctx.cwd, home: options.home, platform: options.platform, store: 'global', operation: 'recall', input: { id: target.id } });
+              observation.setStatus('not_found');
+              return { message: globalMemory ? `Nanomneme memory is global; use /memory pin global ${target.id}.` : `Nanomneme memory not found [${target.store}] ${target.id}.` };
             }
             const path = pinsPath({ cwd: ctx.cwd, home: options.home, store: target.store });
-            const pins = readPins(path);
-            writePins(path, action === 'pin' ? pin(pins, target.id) : unpin(pins, target.id));
-            outcome = action === 'unpin' && !pins.includes(target.id) ? 'not_found' : 'ok';
-            refresh(action);
-            notify(ctx, `Nanomneme ${action}ned [${target.store}] ${target.id}.`);
-            return;
-          } catch (error) {
-            outcome = 'failed';
-            throw error;
-          } finally {
-            if (outcome) recordPiCommandOperation(logger, ctx, action, outcome, Math.max(0, performance.now() - started));
-          }
+            let pins;
+            updatePins(path, (current) => {
+              pins = current;
+              return action === 'pin' ? pin(current, target.id) : unpin(current, target.id);
+            });
+            observation.setStatus(action === 'unpin' && !pins.includes(target.id) ? 'not_found' : 'ok');
+            return { reason: action, message: `Nanomneme ${action}ned [${target.store}] ${target.id}.` };
+          });
+          if (mutation.reason) refresh(mutation.reason);
+          notify(ctx, mutation.message);
+          return;
         }
       }
       notify(ctx, 'Usage: /memory [browse] | refresh | status | list [project|global] [all|pi] [limit] [offset] | remove [project|global] <id> | pin [project|global] <id> | unpin [project|global] <id>');

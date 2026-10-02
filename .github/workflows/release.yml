@@ -30,6 +30,7 @@ jobs:
           version=$(node -p "require('./package.json').version")
           test "$GITHUB_REF_NAME" = "v$version"
       - run: npm test
+      - run: node scripts/check-logging-packages.js
       - run: git diff --check
       - run: npm pack --dry-run --workspace @openlines/nmnm-core --workspace @openlines/nmnm-cli --workspace @openlines/nmnm-pi --workspace @openlines/nmnm-opencode
 

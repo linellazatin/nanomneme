@@ -1,11 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { open } from '@openlines/nmnm-core';
+import fs from 'node:fs';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pinsPath, readPins, settingsPath, writePins } from '../src/context.js';
-import { createPiLogger } from '../src/logger.js';
+import { createPiLogger } from './logger-helper.js';
 import { registerPiMemory } from '../src/session.js';
 import { databasePath, runMemory } from '../src/store.js';
 
@@ -887,6 +889,25 @@ test('memory browser pins and unpins the exact selected store', async () => {
   }
 });
 
+test('memory browser refuses a pin while another writer holds the lock', async () => {
+  const project = temporaryDirectory('nmnm-pi-browser-lock-project-');
+  const home = temporaryDirectory('nmnm-pi-browser-lock-home-');
+  try {
+    const commands = new Map();
+    const retained = runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Locked browser pin' } });
+    const path = pinsPath({ cwd: project, home, store: 'project' });
+    writeFileSync(`${path}.lock`, JSON.stringify({ pid: process.pid }));
+    const scripted = scriptedUi({ selections: [(options) => options.find((option) => option.includes('Locked browser pin')), 'Pin'] });
+    registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, { home, platform: 'darwin' });
+
+    await assert.rejects(commands.get('memory').handler('browse', { cwd: project, hasUI: true, ui: scripted.ui }), /being updated/);
+    assert.deepEqual(readPins(path), []);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test('memory browser cancellation leaves the selected memory active', async () => {
   const project = temporaryDirectory('nmnm-pi-browser-cancel-project-');
   const home = temporaryDirectory('nmnm-pi-browser-cancel-home-');
@@ -1027,7 +1048,7 @@ test('browser removal reports not_found when a confirmed record became inactive'
   }
 });
 
-test('browser pin failures retain their thrown error and log only a sanitized outcome', async () => {
+test('browser pin failures retain their thrown error and log the failure cause', async () => {
   const project = temporaryDirectory('nmnm-pi-browser-pin-failure-');
   const home = temporaryDirectory('nmnm-pi-browser-pin-failure-home-');
   try {
@@ -1046,7 +1067,9 @@ test('browser pin failures retain their thrown error and log only a sanitized ou
     await assert.rejects(commands.get('memory').handler('browse', { cwd: project, hasUI: true, ui: scripted.ui }), /EISDIR/);
 
     assert.deepEqual(records.map(({ operation, status }) => [operation, status]), [['browser_pin', 'failed']]);
-    assert.deepEqual(records[0].error, { kind: 'unknown', code: 'browser_pin_failed', message: 'Memory pin failed', retryable: false });
+    const { kind, code, message, retryable, cause_kind } = records[0].error;
+    assert.deepEqual([kind, code, retryable, cause_kind], ['filesystem', 'browser_pin_failed', false, 'Error']);
+    assert.match(message, /^EISDIR: illegal operation on a directory/);
     assert.equal(JSON.stringify(records).includes(memory.id), false);
     assert.equal(JSON.stringify(records).includes('Private pin failure content'), false);
     assert.equal(JSON.stringify(records).includes(project), false);
@@ -1086,7 +1109,7 @@ test('browser unpin reports not_found when the selected record became inactive',
   }
 });
 
-test('browser removal failure preserves its thrown error and records no private details', async () => {
+test('browser removal failure preserves its thrown error and records the failure cause', async () => {
   const project = temporaryDirectory('nmnm-pi-browser-remove-failure-');
   const home = temporaryDirectory('nmnm-pi-browser-remove-failure-home-');
   try {
@@ -1103,7 +1126,8 @@ test('browser removal failure preserves its thrown error and records no private 
     await assert.rejects(commands.get('memory').handler('browse', { cwd: project, hasUI: true, ui: scripted.ui }), (caught) => caught === error);
 
     assert.deepEqual(records.map(({ operation, status }) => [operation, status]), [['browser_remove', 'failed']]);
-    assert.equal(JSON.stringify(records).includes('Private'), false);
+    assert.deepEqual(records[0].error, { kind: 'unknown', code: 'browser_remove_failed', message: 'Private confirmation failure', retryable: false, cause_kind: 'Error' });
+    assert.equal(JSON.stringify(records).includes('Private remove failure content'), false);
     assert.equal(JSON.stringify(records).includes(memory.id), false);
     assert.equal(runMemory({ cwd: project, store: 'project', operation: 'recall', input: { id: memory.id } }).content, 'Private remove failure content');
   } finally {
@@ -1342,6 +1366,63 @@ test('command diagnostics ignore read-only and usage paths but report missing re
   }
 });
 
+test('memory pin refuses to overwrite pins held by another writer', async () => {
+  const project = temporaryDirectory('nmnm-pi-command-lock-project-');
+  const home = temporaryDirectory('nmnm-pi-command-lock-home-');
+  try {
+    const commands = new Map();
+    const memory = runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Locked pin target' } });
+    const path = pinsPath({ cwd: project, home, store: 'project' });
+    writePins(path, ['existing-pin']);
+    writeFileSync(`${path}.lock`, 'active');
+    registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, { home, platform: 'darwin' });
+
+    await assert.rejects(
+      commands.get('memory').handler(`pin ${memory.id}`, { cwd: project, ui: { notify: () => {} } }),
+      /being updated/,
+    );
+    assert.deepEqual(readPins(path), ['existing-pin']);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('command pin logs a sanitized failure when post-write lock cleanup fails', async (t) => {
+  const project = temporaryDirectory('nmnm-pi-command-cleanup-project-');
+  const home = temporaryDirectory('nmnm-pi-command-cleanup-home-');
+  const records = [];
+  const realRemove = fs.rmSync;
+  try {
+    const commands = new Map();
+    const memory = runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Cleanup failure pin' } });
+    const path = pinsPath({ cwd: project, home, store: 'project' });
+    t.mock.method(fs, 'rmSync', (target, ...args) => {
+      if (target === `${path}.lock`) throw Object.assign(new Error('lock cleanup failed'), { code: 'EBUSY' });
+      return realRemove(target, ...args);
+    });
+    syncBuiltinESMExports();
+    registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, {
+      home, platform: 'darwin', logger: createPiLogger({ enabled: true, sink: (record) => records.push(record) }),
+    });
+
+    await assert.rejects(
+      commands.get('memory').handler(`pin ${memory.id}`, { cwd: project, ui: { notify: () => {} } }),
+      error => error?.code === 'NMNM_PIN_LOCK_CLEANUP_FAILED' && /pins were updated.*cleanup failed/i.test(error.message),
+    );
+    assert.deepEqual(readPins(path), [memory.id]);
+    assert.equal(existsSync(`${path}.lock`), true);
+    assert.deepEqual(records.map(({ operation, status }) => [operation, status]), [['command_pin', 'failed']]);
+    assert.deepEqual(records[0].error, { kind: 'unknown', code: 'command_pin_failed', message: 'Nanomneme pins were updated, but cleanup failed. Stop Pi writers, remove the pin lock manually, then refresh or retry.', retryable: false, cause_kind: 'Error' });
+    assert.equal(JSON.stringify(records).includes(memory.id), false);
+  } finally {
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test('command pin failure preserves the error and emits one sanitized failure', async () => {
   const project = temporaryDirectory('nmnm-pi-command-failed-project-');
   const home = temporaryDirectory('nmnm-pi-command-failed-home-');
@@ -1356,7 +1437,9 @@ test('command pin failure preserves the error and emits one sanitized failure', 
 
     await assert.rejects(commands.get('memory').handler(`pin ${memory.id}`, { cwd: project, ui: { notify: () => {} } }), SyntaxError);
     assert.deepEqual(records.map(({ operation, status }) => [operation, status]), [['command_pin', 'failed']]);
-    assert.deepEqual(records[0].error, { kind: 'unknown', code: 'command_pin_failed', message: 'Command pin failed', retryable: false });
+    const { kind, code, message, retryable, cause_kind } = records[0].error;
+    assert.deepEqual([kind, code, retryable, cause_kind], ['validation', 'command_pin_failed', false, 'SyntaxError']);
+    assert.match(message, /JSON/);
     assert.equal(JSON.stringify(records).includes(memory.id), false);
     assert.equal(JSON.stringify(records).includes('Private command pin'), false);
   } finally {
@@ -1379,7 +1462,7 @@ test('command removal failures keep core errors authoritative and sanitize the r
     await assert.rejects(commands.get('memory').handler('remove project invalid-id', { cwd: project, ui: { notify: () => {} } }), TypeError);
 
     assert.deepEqual(records.map(({ operation, status }) => [operation, status]), [['command_remove', 'failed']]);
-    assert.deepEqual(records[0].error, { kind: 'unknown', code: 'command_remove_failed', message: 'Command removal failed', retryable: false });
+    assert.deepEqual(records[0].error, { kind: 'validation', code: 'command_remove_failed', message: 'id must be a UUID generated by nanomneme', retryable: false, cause_kind: 'TypeError' });
     assert.equal(JSON.stringify(records).includes('invalid-id'), false);
     assert.equal(JSON.stringify(records).includes('Private command removal'), false);
     assert.equal(runMemory({ cwd: project, store: 'project', operation: 'recall', input: { id: memory.id } }).content, 'Private command removal');

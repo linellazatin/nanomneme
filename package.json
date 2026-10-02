@@ -1,6 +1,6 @@
 {
   "name": "nanomneme",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
   "keywords": [
@@ -36,6 +36,8 @@
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": ">=0.87.0",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
     "esbuild": "0.28.2"
   }
 }

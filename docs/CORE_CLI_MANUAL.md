@@ -338,3 +338,9 @@ The `node:sqlite` experimental warning can appear on supported Node versions and
 - Runtime code and tests are authoritative when documentation and behavior disagree; fix the documentation in the same change.
 
 Examples use `nmnm` for an installed CLI and explicit placeholders such as `<memory-id>` and `<path>`. Commands that modify storage state their target store. Destructive examples identify irreversible operations before showing them.
+
+## Shared opt-in diagnostics
+
+Set `"logging": { "enabled": true }` in `~/.local/share/nanomneme/config.jsonc` to enable the shared default. JSONC comments and trailing commas are supported. Adapter user-level `nmnm.jsonc` can explicitly enable or disable logging; absence inherits. Either invalid applicable logging configuration disables that caller. Project settings cannot authorize logging. Records use the shared `logslines/v1` catalog and core-distributed runtime, contain no memory payloads or stack traces, carry thrown-error messages verbatim in failed records, and append to `~/.local/share/nanomneme/logs/<component>.jsonl`. Logging failures preserve operations and output. Existing databases, pin files, and logs require no migration.
+
+The CLI observes retain, recall, retrieve, remove, import, export, verify, and repair once per command. Combined retrieval and repair have one aggregate outcome; transfer output completion is included. Help/version/unknown commands and temporary validation stores are unlogged. It reads shared settings per invocation and has no adapter override. Correlation is null.

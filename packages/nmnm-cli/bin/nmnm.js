@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 import { open } from '@openlines/nmnm-core';
+import { createMemoryLogger } from '@openlines/nmnm-core/logging';
+import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, platform } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 
@@ -302,13 +304,49 @@ export function main(args = process.argv.slice(2)) {
   }
 }
 
-try {
-  const output = main();
-  if (output.version) process.stdout.write(`${output.version}\n`);
-  else if (output.raw) process.stdout.write(output.raw);
-  else process.stdout.write(output.help ? `${HELP}\n` : output.json ? `${JSON.stringify(output.result, null, 2)}\n` : readable(output.result));
-  if (output.failed) process.exitCode = 1;
-} catch (error) {
-  process.stderr.write(`nmnm: ${error.message}\n`);
-  process.exitCode = 1;
+function commandHint(args) {
+  if (args.length === 1 && ['--version', '-v'].includes(args[0])) return null;
+  let command;
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index];
+    if (arg === '--') { command ??= args[index + 1]; break; }
+    if (arg === '--help') return null;
+    if (arg.startsWith('--')) {
+      const name = arg.slice(2);
+      if (OPTION_NAMES.has(name) && !['json', 'global', 'both', 'purge', 'rebuild-fts'].includes(name)) index++;
+    } else command ??= arg;
+  }
+  return Object.hasOwn(COMMAND_OPTIONS, command) ? command : null;
+}
+
+export async function executeCli(args = process.argv.slice(2), { stdout = process.stdout, logger } = {}) {
+  const diagnostics = logger ?? createMemoryLogger({ service: { namespace: 'openlines', name: 'nanomneme', component: 'nmnm-cli', version: VERSION } });
+  const execute = async observation => {
+    const output = main(args);
+    if (output.failed) observation?.setStatus('failed');
+    else if (output.result === null) observation?.setStatus('not_found');
+    else if (output.result?.total === 0) observation?.setStatus('empty');
+    const text = output.version ? `${output.version}\n` : output.raw ?? (output.help ? `${HELP}\n` : output.json ? `${JSON.stringify(output.result, null, 2)}\n` : readable(output.result));
+    await new Promise((resolve, reject) => {
+      const failed = error => reject(error);
+      stdout.once('error', failed);
+      stdout.write(text, error => {
+        if (error) reject(error); else resolve();
+        setImmediate(() => stdout.removeListener('error', failed));
+      });
+    });
+    return output;
+  };
+  const operation = commandHint(args);
+  return operation ? diagnostics.run({ operation }, execute) : execute();
+}
+
+if (process.argv[1] && existsSync(process.argv[1]) && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
+  try {
+    const output = await executeCli();
+    if (output.failed) process.exitCode = 1;
+  } catch (error) {
+    process.stderr.write(`nmnm: ${error.message}\n`);
+    process.exitCode = 1;
+  }
 }

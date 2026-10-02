@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { parseArgs, runCli } from '../src/cli.js';
 import { pinsPath, settingsPath, writePins } from '../src/context.js';
 import { runMemory } from '../src/store.js';
+import { open } from '@openlines/nmnm-core';
 
 function temporaryDirectory(name) {
   return mkdtempSync(join(tmpdir(), name));
@@ -198,6 +199,34 @@ test('unknown commands return usage text and a non-ok result', () => {
     const { text, ok } = runCli({ argv: ['bogus'], ...f.ctx });
     assert.equal(ok, false);
     assert.match(text, /Usage: nmnm-opencode/);
+  } finally {
+    cleanup(f);
+  }
+});
+
+test('an unqualified id with zero matches reports not found, not ambiguous', () => {
+  const f = fixture();
+  try {
+    const { text, ok } = runCli({ argv: ['show', 'missing-id'], ...f.ctx });
+    assert.equal(ok, false);
+    assert.match(text, /memory not found: missing-id/);
+    assert.doesNotMatch(text, /ambiguous/);
+  } finally {
+    cleanup(f);
+  }
+});
+
+test('an unqualified id present in both stores reports ambiguous', () => {
+  const f = fixture();
+  try {
+    const project = runMemory({ cwd: f.project, store: 'project', operation: 'retain', input: { content: 'both stores' } });
+    const globalDir = join(f.home, '.local', 'share', 'nanomneme');
+    mkdirSync(globalDir, { recursive: true });
+    const globalStore = open(join(globalDir, 'memory.db'));
+    globalStore.import([{ ...project, scope: 'global' }]); globalStore.close();
+    const { text, ok } = runCli({ argv: ['show', project.id], ...f.ctx });
+    assert.equal(ok, false);
+    assert.match(text, /ambiguous; add project or global/);
   } finally {
     cleanup(f);
   }

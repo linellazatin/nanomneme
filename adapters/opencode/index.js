@@ -46,8 +46,15 @@ const retrieveArgs = {
 export const NanomnemePlugin = async (input = {}) => {
   const ctx = storeContext(input);
 
-  async function callTool(name, params) {
-    const result = runBridge({ op: 'tool', name, params: params ?? {}, ctx });
+  async function callTool(name, params, context = {}) {
+    const request = {
+      op: 'tool',
+      name,
+      params: params ?? {},
+      ctx: typeof context.directory === 'string' ? { ...ctx, cwd: context.directory } : ctx,
+    };
+    if (typeof context.sessionID === 'string' && context.sessionID) request.diagnostic_context = { session_id: context.sessionID };
+    const result = runBridge(request);
     if (!result.ok) throw new Error(result.error);
     return result.text;
   }
@@ -57,29 +64,29 @@ export const NanomnemePlugin = async (input = {}) => {
       retain_memory: tool({
         description: 'Create or explicitly patch a nanomneme memory. Prefer project scope unless the fact clearly applies to all projects (then scope: global).',
         args: retainArgs,
-        async execute(args) {
-          return callTool('retain_memory', args);
+        async execute(args, context) {
+          return callTool('retain_memory', args, context);
         },
       }),
       recall_memory: tool({
         description: 'Read one active nanomneme memory by id.',
         args: { id: z.string(), store: storeArg },
-        async execute(args) {
-          return callTool('recall_memory', args);
+        async execute(args, context) {
+          return callTool('recall_memory', args, context);
         },
       }),
       retrieve_memory: tool({
         description: 'Search or list active nanomneme memories.',
         args: retrieveArgs,
-        async execute(args) {
-          return callTool('retrieve_memory', args);
+        async execute(args, context) {
+          return callTool('retrieve_memory', args, context);
         },
       }),
       remove_memory: tool({
         description: 'Soft-remove a nanomneme memory by id (reversible; purge is CLI-only).',
         args: { id: z.string(), store: storeArg },
-        async execute(args) {
-          return callTool('remove_memory', args);
+        async execute(args, context) {
+          return callTool('remove_memory', args, context);
         },
       }),
     },

@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import fs from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildMemoryIndex, pin, piAgentDir, pinsPath, readPins, readSettings, settingsPath, unpin, writePins } from '../src/context.js';
+import { buildMemoryIndex, pin, piAgentDir, pinsPath, readPins, readSettings, settingsPath, unpin, updatePins, writePins } from '../src/context.js';
 import { runMemory } from '../src/store.js';
 
 function temporaryDirectory(name) {
@@ -43,23 +45,6 @@ test('keeps JSONC settings and JSON pins in their requested project and global l
 
 test('resolves a custom global Pi agent directory for logging settings', () => {
   assert.equal(piAgentDir({ home: '/isolated/home', env: { PI_CODING_AGENT_DIR: '/isolated/pi-agent' } }), '/isolated/pi-agent');
-});
-
-test('validates the optional logging opt-in setting', () => {
-  const home = temporaryDirectory('nmnm-pi-logging-settings-');
-  const path = join(home, 'nmnm.jsonc');
-  try {
-    writeFileSync(path, '{ "logging": { "enabled": true } }\n');
-    assert.deepEqual(readSettings(path, { includeLogging: true }), { logging: { enabled: true } });
-    writeFileSync(path, '{ "logging": { "enabled": false } }\n');
-    assert.deepEqual(readSettings(path, { includeLogging: true }), { logging: { enabled: false } });
-    writeFileSync(path, '{ "logging": { "enabled": "true" } }\n');
-    assert.throws(() => readSettings(path, { includeLogging: true }), /logging enabled must be a boolean/);
-    writeFileSync(path, '{ "logging": [] }\n');
-    assert.throws(() => readSettings(path, { includeLogging: true }), /logging must be an object/);
-  } finally {
-    rmSync(home, { recursive: true, force: true });
-  }
 });
 
 test('invalid logging fields cannot disrupt memory context', () => {
@@ -222,6 +207,145 @@ test('pins deduplicate and unpin removes only the requested ID', () => {
   const pinned = pin(pin([], 'one'), 'one');
   assert.deepEqual(pinned, ['one']);
   assert.deepEqual(unpin(pinned, 'one'), []);
+});
+
+test('updatePins preserves pins until a held lock is removed manually', () => {
+  const home = temporaryDirectory('nmnm-pi-pins-lock-');
+  const path = join(home, 'nmnm-pi.json');
+  const lock = `${path}.lock`;
+  try {
+    writePins(path, ['existing']);
+    writeFileSync(lock, JSON.stringify({ pid: process.pid }));
+    assert.throws(() => updatePins(path, (pins) => pin(pins, 'lost-update')), /being updated/);
+    assert.deepEqual(readPins(path), ['existing']);
+
+    utimesSync(lock, new Date(0), new Date(0));
+    writeFileSync(lock, JSON.stringify({ pid: 999_999_999 }));
+    assert.throws(() => updatePins(path, (pins) => pin(pins, 'retained-update')), /being updated/);
+    assert.deepEqual(readPins(path), ['existing']);
+    rmSync(lock);
+    assert.deepEqual(updatePins(path, (pins) => pin(pins, 'retained-update')), ['existing', 'retained-update']);
+    assert.deepEqual(readPins(path), ['existing', 'retained-update']);
+    assert.equal(existsSync(lock), false);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('updatePins never reclaims malformed or exited ownership automatically', () => {
+  const home = temporaryDirectory('nmnm-pi-pins-malformed-lock-');
+  const path = join(home, 'nmnm-pi.json');
+  const lock = `${path}.lock`;
+  try {
+    writePins(path, ['existing']);
+    for (const contents of ['', '{', '{}', '{"pid":0}', '{"pid":"invalid"}', '{"pid":999999999}']) {
+      writeFileSync(lock, contents);
+      utimesSync(lock, new Date(0), new Date(0));
+      assert.throws(() => updatePins(path, (pins) => pin(pins, 'next')), /being updated/);
+      assert.deepEqual(readPins(path), ['existing']);
+      assert.equal(existsSync(lock), true);
+      rmSync(lock);
+    }
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('updatePins reports retryable contention when the owner releases the lock', (t) => {
+  const home = temporaryDirectory('nmnm-pi-pins-release-race-');
+  const path = join(home, 'nmnm-pi.json');
+  const lock = `${path}.lock`;
+  const realOpen = fs.openSync;
+  try {
+    writePins(path, ['existing']);
+    writeFileSync(lock, JSON.stringify({ pid: process.pid }));
+    t.mock.method(fs, 'openSync', (target, flags, ...args) => {
+      if (target === lock && flags === 'wx') {
+        let error;
+        try { realOpen(target, flags, ...args); } catch (caught) { error = caught; }
+        rmSync(lock);
+        throw error;
+      }
+      return realOpen(target, flags, ...args);
+    });
+    syncBuiltinESMExports();
+    assert.throws(() => updatePins(path, (pins) => pin(pins, 'next')), /being updated/);
+    assert.deepEqual(readPins(path), ['existing']);
+    assert.equal(existsSync(lock), false);
+  } finally {
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('updatePins reports a safe cleanup failure after committing pins', (t) => {
+  const home = temporaryDirectory('nmnm-pi-pins-cleanup-failure-');
+  const path = join(home, 'nmnm-pi.json');
+  const lock = `${path}.lock`;
+  const failure = Object.assign(new Error('temporary cleanup failed'), { code: 'EIO' });
+  const realRemove = fs.rmSync;
+  try {
+    writePins(path, ['existing']);
+    t.mock.method(fs, 'rmSync', (target, ...args) => {
+      if (String(target).endsWith('.tmp')) throw failure;
+      return realRemove(target, ...args);
+    });
+    syncBuiltinESMExports();
+    assert.throws(
+      () => updatePins(path, (pins) => pin(pins, 'next')),
+      error => error?.code === 'NMNM_PIN_LOCK_CLEANUP_FAILED' && /pins were updated.*cleanup failed/i.test(error.message),
+    );
+    assert.equal(existsSync(lock), false);
+    assert.deepEqual(readPins(path), ['existing', 'next']);
+  } finally {
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('updatePins releases the lock after a malformed pin file fails', () => {
+  const home = temporaryDirectory('nmnm-pi-pins-malformed-file-');
+  const path = join(home, 'nmnm-pi.json');
+  const lock = `${path}.lock`;
+  try {
+    writeFileSync(path, '{ invalid json');
+    assert.throws(() => updatePins(path, (pins) => pin(pins, 'next')), SyntaxError);
+    assert.equal(existsSync(lock), false);
+    writePins(path, ['existing']);
+    assert.deepEqual(updatePins(path, (pins) => pin(pins, 'next')), ['existing', 'next']);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('updatePins cleans up acquisition when writing lock ownership fails', (t) => {
+  const home = temporaryDirectory('nmnm-pi-pins-owner-failure-');
+  const path = join(home, 'nmnm-pi.json');
+  const original = Object.assign(new Error('ownership write failed'), { code: 'ENOSPC' });
+  const realWrite = fs.writeFileSync;
+  let descriptor;
+  try {
+    writePins(path, ['existing']);
+    t.mock.method(fs, 'writeFileSync', (file, ...args) => {
+      if (typeof file === 'number') { descriptor = file; throw original; }
+      return realWrite(file, ...args);
+    });
+    syncBuiltinESMExports();
+    assert.throws(() => updatePins(path, (pins) => pin(pins, 'next')), error => error === original);
+    assert.equal(existsSync(`${path}.lock`), false);
+    assert.throws(() => fs.fstatSync(descriptor), { code: 'EBADF' });
+    assert.deepEqual(readPins(path), ['existing']);
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
+    assert.deepEqual(updatePins(path, (pins) => pin(pins, 'next')), ['existing', 'next']);
+  } finally {
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
+    if (descriptor !== undefined) { try { fs.closeSync(descriptor); } catch {} }
+    rmSync(home, { recursive: true, force: true });
+  }
 });
 
 test('buildMemoryIndex keeps project memory available when global storage is unsupported', () => {

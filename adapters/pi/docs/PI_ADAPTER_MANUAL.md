@@ -4,7 +4,7 @@
 
 ## Install
 
-Use Node.js 22.19+ and Pi 0.87.0 or newer, verified through Pi 0.99.1. This manual describes `@openlines/nmnm-pi` 0.3.1. Install the public package:
+Use Node.js 22.19+ and Pi 0.87.0 or newer, verified through Pi 1.0.0. This manual describes `@openlines/nmnm-pi` 0.4.0. Install the public package:
 
 ```sh
 pi install npm:@openlines/nmnm-pi
@@ -36,13 +36,13 @@ Pi exposes four tools to the model. Model-facing project operations require the 
 
 ## Logslines diagnostics
 
-`src/logger.js` is the Pi diagnostics boundary and the reference template for later Nanomneme adapters. When enabled, it emits one closed `logslines/v1` outcome record per terminal model-facing 4R attempt, browser mutation, or `/memory pin`, `unpin`, or `remove` command. The shared Nanomneme logger source and checked-in external Logslines runtime are bundled into Pi; `src/logger.js` retains Pi's event catalog and host-session lookup. Pi installation never fetches Logslines source.
+`src/logger.js` binds Pi identity, its user settings path, and host session normalization to `@openlines/nmnm-core/logging`. The shared catalog and observer emit one closed `logslines/v1` outcome per terminal model-facing 4R attempt, browser mutation, or `/memory pin`, `unpin`, or `remove` command. One generated runtime ships in core; Pi has no private catalog or generated logger. Installation never fetches Logslines source.
 
 Session and tools share a lazy logger: the first recorded outcome reads global logging settings, and `/reload` creates a fresh logger that reads them again. Browser navigation, search, Back, canceled removal, and a stale Remove selection that never reaches confirmation do not emit records. Read-only `/memory` commands, invalid command usage, internal resolution reads, session lifecycle events, and automatic context injection also remain unlogged. Context diagnostics were assessed and deferred: prompt-time hooks could produce frequent records and expose session activity or configuration failures, while `/memory status` already reports injection state and errors. A separate privacy design is required before adding them.
 
 ### Emission and destination
 
-Diagnostics are off by default. To opt in, add `"logging": { "enabled": true }` to the **global** `<Pi agent directory>/nmnm.jsonc` (normally `~/.pi/agent/nmnm.jsonc`) and run `/reload` in an active Pi session. Project settings cannot enable logging. Missing or invalid global logging settings leave diagnostics disabled without affecting memory operations. When enabled, the bundled logger appends JSON Lines to `~/.local/share/nanomneme/logs/nmnm-pi.jsonl`: one complete JSON object followed by a newline per outcome. The `logs` directory is created on the first emitted record, not while logging is off. On first use, the logger restricts `logs/` to owner-only access (`0700`) and tightens existing regular `*.jsonl` files there to owner read/write (`0600`); new log files are created with `0600`. The parent `~/.local/share/nanomneme/` permissions are not changed. The filename derives from the service component `nmnm-pi`. There is no stderr fallback, rotation, transport, indexing, search, dashboard, or telemetry.
+Diagnostics are off by default. To opt in, add `"logging": { "enabled": true }` to the **global** `<Pi agent directory>/nmnm.jsonc` (normally `~/.pi/agent/nmnm.jsonc`) and run `/reload` in an active Pi session. Project settings cannot enable logging. An absent Pi value inherits `~/.local/share/nanomneme/config.jsonc` `logging.enabled`; explicit Pi true/false overrides it. Either invalid applicable logging configuration disables diagnostics without affecting memory operations. When enabled, the shared logger appends JSON Lines to `~/.local/share/nanomneme/logs/nmnm-pi.jsonl`: one complete JSON object followed by a newline per outcome. The `logs` directory is created on the first emitted record, not while logging is off. On first use, the logger restricts `logs/` to owner-only access (`0700`) and tightens existing regular `*.jsonl` files there to owner read/write (`0600`); new log files are created with `0600`. The parent `~/.local/share/nanomneme/` permissions are not changed. The filename derives from the service component `nmnm-pi`. There is no stderr fallback, rotation, transport, indexing, search, dashboard, or telemetry.
 
 The adapter records a terminal outcome when a model-tool operation completes, is blocked by project trust, or throws; or when an explicit browser or `/memory` mutation succeeds, finds no target, is blocked by ambiguous ID resolution, or throws. A logger, validation, sink, serialization, or host-session lookup failure is contained. It returns no record and does not change the memory operation's result, error, notification, refresh, or trust decision. The memory operation remains the authority for success or failure.
 
@@ -98,7 +98,7 @@ Browser mutation durations include the selected-memory check and attempted mutat
 
 ### Operation outcomes and events
 
-The event catalog is closed by `src/logger.js`. The table lists every currently emitted combination.
+The event catalog is closed by the shared `shared/logger/catalog.js` source. The table lists every currently emitted combination.
 
 | Operation | Status | Level | Event | Message | When emitted |
 |---|---|---|---|---|---|
@@ -141,18 +141,19 @@ The event catalog is closed by `src/logger.js`. The table lists every currently 
 
 ### Failure records
 
-Only `status: "failed"` has a non-null `error` object. It is closed and currently uses this generic shape, substituting the current operation name:
+Only `status: "failed"` has a non-null `error` object. It is closed and uses this shape, substituting the current operation name:
 
 ```json
 {
-  "kind": "unknown",
+  "kind": "validation | filesystem | timeout | unknown",
   "code": "<operation>_failed",
-  "message": "<fixed message from the event table>",
-  "retryable": false
+  "message": "<the thrown error's message, or the fixed catalog message when none is usable>",
+  "retryable": false,
+  "cause_kind": "<error class name, when it is a valid identifier>"
 }
 ```
 
-Examples include `retain_failed`, `browser_pin_failed`, and `command_remove_failed`. The message is the same fixed message in the outcome table. No `cause_kind` is emitted today. The adapter does not classify underlying core or UI exceptions, expose their error class, copy their message, include a stack trace, or infer whether a retry may work.
+`code` examples include `retain_failed`, `browser_pin_failed`, and `command_remove_failed`. `message` carries the thrown error verbatim so operators can see the actual failure (for example a core validation message); it falls back to the fixed outcome-table message only when no usable message exists. `kind` is derived from the error's `code` (`ETIMEDOUT` → `timeout`, Node fs codes → `filesystem`) and class name (`TypeError`/`RangeError`/`SyntaxError` → `validation`), else `unknown`. `cause_kind` is optional and holds the error class name. Stack traces are never included and `retryable` is always `false`.
 
 For every status other than `failed`, `error` is exactly `null`. In particular, `blocked`, `empty`, and `not_found` do not carry errors.
 
@@ -166,7 +167,7 @@ The logger uses an empty `attributes` object for every current event. Records do
 - Memory kind, scope, namespace, confidence, importance, expiry, or metadata.
 - Selected store, database path, working directory, home directory, settings, or pins.
 - Tool or slash-command arguments, model messages, prompts, or model-visible tool responses.
-- Raw core or UI error messages, error classes, causes, or stack traces.
+- Error stack traces; the `error` object itself carries the thrown message, class name, and derived kind on failures.
 
 The only potentially correlating value is Pi's opaque host-provided `context.session_id`. Operators must handle that opaque value in the append-only diagnostics file according to their own retention and privacy policy.
 
@@ -175,19 +176,19 @@ The only potentially correlating value is Pi's opaque host-provided `context.ses
 A successful retain can emit:
 
 ```json
-{"schema":"logslines/v1","timestamp":"2026-09-27T04:30:00.000Z","level":"info","event":"memory.retained","message":"Memory retention completed","service":{"namespace":"openlines","name":"nanomneme","component":"nmnm-pi","version":"0.3.1"},"context":{"session_id":"<opaque Pi session ID>"},"operation":"retain","status":"ok","duration_ms":2.4,"attributes":{},"error":null}
+{"schema":"logslines/v1","timestamp":"2026-09-27T04:30:00.000Z","level":"info","event":"memory.retained","message":"Memory retention completed","service":{"namespace":"openlines","name":"nanomneme","component":"nmnm-pi","version":"0.4.0"},"context":{"session_id":"<opaque Pi session ID>"},"operation":"retain","status":"ok","duration_ms":2.4,"attributes":{},"error":null}
 ```
 
 A project-trust block for retrieval can emit:
 
 ```json
-{"schema":"logslines/v1","timestamp":"2026-09-27T04:30:00.000Z","level":"warn","event":"memory.retrieve_blocked","message":"Memory retrieval blocked","service":{"namespace":"openlines","name":"nanomneme","component":"nmnm-pi","version":"0.3.1"},"context":{"session_id":"<opaque Pi session ID or null>"},"operation":"retrieve","status":"blocked","duration_ms":null,"attributes":{},"error":null}
+{"schema":"logslines/v1","timestamp":"2026-09-27T04:30:00.000Z","level":"warn","event":"memory.retrieve_blocked","message":"Memory retrieval blocked","service":{"namespace":"openlines","name":"nanomneme","component":"nmnm-pi","version":"0.4.0"},"context":{"session_id":"<opaque Pi session ID or null>"},"operation":"retrieve","status":"blocked","duration_ms":null,"attributes":{},"error":null}
 ```
 
 A failed removal can emit:
 
 ```json
-{"schema":"logslines/v1","timestamp":"2026-09-27T04:30:00.000Z","level":"error","event":"memory.remove_failed","message":"Memory removal failed","service":{"namespace":"openlines","name":"nanomneme","component":"nmnm-pi","version":"0.3.1"},"context":{"session_id":null},"operation":"remove","status":"failed","duration_ms":1,"attributes":{},"error":{"kind":"unknown","code":"remove_failed","message":"Memory removal failed","retryable":false}}
+{"schema":"logslines/v1","timestamp":"2026-09-27T04:30:00.000Z","level":"error","event":"memory.remove_failed","message":"Memory removal failed","service":{"namespace":"openlines","name":"nanomneme","component":"nmnm-pi","version":"0.4.0"},"context":{"session_id":null},"operation":"remove","status":"failed","duration_ms":1,"attributes":{},"error":{"kind":"validation","code":"remove_failed","message":"id must be a UUID generated by nanomneme","retryable":false,"cause_kind":"TypeError"}}
 ```
 
 Successful model-visible tool JSON is limited to 50 KiB (51,200 UTF-8 bytes). Results that fit retain their existing canonical JSON. Oversized results return valid JSON with `truncated: true`, byte-count diagnostics, stable record or page identifiers, bounded content previews, and guidance to narrow the request or use the CLI. This summary does not modify or truncate the canonical stored memory.
@@ -271,6 +272,8 @@ Pin files are plain JSON arrays, written only by `/memory pin` and `/memory unpi
 ["<memory-id>"]
 ```
 
+Pin mutations take an exclusive same-directory lock, reread the current array while holding it, then atomically replace the file. Production mutations create or replace the pin file with owner read/write permission (`0600`). A concurrent pin or unpin reports that updates are in progress and can be retried. Lock ownership is never reclaimed automatically, because a stale observer could otherwise delete a newly acquired lock; use the manual recovery procedure below only after a Pi crash.
+
 `injection_budget` is a non-negative total character limit for all transient Nanomneme context. The project value overrides the global value; the default is 2,000. Complete autoretention guidance is included before index rows; individual rules are never truncated. If enabled guidance alone exceeds the budget, no Nanomneme context is injected until the rules are shortened or the budget is raised. `autoretention` is inactive unless its effective `enabled` value is `true` (project overrides global). Rule arrays from both scopes combine with global entries first; `never_persist` takes precedence, `always_ask` requires user confirmation, and `always_persist` guides the active model when applicable. The adapter never writes memory directly for autoretention: the active model decides whether to call `retain_memory`.
 
 `reinjection` is disabled unless its effective `enabled` value is `true` (project overrides global). When enabled, `every_n_prompts` is a positive safe integer that resolves project, then global, then `5`. After a successful context build, each eligible user prompt increments a session-local counter; the configured prompt queues a transient `cadence` rebuild in that same prompt. A successful build resets the counter, while a failed build leaves it pending. Slash commands do not count. The adapter caches the effective policy after a successful build, so ordinary prompts do not reread settings or stores; change settings with `/memory refresh` or reload the session. Cadence uses the existing total `injection_budget`, increases recurring provider input/cache activity, and creates no timer, worker, session record, memory, or SQLite write. A project pin and a global pin use the same ID format but remain distinct `(store, id)` references. The unreleased combined `nmnm-memory.json` layout is not migrated automatically.
@@ -293,8 +296,8 @@ On extension load and session start, the adapter registers its tools and hooks o
 | `/memory refresh` | Nothing immediately | Nothing | The next user prompt rebuilds the hidden index. |
 | `/memory list ...` | Both default stores, or the selected `memory.db` and pins | Nothing | Displays a bounded, paginated active-memory page without invoking the model. |
 | `/memory remove ...` | Both stores when unqualified, otherwise the selected `memory.db` | Selected `memory.db` on success; an outcome JSONL line if logging is enabled | Soft-removes one unambiguous entry and queues next-prompt index rebuild; ambiguous IDs emit `blocked` without mutation. |
-| `/memory pin ...` | Selected active `memory.db` and pin file when present | Selected `nmnm-pi.json` on success; an outcome JSONL line if logging is enabled | Validates the selected store before creating the pin file, then queues next-prompt index rebuild; settings remain untouched. |
-| `/memory unpin ...` | Selected pin file when present | Selected `nmnm-pi.json` and, if logging is enabled, an outcome JSONL line | Removes the reference even when its memory is unresolved; an absent pin emits `not_found` but retains the current notification and refresh. |
+| `/memory pin ...` | Selected active `memory.db` and pin file when present | Selected `nmnm-pi.json` on success; an outcome JSONL line if logging is enabled | Validates the selected store before creating the pin file, serializes the atomic update, then queues next-prompt index rebuild; settings remain untouched. |
+| `/memory unpin ...` | Selected pin file when present | Selected `nmnm-pi.json` and, if logging is enabled, an outcome JSONL line | Serializes the atomic update, removes the reference even when its memory is unresolved, and preserves the existing notification and refresh behavior for an absent pin. |
 
 To create project settings manually before starting Pi or between prompts, create the directory, then copy the complete template above into `.nanomneme/nmnm.jsonc` and adjust `injection_budget`, autoretention, or reinjection if needed:
 
@@ -331,6 +334,22 @@ An invalid settings or pin file leaves the file unchanged. Session start reports
 | Index refresh | `refresh`, successful compaction, successful model retain/remove, and successful slash `pin`, `unpin`, or removal make the index eligible for the next prompt; they do not alter other memory records. |
 | Unresolved pins | Removed, expired, missing, or unreadable targets stay configured until unpinned and are counted as unresolved. |
 
+### Pin update locks
+
+Browser and slash-command pin/unpin mutations use a same-directory `nmnm-pi.json.lock` and replace the pin file atomically. Any existing lock causes the command to fail with a retry message. The lock records its owner PID for diagnosis only; it is never automatically reclaimed based on age, malformed ownership, or PID liveness, because doing so can delete a lock acquired by another process. If writing ownership fails during acquisition, the adapter closes its descriptor and removes the incomplete lock. Cleanup always attempts the temporary file, descriptor, and lock; if a completed pin update cannot finish cleanup, Pi reports a stable manual-recovery error and the logging observer emits one `failed` outcome whose `error.message` is that recovery error. Pin payloads are not included in that record.
+
+After a Pi or Node process crashes during a pin mutation, stop every Pi process that could write the affected pin file. Inspect the lock's PID only as supporting evidence, then remove the lock manually and retry the command:
+
+```sh
+rm -- .nanomneme/nmnm-pi.json.lock
+# or, for global pins:
+rm -- ~/.local/share/nanomneme/nmnm-pi.json.lock
+```
+
+Never remove a lock merely because it is old, malformed, or its PID appears absent; a concurrent Pi process could have acquired it after inspection. The stop-all-writers step is mandatory: a pathname lock is not a process-owned kernel lock, so removing it while a writer remains live can invalidate that writer's ownership.
+
+A crash before atomic replacement can also leave an inert same-directory `nmnm-pi.json.<pid>.<timestamp>.tmp` file. It does not alter or block the pin file. After stopping writers, it is safe to remove that temporary file along with a confirmed crash-left lock.
+
 ### Status card fields
 
 `/memory status` and the Pi TUI browser’s Status tab show the same read-only card:
@@ -348,7 +367,7 @@ An invalid settings or pin file leaves the file unchanged. Session start reports
 
 ### Pi token overhead
 
-`nmnm-pi` 0.3.x adds four model-visible tool definitions: `retain_memory`, `recall_memory`, `retrieve_memory`, and `remove_memory`. Their JSON schemas total `1,190 characters` (`retain_memory` 440, `recall_memory` 164, `retrieve_memory` 422, `remove_memory` 164). This is a schema-only reference, not a token or cost estimate: Pi adds tool names, descriptions, and provider request structure, while each provider uses its own tokenizer.
+`nmnm-pi` 0.4.x adds four model-visible tool definitions: `retain_memory`, `recall_memory`, `retrieve_memory`, and `remove_memory`. Their JSON schemas total `1,190 characters` (`retain_memory` 440, `recall_memory` 164, `retrieve_memory` 422, `remove_memory` 164). This is a schema-only reference, not a token or cost estimate: Pi adds tool names, descriptions, and provider request structure, while each provider uses its own tokenizer.
 
 The transient memory context is separately bounded. On the first prompt and each queued refresh, Pi appends at most `injection_budget + 2` characters to the system prompt: the configured context plus its two newline separator characters. With the default budget, that is at most 2,002 characters. Autoretention guidance and index rows share that limit. Ordinary prompts without a queued refresh append no memory context unless opt-in periodic `reinjection` queues a rebuild.
 

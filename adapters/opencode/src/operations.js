@@ -1,3 +1,4 @@
+import { getMemoryLogger } from './logger.js';
 import { existsSync } from 'node:fs';
 import { databasePath, runMemory } from './store.js';
 
@@ -36,28 +37,17 @@ function retainInput(params) {
 }
 
 export function handleTool(name, params = {}, ctx = {}, options = {}) {
+  const operations = { retain_memory: 'retain', recall_memory: 'recall', retrieve_memory: 'retrieve', remove_memory: 'remove' };
+  const operation = Object.hasOwn(operations, name) ? operations[name] : undefined;
+  if (!operation) throw new TypeError(`unknown nanomneme tool: ${name}`);
+  const logger = options.logger ?? getMemoryLogger(ctx);
   const base = { cwd: ctx.cwd, home: ctx.home, platform: ctx.platform, store: params.store };
-  switch (name) {
-    case 'retain_memory': {
-      const result = runMemory({ cwd: ctx.cwd, home: ctx.home, platform: ctx.platform, store: params.scope === 'global' ? 'global' : 'project', operation: 'retain', input: retainInput(params) });
-      options.onMutation?.('retain');
-      return response(result);
-    }
-    case 'recall_memory': {
-      if (!hasStore(ctx, params.store)) return response(null);
-      return response(runMemory({ ...base, operation: 'recall', input: { id: params.id }, create: false, readOnly: true }));
-    }
-    case 'retrieve_memory': {
-      if (!hasStore(ctx, params.store)) return response({ total: 0, items: [] });
-      return response(runMemory({ ...base, operation: 'retrieve', input: input(params, RETRIEVE_FIELDS), create: false, readOnly: true }));
-    }
-    case 'remove_memory': {
-      if (!hasStore(ctx, params.store)) return response(null);
-      const result = runMemory({ ...base, operation: 'remove', input: { id: params.id, mode: 'soft' }, create: false });
-      if (result) options.onMutation?.('remove');
-      return response(result);
-    }
-    default:
-      throw new TypeError(`unknown nanomneme tool: ${name}`);
-  }
+  const result = logger.run({ operation, session_id: options.session_id ?? null }, () => {
+    if (operation === 'retain') return runMemory({ cwd: ctx.cwd, home: ctx.home, platform: ctx.platform, store: params.scope === 'global' ? 'global' : 'project', operation, input: retainInput(params) });
+    if (!hasStore(ctx, params.store)) return operation === 'retrieve' ? { total: 0, items: [] } : null;
+    if (operation === 'retrieve') return runMemory({ ...base, operation, input: input(params, RETRIEVE_FIELDS), create: false, readOnly: true });
+    return runMemory({ ...base, operation, input: operation === 'remove' ? { id: params.id, mode: 'soft' } : { id: params.id }, create: false, readOnly: operation !== 'remove' });
+  });
+  if (operation === 'retain' || (operation === 'remove' && result)) options.onMutation?.(operation);
+  return response(result);
 }

@@ -8,6 +8,7 @@
 import { readFileSync } from 'node:fs';
 import { buildMemoryIndex, opencodeGlobalDir, renderContext } from './context.js';
 import { handleTool } from './operations.js';
+import { getMemoryLogger } from './logger.js';
 import { browsePage, detail, mutate, statusText } from './browse.js';
 
 function respond(payload) {
@@ -21,12 +22,18 @@ function withGlobalDir(ctx) {
 
 const request = JSON.parse(readFileSync(0, 'utf8'));
 const ctx = withGlobalDir(request.ctx ?? {});
+const diagnostic = request.diagnostic_context;
+const validDiagnostic = diagnostic === undefined || (diagnostic && typeof diagnostic === 'object' && !Array.isArray(diagnostic)
+  && Object.keys(diagnostic).every(key => key === 'session_id')
+  && (diagnostic.session_id == null || (typeof diagnostic.session_id === 'string' && diagnostic.session_id.length > 0)));
+const session_id = validDiagnostic ? diagnostic?.session_id ?? null : '';
+
 
 try {
   let result;
   switch (request.op) {
     case 'tool':
-      result = { text: handleTool(request.name, request.params ?? {}, ctx).text };
+      result = { text: handleTool(request.name, request.params ?? {}, ctx, { logger: getMemoryLogger(ctx), session_id }).text };
       break;
     case 'index': {
       const index = buildMemoryIndex(ctx);
@@ -48,7 +55,7 @@ try {
       result = detail({ ctx, store: request.store, id: request.id });
       break;
     case 'mutate':
-      result = mutate({ ctx, store: request.store, id: request.id, mutation: request.mutation });
+      result = mutate({ ctx, store: request.store, id: request.id, mutation: request.mutation, logger: getMemoryLogger(ctx), session_id });
       break;
     default:
       throw new Error(`unknown bridge op: ${request.op}`);

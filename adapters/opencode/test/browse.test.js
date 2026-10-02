@@ -29,7 +29,7 @@ test('browse returns active project-then-global memories with store and pin meta
   assert.equal(page.total, 2);
   assert.deepEqual(page.items.map((item) => item.store), ['project', 'global']);
   assert.equal(page.items[1].pinned, false);
-  mutate({ ctx, store: 'global', id: global.id, on: true, mutation: 'pin' });
+  mutate({ ctx, store: 'global', id: global.id, mutation: 'pin' });
   const updated = browsePage({ ctx, store: 'both' });
   assert.deepEqual(updated.items.map((item) => item.pinned), [false, true]);
 });
@@ -69,12 +69,12 @@ test('pin and unpin mutate only the selected physical store', (t) => {
   const ctx = context(t);
   const memory = retain(ctx, { content: 'pin me' });
   const global = retain(ctx, { content: 'global one', scope: 'global' });
-  assert.equal(mutate({ ctx, store: 'project', id: memory.id, on: true, mutation: 'pin' }).pinned, true);
+  assert.equal(mutate({ ctx, store: 'project', id: memory.id, mutation: 'pin' }).pinned, true);
   assert.equal(browsePage({ ctx, store: 'global' }).items[0].pinned, false);
   assert.equal(detail({ ctx, store: 'project', id: memory.id }).record.pinned, true);
-  assert.equal(mutate({ ctx, store: 'project', id: memory.id, on: false, mutation: 'unpin' }).pinned, false);
+  assert.equal(mutate({ ctx, store: 'project', id: memory.id, mutation: 'unpin' }).pinned, false);
   assert.equal(detail({ ctx, store: 'global', id: global.id }).record.pinned, false);
-  assert.deepEqual(mutate({ ctx, store: 'project', id: '00000000-0000-4000-8000-000000000001', on: true, mutation: 'pin' }), { error: 'Nanomneme memory not found: 00000000-0000-4000-8000-000000000001' });
+  assert.deepEqual(mutate({ ctx, store: 'project', id: '00000000-0000-4000-8000-000000000001', mutation: 'pin' }), { error: 'Nanomneme memory not found: 00000000-0000-4000-8000-000000000001' });
 });
 
 test('status reports configuration and per-store counts without creating stores', (t) => {

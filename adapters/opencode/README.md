@@ -72,3 +72,9 @@ See the [OpenCode Adapter Manual](docs/OPENCODE_ADAPTER_MANUAL.md) for the confi
 ```sh
 node --test adapters/opencode/test/*.test.js
 ```
+
+## Shared opt-in diagnostics
+
+Set `"logging": { "enabled": true }` in `~/.local/share/nanomneme/config.jsonc` to enable the shared default. JSONC comments and trailing commas are supported. Adapter user-level `nmnm.jsonc` can explicitly enable or disable logging; absence inherits. Either invalid applicable logging configuration disables that caller. Project settings cannot authorize logging. Records use the shared `logslines/v1` catalog and core-distributed runtime, contain no memory payloads or stack traces, carry thrown-error messages verbatim in failed records, and append to `~/.local/share/nanomneme/logs/<component>.jsonl`. Logging failures preserve operations and output. Existing databases, pin files, and logs require no migration.
+
+OpenCode uses its existing user settings resolver under the OpenCode config directory. Node tool operations, CLI mutations, and confirmed TUI mutations are observed; index/navigation reads are unlogged. Each bridge process resolves settings anew. Pre-bridge spawn/transport/parse failures have no diagnostic record. Correlation is null unless trusted host context supplies a verified ID.

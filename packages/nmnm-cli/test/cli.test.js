@@ -1,12 +1,15 @@
 import assert from 'node:assert/strict';
-import { access, link, mkdir, mkdtemp, readFile, readdir, symlink, writeFile } from 'node:fs/promises';
+import { access, link, mkdir, mkdtemp, readFile, readdir, symlink, writeFile, rm } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import pkg from '../package.json' with { type: 'json' };
 
+const isolatedHome = await mkdtemp(join(tmpdir(), 'nmnm-cli-test-home-'));
+after(() => rm(isolatedHome, { recursive: true, force: true }));
 const cli = fileURLToPath(new URL('../bin/nmnm.js', import.meta.url));
 
 test('CLI reports its package version without opening a database', async () => {
@@ -16,8 +19,8 @@ test('CLI reports its package version without opening a database', async () => {
 
   assert.equal(long.status, 0, long.stderr);
   assert.equal(short.status, 0, short.stderr);
-  assert.equal(long.stdout, '0.1.1\n');
-  assert.equal(short.stdout, '0.1.1\n');
+  assert.equal(long.stdout, `${pkg.version}\n`);
+  assert.equal(short.stdout, `${pkg.version}\n`);
   await assert.rejects(access(join(directory, '.nanomneme', 'memory.db')));
 });
 
@@ -222,7 +225,7 @@ test('CLI repairs FTS only with the explicit rebuild flag', async () => {
 });
 
 function run(...args) {
-  return spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8' });
+  return spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', env: { ...process.env, HOME: isolatedHome } });
 }
 
 function runIn(directory, ...args) {

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -13,11 +14,13 @@ const files = {
   LICENSE: 'MIT License\n',
   'src/logger.js': "export function createLogger() {}\n",
   'src/sinks/stderr.js': "export function createStderrSink() {}\n",
+  'spec/v1/schema.json': '{"$id":"logslines/v1","type":"object"}\n',
 };
 const sha256 = {
   LICENSE: '267f7a2e19dfa9df99af774520985a0e521925293ea5b7e767ab06969d06bf91',
   'src/logger.js': '619e39da3ee72ab983cb9ba080c2e42125635788d162b1502674bb4f894ed59b',
   'src/sinks/stderr.js': '7104cf6f8779531f61192c5978d3e2b7afe27692d69adfb79e21ab3108087831',
+  'spec/v1/schema.json': createHash('sha256').update(files['spec/v1/schema.json']).digest('hex'),
 };
 
 function response({ status = 200, body = '', contentType = 'text/plain' } = {}) {
@@ -30,12 +33,12 @@ function response({ status = 200, body = '', contentType = 'text/plain' } = {}) 
   };
 }
 
-function validFetch({ missingPath, releaseBody = JSON.stringify({ html_url: releaseUrl, tag_name: tag }), emptyPath } = {}) {
+function validFetch({ missingPath, releaseBody = JSON.stringify({ html_url: releaseUrl, tag_name: tag }), emptyPath, invalidSchema = false } = {}) {
   return async (url) => {
     if (url.endsWith(`/releases/tags/${tag}`)) return response({ body: releaseBody, contentType: 'application/json' });
     const path = Object.keys(files).find((candidate) => url.endsWith(`/${tag}/${candidate}`));
     if (!path || path === missingPath) return response({ status: 404 });
-    return response({ body: path === emptyPath ? '' : files[path] });
+    return response({ body: path === emptyPath ? '' : invalidSchema && path.endsWith('.json') ? 'invalid JSON' : files[path], contentType: path.endsWith('.json') ? 'application/json' : 'text/plain' });
   };
 }
 
@@ -65,6 +68,16 @@ function writeSnapshot(destination, sourceFiles = files) {
 function assertUnchanged(destination) {
   assert.equal(readFileSync(destination, 'utf8'), 'sentinel');
 }
+
+test('rejects missing, empty, and invalid schemas without replacing the snapshot', async () => {
+  const { root, destination } = temporaryDestination();
+  try {
+    for (const options of [{ missingPath: 'spec/v1/schema.json' }, { emptyPath: 'spec/v1/schema.json' }, { invalidSchema: true }]) {
+      await assert.rejects(updateExternalLogslines({ tag, destination, fetchImpl: validFetch(options) }));
+      assertUnchanged(destination);
+    }
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
 
 test('checks an existing tagged release and atomically writes the required external source snapshot', async () => {
   const { root, destination } = temporaryDestination();

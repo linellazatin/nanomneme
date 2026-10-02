@@ -1,5 +1,53 @@
 # Changelog
 
+## 0.6.0 - Shared Logslines diagnostics
+
+### Updated components
+
+| Component | Version |
+| --- | --- |
+| `@openlines/nmnm-core` | 0.2.0 |
+| `@openlines/nmnm-cli` | 0.2.0 |
+| `@openlines/nmnm-pi` | 0.4.0 |
+| `@openlines/nmnm-opencode` | 0.2.0 |
+| `@openlines/nmnm-claude` | 0.2.0 |
+| `@openlines/nmnm-codex` | 0.2.0 |
+
+### New
+
+- `@openlines/nmnm-core` added the `nmnm-core/logging` export, one shared catalog/observer/runtime, and JSONC configuration.
+  - Logging defaults off; `~/.local/share/nanomneme/config.jsonc` sets the default and user-level adapter `nmnm.jsonc` overrides it.
+  - Project settings cannot enable it; invalid applicable logging configuration disables that caller.
+  - Preserved the closed `logslines/v1` envelope, empty attributes, closed error schema, per-component private JSONL files, and original operation results/errors. No database, pin, or historical log migration is needed.
+  - Context hooks, internal reads, navigation, and canceled actions remain unlogged.
+- `@openlines/nmnm-cli`, `@openlines/nmnm-claude`, `@openlines/nmnm-opencode`, and `@openlines/nmnm-codex` added explicit operation diagnostics.
+  - Added CLI coverage for maintenance and transfer completion.
+  - `@openlines/nmnm-opencode` bridge spawn failures emit one host-side `failed` record from the Bun plugin (the bridge provably never ran), carrying the spawn error verbatim; ambiguous post-spawn transport/parse failures remain outside coverage to avoid contradicting a bridge-logged outcome.
+  - Added Codex session correlation using `CODEX_THREAD_ID`, falling back to `CODEX_SESSION_ID` or null for `session_id`; model request fields cannot select the session ID.
+    - Added `--prepare-codex` to the package checker for local marketplace installs. It copies verified physical core/parser dependencies into the adapter before Codex caches it. Root workspace links alone do not provide dependencies to the cached plugin.
+    - Added host-correlation regression coverage for thread/session precedence, fallback, blank or invalid values, host lookup failures, and ignored request-supplied session fields.
+- Added offline conformance checks against the pinned Logslines schema and isolated tarball checks for shipped imports and Codex's bundled parser. No runtime Logslines fetches or telemetry.
+
+### Changed
+
+- Refreshed the Pi development host to `@earendil-works/pi-coding-agent` **v1.0.0** in the lockfile
+  - Published compatibility range stays `>=0.87.0` and `MIN_PI_TUI` now floors at v1.0.0.
+  - Re-assessed the v0.99.2 and v1.0.0 changelogs and host types: all Pi adapter tests pass on the v1.0.0 host; Pi 1.0.0 still pins dev-only `brace-expansion` 5.0.9 in its shrinkwrap.
+- Migrated `@openlines/nmnm-pi` to the shared logger and retired its private runtime.
+- Extracted Bun-safe `@openlines/nmnm-opencode` path helpers into `src/paths.js` so the Bun plugin host can load the sqlite-free `@openlines/nmnm-core/logging` subpath; the bridge client records spawn failures for logged operations (4R tools with host session correlation, `browser_*` mutations).
+- Failed diagnostics now record the thrown error: `error.message` carries the underlying error message verbatim (previously the fixed catalog string), with derived `error.kind` (`validation`/`filesystem`/`timeout`, else `unknown`) and optional `cause_kind` (error class name).
+- Extended Pi host-registry test coverage to execute a loaded tool definition, lifecycle injection, and the real Logslines sink.
+
+### Fixed
+
+- Fixed `@openlines/nmnm-claude` management CLI reporting "ID is ambiguous" for a missing memory ID targeted without a store; it now reports not found (logged as `not_found`), while an ID present in both stores still reports ambiguity and logs `blocked`.
+- Claude adapter MCP server now reports the package version instead of a stale hardcoded `0.1.0`.
+- Documented Claude session correlation as a host limitation: Claude Code exposes `session_id` only to hook stdin, not to MCP servers or the management CLI, so Claude diagnostic records keep `context.session_id` null; regression coverage pins this.
+- Hardened Pi pin mutation serialization with same-directory locks and atomic replacement.
+  - Locks are never reclaimed automatically, preventing stale-lock recovery from deleting a newly acquired lock and losing an update.
+  - Crash-left locks require explicit operator removal after all writers stop; failed ownership and temporary-file cleanup still release the lock. A completed pin update that cannot finish cleanup reports a safe manual-recovery error and records a failed diagnostic carrying that error's message.
+- Fixed CLI executable detection through npm symlinks and documented checkout linking; root workspace installation alone does not replace an older global CLI.
+
 ## 0.5.1 - Pi v0.99 host baseline refresh
 
 ### Changed

@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 const repository = 'https://github.com/linellazatin/logslines';
 const apiRepository = 'https://api.github.com/repos/linellazatin/logslines';
 const rawRepository = 'https://raw.githubusercontent.com/linellazatin/logslines';
-const requiredPaths = ['LICENSE', 'src/logger.js', 'src/sinks/stderr.js'];
+const requiredPaths = ['LICENSE', 'src/logger.js', 'src/sinks/stderr.js', 'spec/v1/schema.json'];
 
 function responseIsText(response) {
   const contentType = response.headers?.get?.('content-type') ?? '';
@@ -50,7 +50,7 @@ async function fetchExternalLogslines({ tag, fetchImpl = fetch } = {}) {
   const files = {};
   for (const path of requiredPaths) {
     const response = await fetchResponse(fetchImpl, `${rawRepository}/${encodeURIComponent(tag)}/${path}`, `required external source is unavailable: ${path}`);
-    if (!responseIsText(response)) throw new Error(`required external source is not text: ${path}`);
+    if (!responseIsText(response) && !(path.endsWith('.json') && response.headers?.get?.('content-type')?.includes('json'))) throw new Error(`required external source is not text: ${path}`);
     let source;
     try {
       source = await response.text();
@@ -59,6 +59,12 @@ async function fetchExternalLogslines({ tag, fetchImpl = fetch } = {}) {
     }
     if (typeof source !== 'string') throw new Error(`required external source is not text: ${path}`);
     if (source.length === 0) throw new Error(`required external source is empty: ${path}`);
+    if (path.endsWith('.json')) {
+      try {
+        const schema = JSON.parse(source);
+        if (schema?.$id !== 'logslines/v1' || schema.type !== 'object') throw new Error();
+      } catch { throw new Error(`required external schema is invalid: ${path}`); }
+    }
     files[path] = source;
   }
   return { tag, releaseUrl, files };

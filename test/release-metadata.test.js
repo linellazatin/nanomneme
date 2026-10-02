@@ -32,7 +32,7 @@ test('release metadata identifies the shared Logslines diagnostics release', () 
   assert.equal(root.engines.node, '>=22.19.0');
   assert.equal(pi.engines.node, '>=22.19.0');
   assert.equal(root.devDependencies['@earendil-works/pi-coding-agent'], '>=0.87.0');
-  assert.equal(lock.packages['node_modules/@earendil-works/pi-coding-agent'].version, '0.99.1');
+  assert.equal(lock.packages['node_modules/@earendil-works/pi-coding-agent'].version, '1.0.0');
   assert.deepEqual(pi.peerDependencies, {
     '@earendil-works/pi-tui': '*',
     typebox: '*',

@@ -10,7 +10,7 @@ function temporaryDirectory(name) {
   return mkdtempSync(join(tmpdir(), name));
 }
 
-test('Pi 0.99 loads only the nanomneme adapter and its declared surface', async () => {
+test('Pi 1.0.0 loads only the nanomneme adapter and its declared surface', async () => {
   const cwd = temporaryDirectory('nmnm-pi-loader-cwd-');
   const agentDir = temporaryDirectory('nmnm-pi-loader-agent-');
   try {

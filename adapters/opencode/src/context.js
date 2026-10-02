@@ -1,12 +1,14 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join } from 'node:path';
 import { parse } from 'jsonc-parser';
 import { databasePath, runMemory } from './store.js';
+import { opencodeGlobalDir, settingsPath } from './paths.js';
+
+export { opencodeGlobalDir, settingsPath };
 
 export const DEFAULT_INJECTION_BUDGET = 2000;
 export const DEFAULT_REINJECTION_PROMPTS = 5;
-const SETTINGS_FILE = 'nmnm.jsonc';
 const PINS_FILE = 'nmnm-opencode.json';
 const PREVIEW_LENGTH = 240;
 
@@ -55,23 +57,6 @@ function normalizedSettings(value) {
 function normalizedPins(value) {
   if (!Array.isArray(value) || value.some((id) => typeof id !== 'string' || !id)) throw new TypeError('Nanomneme memory pins must be non-empty strings');
   return [...new Set(value)];
-}
-
-function expandedPath(path, home) {
-  if (path === '~') return home;
-  if (path.startsWith('~/')) return join(home, path.slice(2));
-  return resolve(path);
-}
-
-export function opencodeGlobalDir({ home = homedir(), env = process.env } = {}) {
-  const base = env.XDG_CONFIG_HOME ? expandedPath(env.XDG_CONFIG_HOME, home) : join(home, '.config');
-  return join(base, 'opencode');
-}
-
-export function settingsPath({ cwd, home = homedir(), globalDir = opencodeGlobalDir({ home }), store }) {
-  if (store === 'project') return join(cwd, '.nanomneme', SETTINGS_FILE);
-  if (store === 'global') return join(globalDir, SETTINGS_FILE);
-  throw new TypeError('store must be project or global');
 }
 
 export function pinsPath({ cwd, home = homedir(), store }) {

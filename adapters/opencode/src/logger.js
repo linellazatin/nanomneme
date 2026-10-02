@@ -1,6 +1,6 @@
 import pkg from '../package.json' with { type: 'json' };
 import { createMemoryLogger } from '@openlines/nmnm-core/logging';
-import { opencodeGlobalDir, settingsPath } from './context.js';
+import { opencodeGlobalDir, settingsPath } from './paths.js';
 
 export function getMemoryLogger({ home, globalDir } = {}) {
   return createMemoryLogger({ home,

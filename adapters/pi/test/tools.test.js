@@ -259,7 +259,7 @@ test('Pi project tools log blocked outcomes', async () => {
   }
 });
 
-test('Pi tools log sanitized core failures without changing the thrown error', async () => {
+test('Pi tools log core failure details without changing the thrown error', async () => {
   const cwd = temporaryDirectory('nmnm-pi-tools-failed-logs-');
   const records = [];
   const logger = createPiLogger({ enabled: true, sink: (record) => records.push(record) });
@@ -289,13 +289,13 @@ test('Pi tools log sanitized core failures without changing the thrown error', a
       context: { session_id: 'host-session-9' },
       duration_ms: 'number',
       error: {
-        kind: 'unknown',
+        kind: 'validation',
         code: 'retain_failed',
-        message: 'Memory retention failed',
+        message: 'content must be a non-empty string',
         retryable: false,
+        cause_kind: 'TypeError',
       },
     }]);
-    assert.equal(JSON.stringify(records).includes('content must be a non-empty string'), false);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

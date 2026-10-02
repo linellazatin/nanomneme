@@ -1048,7 +1048,7 @@ test('browser removal reports not_found when a confirmed record became inactive'
   }
 });
 
-test('browser pin failures retain their thrown error and log only a sanitized outcome', async () => {
+test('browser pin failures retain their thrown error and log the failure cause', async () => {
   const project = temporaryDirectory('nmnm-pi-browser-pin-failure-');
   const home = temporaryDirectory('nmnm-pi-browser-pin-failure-home-');
   try {
@@ -1067,7 +1067,9 @@ test('browser pin failures retain their thrown error and log only a sanitized ou
     await assert.rejects(commands.get('memory').handler('browse', { cwd: project, hasUI: true, ui: scripted.ui }), /EISDIR/);
 
     assert.deepEqual(records.map(({ operation, status }) => [operation, status]), [['browser_pin', 'failed']]);
-    assert.deepEqual(records[0].error, { kind: 'unknown', code: 'browser_pin_failed', message: 'Memory pin failed', retryable: false });
+    const { kind, code, message, retryable, cause_kind } = records[0].error;
+    assert.deepEqual([kind, code, retryable, cause_kind], ['filesystem', 'browser_pin_failed', false, 'Error']);
+    assert.match(message, /^EISDIR: illegal operation on a directory/);
     assert.equal(JSON.stringify(records).includes(memory.id), false);
     assert.equal(JSON.stringify(records).includes('Private pin failure content'), false);
     assert.equal(JSON.stringify(records).includes(project), false);
@@ -1107,7 +1109,7 @@ test('browser unpin reports not_found when the selected record became inactive',
   }
 });
 
-test('browser removal failure preserves its thrown error and records no private details', async () => {
+test('browser removal failure preserves its thrown error and records the failure cause', async () => {
   const project = temporaryDirectory('nmnm-pi-browser-remove-failure-');
   const home = temporaryDirectory('nmnm-pi-browser-remove-failure-home-');
   try {
@@ -1124,7 +1126,8 @@ test('browser removal failure preserves its thrown error and records no private 
     await assert.rejects(commands.get('memory').handler('browse', { cwd: project, hasUI: true, ui: scripted.ui }), (caught) => caught === error);
 
     assert.deepEqual(records.map(({ operation, status }) => [operation, status]), [['browser_remove', 'failed']]);
-    assert.equal(JSON.stringify(records).includes('Private'), false);
+    assert.deepEqual(records[0].error, { kind: 'unknown', code: 'browser_remove_failed', message: 'Private confirmation failure', retryable: false, cause_kind: 'Error' });
+    assert.equal(JSON.stringify(records).includes('Private remove failure content'), false);
     assert.equal(JSON.stringify(records).includes(memory.id), false);
     assert.equal(runMemory({ cwd: project, store: 'project', operation: 'recall', input: { id: memory.id } }).content, 'Private remove failure content');
   } finally {
@@ -1410,7 +1413,7 @@ test('command pin logs a sanitized failure when post-write lock cleanup fails', 
     assert.deepEqual(readPins(path), [memory.id]);
     assert.equal(existsSync(`${path}.lock`), true);
     assert.deepEqual(records.map(({ operation, status }) => [operation, status]), [['command_pin', 'failed']]);
-    assert.deepEqual(records[0].error, { kind: 'unknown', code: 'command_pin_failed', message: 'Command pin failed', retryable: false });
+    assert.deepEqual(records[0].error, { kind: 'unknown', code: 'command_pin_failed', message: 'Nanomneme pins were updated, but cleanup failed. Stop Pi writers, remove the pin lock manually, then refresh or retry.', retryable: false, cause_kind: 'Error' });
     assert.equal(JSON.stringify(records).includes(memory.id), false);
   } finally {
     t.mock.restoreAll();
@@ -1434,7 +1437,9 @@ test('command pin failure preserves the error and emits one sanitized failure', 
 
     await assert.rejects(commands.get('memory').handler(`pin ${memory.id}`, { cwd: project, ui: { notify: () => {} } }), SyntaxError);
     assert.deepEqual(records.map(({ operation, status }) => [operation, status]), [['command_pin', 'failed']]);
-    assert.deepEqual(records[0].error, { kind: 'unknown', code: 'command_pin_failed', message: 'Command pin failed', retryable: false });
+    const { kind, code, message, retryable, cause_kind } = records[0].error;
+    assert.deepEqual([kind, code, retryable, cause_kind], ['validation', 'command_pin_failed', false, 'SyntaxError']);
+    assert.match(message, /JSON/);
     assert.equal(JSON.stringify(records).includes(memory.id), false);
     assert.equal(JSON.stringify(records).includes('Private command pin'), false);
   } finally {
@@ -1457,7 +1462,7 @@ test('command removal failures keep core errors authoritative and sanitize the r
     await assert.rejects(commands.get('memory').handler('remove project invalid-id', { cwd: project, ui: { notify: () => {} } }), TypeError);
 
     assert.deepEqual(records.map(({ operation, status }) => [operation, status]), [['command_remove', 'failed']]);
-    assert.deepEqual(records[0].error, { kind: 'unknown', code: 'command_remove_failed', message: 'Command removal failed', retryable: false });
+    assert.deepEqual(records[0].error, { kind: 'validation', code: 'command_remove_failed', message: 'id must be a UUID generated by nanomneme', retryable: false, cause_kind: 'TypeError' });
     assert.equal(JSON.stringify(records).includes('invalid-id'), false);
     assert.equal(JSON.stringify(records).includes('Private command removal'), false);
     assert.equal(runMemory({ cwd: project, store: 'project', operation: 'recall', input: { id: memory.id } }).content, 'Private command removal');

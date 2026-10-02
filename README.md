@@ -20,13 +20,19 @@
 [![nmnm-codex version](https://img.shields.io/badge/codex-v0.1.0-black?logo=codex)](https://github.com/linellazatin/nanomneme/tree/main/adapters/codex)
 
 >
-> ### v0.5.1 (30 Sept 2026) - **pi adapter v0.3.1** : Refreshed Pi development host to `@earendil-works/pi-coding-agent` `v0.99.1` in the lockfile. The compatibility range stays `>=0.87.0` (no v0.99-only API); `MIN_PI_TUI` now floors at v0.99.1 so the lockfile cannot fall back silently.
-> see [CHANGELOG](CHANGELOG.md) for more details.
->
 
 <img src="docs/img/nanomneme-logo-dark-accent.svg" width="25%" alt="nmnm logo">
 
 </div>
+
+>
+> ### v0.6.0 - logslines shared logger integration
+> - Initial implementation of shared logger for ALL adapters, including nmnm-cli.
+> ### v0.5.1 - pi adapter v0.3.1
+> - Refreshed Pi development host to `@earendil-works/pi-coding-agent` `v0.99.1` in the lockfile. The compatibility range stays `>=0.87.0` (no v0.99-only API); `MIN_PI_TUI` now floors at v0.99.1 so the lockfile cannot fall back silently.
+>
+> see [CHANGELOG](CHANGELOG.md) for more details.
+>
 
 nanomneme is a small, deterministic SQLite core for coding-agent memory: useful context survives a session without becoming an opaque service. Inspired by [`openpi-memory`](https://github.com/linellazatin/openpi-memory) and [`openclaude-memory`](https://github.com/linellazatin/openclaude-memory), and their demonstration that memory can persist in inspectable files, it replaces per-harness memory formats with one shared system for `Pi`, `Claude Code`, Codex, and future adapters.
 

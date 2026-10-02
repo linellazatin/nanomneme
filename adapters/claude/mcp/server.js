@@ -5,6 +5,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
+import pkg from '../package.json' with { type: 'json' };
 import { handleTool } from '../src/operations.js';
 import { getMemoryLogger } from '../src/logger.js';
 
@@ -12,7 +13,7 @@ const ctx = { cwd: process.env.NMNM_PROJECT_DIR || process.cwd() };
 const logger = getMemoryLogger(ctx);
 const storeParam = z.enum(['project', 'global']).optional();
 
-const server = new McpServer({ name: 'nanomneme', version: '0.1.0' });
+const server = new McpServer({ name: 'nanomneme', version: pkg.version });
 
 function register(name, description, shape) {
   server.registerTool(name, { description, inputSchema: shape }, async (args) => handleTool(name, args ?? {}, ctx, { logger }));

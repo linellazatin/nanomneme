@@ -21,7 +21,7 @@ test('observes synchronous results, original failures, and asynchronous settleme
   const original = new Error('private failure');
   assert.throws(() => logger.run({ operation: 'retain' }, () => { throw original; }), e => e === original);
   assert.equal(records[1].status, 'failed');
-  assert.equal(JSON.stringify(records).includes(original.message), false);
+  assert.deepEqual(records[1].error, { kind: 'unknown', code: 'retain_failed', message: 'private failure', retryable: false, cause_kind: 'Error' });
   let resolve;
   const originalPromise = new Promise(r => { resolve = r; });
   const pending = logger.run({ operation: 'retain' }, () => originalPromise);

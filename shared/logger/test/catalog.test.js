@@ -26,3 +26,18 @@ test('every closed catalog tuple emits exactly its declared conforming event', (
   assert.equal(classifyOutcome('retain', null, { status: 'constructor' }), null);
   assert.equal(JSON.stringify(records).includes('PRIVATE'), false);
 });
+
+test('classifyOutcome records thrown error details verbatim', () => {
+  assert.deepEqual(classifyOutcome('retain', undefined, { thrown: true, error: new TypeError('content must be a non-empty string') }).error,
+    { kind: 'validation', code: 'retain_failed', message: 'content must be a non-empty string', retryable: false, cause_kind: 'TypeError' });
+  assert.equal(classifyOutcome('retain', undefined, { thrown: true, error: Object.assign(new Error('EISDIR: illegal operation on a directory, read'), { code: 'EISDIR' }) }).error.kind, 'filesystem');
+  assert.equal(classifyOutcome('retain', undefined, { thrown: true, error: Object.assign(new Error('timed out'), { code: 'ETIMEDOUT' }) }).error.kind, 'timeout');
+  assert.equal(classifyOutcome('retain', undefined, { thrown: true, error: 'boom' }).error.message, 'boom');
+  const hostile = { get message() { throw new Error('x'); } };
+  assert.deepEqual(classifyOutcome('retain', undefined, { thrown: true, error: hostile }).error,
+    { kind: 'unknown', code: 'retain_failed', message: 'Memory retention failed', retryable: false });
+  assert.deepEqual(classifyOutcome('retain', undefined, { thrown: true }).error,
+    { kind: 'unknown', code: 'retain_failed', message: 'Memory retention failed', retryable: false });
+  assert.deepEqual(classifyOutcome('verify', { ok: false }, { status: 'failed' }).error,
+    { kind: 'unknown', code: 'verify_integrity_failed', message: 'Memory verify failed', retryable: false });
+});

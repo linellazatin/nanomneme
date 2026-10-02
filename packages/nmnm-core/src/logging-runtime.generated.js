@@ -280,7 +280,26 @@ for (const [operation, past] of [["import", "imported"], ["export", "exported"],
     failed: ["error", `memory.${operation}_failed`, `Memory ${operation} failed`]
   };
 }
-function classifyOutcome(operation, result, { status, thrown = false } = {}) {
+var ERROR_KINDS_BY_NAME = { TypeError: "validation", RangeError: "validation", SyntaxError: "validation", TimeoutError: "timeout" };
+var FILESYSTEM_ERROR_CODES = /* @__PURE__ */ new Set(["ENOENT", "EACCES", "EPERM", "EISDIR", "ENOTDIR", "EEXIST", "ENOTEMPTY", "EBUSY", "EROFS", "EMFILE", "ENFILE"]);
+var CAUSE_KIND_PATTERN2 = /^[A-Za-z_$][A-Za-z0-9_$]*(?:[.$][A-Za-z_$][A-Za-z0-9_$]*)*$/;
+function errorDetail(error, fallback) {
+  const detail = { kind: "unknown", message: fallback };
+  try {
+    if (typeof error === "string") {
+      if (error.length) detail.message = error;
+    } else if (typeof error?.message === "string" && error.message.length) detail.message = error.message;
+    const code = typeof error?.code === "string" ? error.code : null;
+    const name = typeof error?.name === "string" ? error.name : null;
+    if (code === "ETIMEDOUT") detail.kind = "timeout";
+    else if (code !== null && FILESYSTEM_ERROR_CODES.has(code)) detail.kind = "filesystem";
+    else if (name !== null && Object.hasOwn(ERROR_KINDS_BY_NAME, name)) detail.kind = ERROR_KINDS_BY_NAME[name];
+    if (name !== null && CAUSE_KIND_PATTERN2.test(name)) detail.cause_kind = name;
+  } catch {
+  }
+  return detail;
+}
+function classifyOutcome(operation, result, { status, thrown = false, error = null } = {}) {
   if (!Object.hasOwn(OUTCOMES, operation)) return null;
   if (thrown) status = status === "blocked" ? "blocked" : "failed";
   if (status === void 0) {
@@ -294,7 +313,7 @@ function classifyOutcome(operation, result, { status, thrown = false } = {}) {
     event,
     message,
     status,
-    error: status === "failed" ? { kind: "unknown", code, message, retryable: false } : null
+    error: status === "failed" ? { ...errorDetail(error, message), code, retryable: false } : null
   };
 }
 
@@ -327,13 +346,13 @@ function createMemoryLogger({ service, home, adapterConfigPath } = {}, dependenc
       } catch {
         valid = false;
       }
-      function finish(result2, thrown = false) {
+      function finish(result2, thrown = false, error = null) {
         if (finished) return;
         finished = true;
         try {
           if (!valid || !emitter) return;
           if (status !== void 0 && !classifyOutcome(operation, void 0, { status })) return;
-          const outcome = classifyOutcome(operation, result2, { status, thrown });
+          const outcome = classifyOutcome(operation, result2, { status, thrown, error });
           if (!outcome) return;
           const duration_ms = outcome.status === "blocked" ? null : Math.max(0, monotonicNow() - started);
           emitter.emit({ ...outcome, operation, context: { session_id }, duration_ms, attributes: {} });
@@ -344,7 +363,7 @@ function createMemoryLogger({ service, home, adapterConfigPath } = {}, dependenc
       try {
         result = execute(observation);
       } catch (error) {
-        finish(void 0, true);
+        finish(void 0, true, error);
         throw error;
       }
       if (!valid || !emitter) return result;
@@ -356,7 +375,7 @@ function createMemoryLogger({ service, home, adapterConfigPath } = {}, dependenc
       }
       if (typeof then === "function") {
         try {
-          then.call(result, (value) => finish(value), () => finish(void 0, true));
+          then.call(result, (value) => finish(value), (reason) => finish(void 0, true, reason));
         } catch {
         }
         return result;

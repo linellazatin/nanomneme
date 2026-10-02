@@ -51,6 +51,6 @@ test('stdout failure is a failed export outcome and preserves the original write
   try {
     await assert.rejects(executeCli(['export', '--db', path], { stdout, logger }), error => error === original);
     assert.deepEqual(records.map(r => [r.operation, r.status]), [['export', 'failed']]);
-    assert.equal(JSON.stringify(records).includes(original.message), false);
+    assert.deepEqual(records[0].error, { kind: 'unknown', code: 'export_failed', message: 'PRIVATE stdout error', retryable: false, cause_kind: 'Error' });
   } finally { rmSync(home, { recursive: true, force: true }); }
 });

@@ -23,13 +23,13 @@ export function createMemoryLogger({ service, home, adapterConfigPath } = {}, de
         if (!classifyOutcome(operation, undefined)) valid = false;
         if (valid) { initialize(); if (emitter) started = monotonicNow(); }
       } catch { valid = false; }
-      function finish(result, thrown = false) {
+      function finish(result, thrown = false, error = null) {
         if (finished) return;
         finished = true;
         try {
           if (!valid || !emitter) return;
           if (status !== undefined && !classifyOutcome(operation, undefined, { status })) return;
-          const outcome = classifyOutcome(operation, result, { status, thrown });
+          const outcome = classifyOutcome(operation, result, { status, thrown, error });
           if (!outcome) return;
           const duration_ms = outcome.status === 'blocked' ? null : Math.max(0, monotonicNow() - started);
           emitter.emit({ ...outcome, operation, context: { session_id }, duration_ms, attributes: {} });
@@ -37,12 +37,12 @@ export function createMemoryLogger({ service, home, adapterConfigPath } = {}, de
       }
       let result;
       try { result = execute(observation); }
-      catch (error) { finish(undefined, true); throw error; }
+      catch (error) { finish(undefined, true, error); throw error; }
       if (!valid || !emitter) return result;
       let then;
       try { then = result?.then; } catch { return result; }
       if (typeof then === 'function') {
-        try { then.call(result, value => finish(value), () => finish(undefined, true)); }
+        try { then.call(result, value => finish(value), reason => finish(undefined, true, reason)); }
         catch { /* A diagnostic settlement subscription cannot change the result. */ }
         return result;
       }

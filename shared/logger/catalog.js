@@ -64,7 +64,26 @@ for (const [operation, past] of [['import', 'imported'], ['export', 'exported'],
   };
 }
 
-export function classifyOutcome(operation, result, { status, thrown = false } = {}) {
+const ERROR_KINDS_BY_NAME = { TypeError: 'validation', RangeError: 'validation', SyntaxError: 'validation', TimeoutError: 'timeout' };
+const FILESYSTEM_ERROR_CODES = new Set(['ENOENT', 'EACCES', 'EPERM', 'EISDIR', 'ENOTDIR', 'EEXIST', 'ENOTEMPTY', 'EBUSY', 'EROFS', 'EMFILE', 'ENFILE']);
+const CAUSE_KIND_PATTERN = /^[A-Za-z_$][A-Za-z0-9_$]*(?:[.$][A-Za-z_$][A-Za-z0-9_$]*)*$/;
+
+export function errorDetail(error, fallback) {
+  const detail = { kind: 'unknown', message: fallback };
+  try {
+    if (typeof error === 'string') { if (error.length) detail.message = error; }
+    else if (typeof error?.message === 'string' && error.message.length) detail.message = error.message;
+    const code = typeof error?.code === 'string' ? error.code : null;
+    const name = typeof error?.name === 'string' ? error.name : null;
+    if (code === 'ETIMEDOUT') detail.kind = 'timeout';
+    else if (code !== null && FILESYSTEM_ERROR_CODES.has(code)) detail.kind = 'filesystem';
+    else if (name !== null && Object.hasOwn(ERROR_KINDS_BY_NAME, name)) detail.kind = ERROR_KINDS_BY_NAME[name];
+    if (name !== null && CAUSE_KIND_PATTERN.test(name)) detail.cause_kind = name;
+  } catch { /* Classification must not throw, even on hostile error properties. */ }
+  return detail;
+}
+
+export function classifyOutcome(operation, result, { status, thrown = false, error = null } = {}) {
   if (!Object.hasOwn(OUTCOMES, operation)) return null;
   if (thrown) status = status === 'blocked' ? 'blocked' : 'failed';
   if (status === undefined) {
@@ -79,5 +98,5 @@ export function classifyOutcome(operation, result, { status, thrown = false } = 
     ? operation === 'verify' ? 'verify_integrity_failed' : 'repair_verification_failed'
     : `${operation}_failed`;
   return { level, event, message, status,
-    error: status === 'failed' ? { kind: 'unknown', code, message, retryable: false } : null };
+    error: status === 'failed' ? { ...errorDetail(error, message), code, retryable: false } : null };
 }

@@ -1,6 +1,6 @@
 # End-to-End Memory Handling by Interface
 
-This document follows the operational path of a memory request, not the package dependency graph. All interfaces ultimately use `@openlines/nmnm-core`; none is a supported path for direct SQLite writes. Pi is the only interface currently instrumented with Logslines diagnostics.
+This document follows memory requests, management mutations, and their diagnostic outcomes. SQLite access goes through `@openlines/nmnm-core`. The CLI and adapters surround eligible explicit actions with `@openlines/nmnm-core/logging`; persistence methods and context reads remain uninstrumented. The observer participants below are the same shared implementation shipped with core, instantiated with each caller's identity and user configuration path.
 
 ## Shared core behavior
 
@@ -10,171 +10,163 @@ Each individual core call targets one physical store; CLI `retrieve --both` comp
 
 ## `nmnm-cli`
 
-**Implemented path:** `packages/nmnm-cli/bin/nmnm.js` parses command-line arguments, validates command-specific options, chooses the project, global, or explicit `--db` store, calls the core, then formats human-readable output, structured JSON, or canonical JSONL. `verify` and `export` open read-only; `repair` is writable and requires `--rebuild-fts`.
+**Implemented path:** the executable calls `executeCli` in `packages/nmnm-cli/bin/nmnm.js`. It identifies an eligible command before full argument parsing and observes the complete asynchronous command callback: synchronous `main()` processing, store work, output formatting, and stdout write completion. `main()` itself retains its synchronous interface and does not independently log. `verify` and `export` open existing stores read-only; `repair` opens an existing store writable and requires `--rebuild-fts`. Ordinary single-store 4Rs currently open writable/create-capable stores, including recall/retrieve/remove; their missing-store behavior differs from adapter shortcuts.
 
 ```mermaid
 sequenceDiagram
   autonumber
   actor Operator
-  participant CLI as nmnm CLI
-  participant Resolver as Store resolver
+  participant CLI as nmnm executable
+  participant Logger as shared logger
   participant Core as nmnm-core
-  participant DB as SQLite database
+  participant DB as selected SQLite stores
+  participant Output as stdout or export file
+  participant Log as nmnm-cli.jsonl
 
-  Operator->>CLI: command, positional input, options
-  CLI->>CLI: parse and validate command/options
-  CLI->>Resolver: choose project, global, or --db path
-  Resolver-->>CLI: path, scope, create/readOnly policy
-
-  alt retain or patch
-    CLI->>Core: open(path, writable) and retain(input)
-    Core->>DB: enable foreign keys, create/migrate if needed
-    Core->>DB: BEGIN IMMEDIATE
-    Core->>DB: insert/update memories
-    Core->>DB: replace memory_tags
-    Core->>DB: refresh memories_fts by rowid
-    Core->>DB: COMMIT
-    DB-->>Core: hydrated canonical memory
-    Core-->>CLI: stored memory
-  else recall or retrieve
-    CLI->>Core: open(path, read-only) and read
-    Core->>DB: select active memory or filtered page
-    opt text query
-      Core->>DB: FTS5 MATCH and BM25 ordering
-    end
-    DB-->>Core: memory, page, or empty result
+  Operator->>CLI: command and arguments
+  CLI->>CLI: identify eligible operation before full parsing
+  CLI->>Logger: run(operation, session_id = null, callback)
+  Logger->>Logger: lazily resolve shared logging configuration
+  Logger->>CLI: execute callback once
+  CLI->>CLI: main parses input and resolves store policy
+  alt single-store 4R operation
+    CLI->>Core: open selected store and execute
+    Core->>DB: query or canonical/tag/FTS transaction
+    DB-->>Core: result, null, or empty page
     Core-->>CLI: canonical result
-  else soft remove or purge
-    CLI->>Core: open(path, writable) and remove(id, mode)
-    Core->>DB: BEGIN IMMEDIATE
-    Core->>DB: delete FTS row
-    alt soft remove
-      Core->>DB: timestamp removed_at and updated_at
-    else purge
-      Core->>DB: delete tags then canonical row
-    end
-    Core->>DB: COMMIT
-    DB-->>Core: removal result or null
-    Core-->>CLI: removal result
+  else retrieve with --both
+    CLI->>Core: validate selectors, read existing project then global
+    Core->>DB: per-store retrieval without nested observers
+    Core-->>CLI: one combined page with store labels
+  else import, export, verify, or repair
+    CLI->>Core: validate/import, export, verify, or rebuildFts plus verify
+    Core->>DB: maintenance queries or transaction
+    Core-->>CLI: transfer data or integrity report
   end
-
-  CLI->>CLI: render text, --json, or export JSONL
-  CLI-->>Operator: stdout result and exit status
+  CLI->>Output: format/write output, export file atomically if requested
+  Output-->>CLI: completion or write error
+  CLI-->>Logger: callback settles, or original error propagates
+  opt effective logging enabled and diagnostics valid
+    Logger->>Logger: classify aggregate result, report failure, or exception
+    Logger->>Log: validate and append one sanitized terminal record
+  end
+  Logger-->>CLI: preserve original result or error
+  CLI-->>Operator: completed stdout and exit status, or existing error rendering
+  Note over CLI,Logger: Help, version, and unknown commands bypass observation
 ```
 
 ### CLI-specific boundaries
 
 - `retain` derives scope from the standard project/global selector; custom `--db` retain requires an explicit `--scope project|global` record label.
-- `retrieve --both` is the only composed operation: it retrieves project first, then global, preserves each item’s store provenance, and never compares BM25 scores across stores.
+- `retrieve --both` composes retrieval across existing stores: project first, then global, with store provenance preserved and no comparison of BM25 scores across databases. Repair composes rebuild plus verification; each complete CLI command has one observed outcome.
 - Export writes all canonical records, including expired and soft-removed rows, as JSONL. It deliberately excludes FTS rows and returns no retrieval-only score/store fields.
 - Import validates the complete canonical input before opening a new destination, then inserts the complete batch transactionally. Repair rebuilds only FTS-derived state.
-- The CLI does not emit Logslines diagnostics.
+- The CLI attempts one opt-in terminal record for a recognized 4R/import/export/verify/repair command, including invalid eligible arguments, integrity-report failure, and output-writing failure. Export file replacement occurs inside `main()`; stdout completion occurs inside `executeCli`. No success is recorded before required writing completes. Internal validation stores and combined per-store reads do not emit separately; help/version/unknown commands bypass the observer. Logging does not contaminate stdout JSON or export JSONL.
 
-## nmnm adapter 4Rs + diagnostics (logslines)
+## Shared action observation and diagnostics
 
-This is the high-level reference model for an adapter that exposes the four core operations and offers opt-in Logslines diagnostics. The adapter remains the policy boundary. It validates host input, selects a store, adds adapter-specific provenance only when appropriate, converts core results to the host response shape, and observes terminal outcomes for diagnostics.
+Each caller maps its surface to a closed operation name, supplies identity/configuration/correlation through its binding, and invokes `logger.run` with the complete action callback. The shared observer resolves configuration lazily, executes that callback exactly once even when diagnostics are disabled, and observes its returned value, original exception, or asynchronous settlement. It does not intercept raw core methods or start nested records for internal reads.
 
-Pi is the implemented (mature) example of this model. The other current adapters follow the core/store/response portion but do not yet instantiate the diagnostics-policy, Logslines-runtime, or JSONL-sink path. The diagram is a reusable architecture reference, as of the current and/or future state.
+The following diagram is the implemented common pattern. Callback work varies by surface: model 4Rs include store presence checks, input conversion, opening, and execution; management includes target resolution and pin/memory mutation. Host schema validation and unknown-operation dispatch can reject before the observer. Caller-specific diagrams below show those entry points.
 
 ```mermaid
 sequenceDiagram
   autonumber
-  actor Host as agent or host interface
-  participant Adapter as adapter interface
-  participant Core as nmnm-core
-  participant DB as SQLite store
-  participant Policy as diagnostics policy
-  participant Runtime as Logslines runtime
-  participant Log as JSONL diagnostics sink
+  actor Host
+  participant Adapter as caller interface
+  participant Logger as shared logger
+  participant Core as nmnm-core persistence
+  participant State as SQLite store or adapter pin file
+  participant Log as component JSONL file
 
-  Host->>Adapter: invoke retain, recall, retrieve, or remove
-  Adapter->>Adapter: validate input, select store, apply adapter policy
-
-  alt host policy blocks the operation
-    Adapter->>Policy: record sanitized blocked outcome
-    Policy->>Runtime: fixed event, status, duration, correlation only
-    opt diagnostics explicitly enabled
-      Runtime->>Log: validate and append one JSON line
+  Host->>Adapter: explicit eligible action
+  Adapter->>Adapter: map operation, bind identity, normalize host correlation
+  Adapter->>Logger: run(operation, session_id, action callback)
+  Logger->>Logger: first eligible invocation resolves config and starts timing if enabled
+  Logger->>Adapter: execute callback exactly once, even when diagnostics disabled
+  alt caller policy blocks action
+    Adapter->>Logger: observation.setStatus(blocked)
+    Adapter-->>Logger: original rejection or blocked result
+  else selected read/remove store is absent
+    Adapter-->>Logger: canonical null or empty page, no database creation
+  else persistence or pin action is required
+    alt pin or unpin
+      Adapter->>State: read/write adapter-owned pin JSON
+      State-->>Adapter: mutation result or error
+    else memory operation
+      Adapter->>Core: open store, execute operation, close handle
+      Core->>State: query or transaction
+      State-->>Core: memory result or error
+      Core-->>Adapter: canonical result or original error
     end
-    Adapter-->>Host: host-safe rejection
-  else operation is permitted
-    alt read/remove store is absent
-      Adapter->>Adapter: synthesize null or empty result, do not create store
-    else core call is needed
-      Adapter->>Core: open selected store and execute 4R
-      Core->>DB: read-only query or writable transaction
-      DB-->>Core: result, null, empty page, or error
-      Core-->>Adapter: canonical outcome
-    end
-    Adapter->>Policy: record sanitized terminal outcome
-    Policy->>Runtime: allowlisted event and fixed service identity
-    opt diagnostics explicitly enabled
-      Runtime->>Runtime: validate Logslines envelope and serialize
-      Runtime->>Log: append one JSON line
-    end
-    Adapter-->>Host: adapter response or original operation error
+    Adapter-->>Logger: callback result or original exception
   end
+  opt effective logging enabled and diagnostic input valid
+    Logger->>Logger: inspect terminal result transiently and select fixed catalog fields
+    Logger->>Log: Logslines validation, safe serialization, append one record
+  end
+  Logger-->>Adapter: unchanged result or original error
+  Adapter-->>Host: formatted response, notifications, or original rejection
+  Note over Adapter,Logger: Model response formatting and refresh follow observation
+  Note over Logger,Log: Diagnostic failures are contained, no raw result, error object, or stack trace is written
 ```
 
-Diagnostics observe completed or blocked operations; they never supply memory behavior. The policy layer must receive only an allowlisted operation/outcome vocabulary, fixed messages, duration, and safe correlation metadata. It must not receive memory content, IDs, queries, paths, tags, raw input, raw host messages, responses, or raw errors. If configuration lookup, validation, serialization, sink creation, or append fails, the diagnostic attempt becomes a no-op. The adapter returns the same result or throws the same original operation error it would have produced with diagnostics disabled.
+When enabled, the observer inspects canonical callback results transiently to classify outcomes: null recall/remove is `not_found`, zero-result retrieve is `empty`, and failed verify/repair reports are `failed`. Management callbacks can mark `not_found` or `blocked` explicitly. Exceptions are `failed` unless explicitly blocked. All blocked durations are null; other durations cover the observed callback and exclude logging work. The emitted envelope contains fixed catalog fields, identity, normalized session ID, duration, empty attributes, and failure summaries whose `error.message` carries the thrown error verbatim (falling back to the fixed catalog message when none is usable), with derived `error.kind` and `cause_kind`. It never serializes memory results, content/IDs, queries, paths, host objects, or stack traces. Configuration, clock, validation, and sink failures suppress diagnostics and preserve execution; invalid diagnostic inputs suppress the record. No-op logging still runs the callback. See the authoritative [catalog](../shared/logger/catalog.js) and [observer](../shared/logger/index.js).
+
+Shared `~/.local/share/nanomneme/config.jsonc` defaults logging off; user-level adapter `nmnm.jsonc` overrides only explicit booleans. Either invalid applicable configuration disables the caller, and project settings cannot authorize logging. Each logger caches the decision on its first eligible attempt. Pi `/reload` creates a fresh instance; Claude tools share an MCP-process instance; CLI, management commands, OpenCode bridges, and Codex runners resolve through their per-process instances. The first emitted record creates `logs/<component>.jsonl`; logs use owner-only permissions and remain separate from memory databases and pin JSON. The [architecture document](ARCHITECTURE.md#shared-logging-configuration-and-coverage) lists exact override paths and correlation sources.
 
 ## Pi adapter
 
-**Implemented path:** `adapters/pi/src/tools.js` registers the four model-facing tools. It maps retain scope or other-tool store parameters to the selected project/global store, rejects untrusted project operations, adds `metadata.source: "pi"` only on new retains, uses bounded tool responses, and queues a future context refresh after a successful retain/remove. `adapters/pi/src/logger.js` attempts to emit one terminal diagnostic outcome per instrumented 4R execution when logging is enabled.
+**Implemented path:** `adapters/pi/src/tools.js` maps retain scope or other-tool store parameters, safely obtains the current host session ID, and starts observation. Project trust checks, missing-store shortcuts, input conversion, and core calls execute inside the callback. New retains add `metadata.source: "pi"`; ID patches preserve source. Bounded tool response formatting and future context refresh happen after observation succeeds. Pi tools and session management share a lazy logger from `adapters/pi/src/session.js`.
 
 ```mermaid
 sequenceDiagram
   autonumber
-  actor Model
+  actor Model as Pi model
   participant Tool as Pi registered tool
+  participant Logger as shared logger
   participant Core as nmnm-core
-  participant DB as SQLite database
-  participant Logger as Pi logger/catalog
-  participant Runtime as generated logger runtime
+  participant DB as selected SQLite store
   participant Log as nmnm-pi.jsonl
 
-  Model->>Tool: retain_memory, recall_memory, retrieve_memory, or remove_memory
-  Tool->>Tool: select store, retain new source = pi
-
-  alt selected project is untrusted
-    Tool->>Logger: blocked operation, null duration
-    Logger->>Runtime: fixed event/status/message only
-    opt global logging enabled
-      Runtime->>Log: validate and append one JSONL record
-    end
-    Tool-->>Model: project-trust error
-  else selected store is permitted
-    Tool->>Tool: check existing store for non-retain reads/removal
-    alt store is absent for read/remove
-      Tool->>Tool: synthesize null or empty page, do not create database
-    else core call is required
-      Tool->>Core: open selected store and execute 4R
-      Core->>DB: read-only read or writable transaction
-      DB-->>Core: result, null, empty page, or throw
-      Core-->>Tool: result or throw
-    end
-    Tool->>Logger: terminal outcome and measured duration
-    Logger->>Runtime: closed event mapping and host session ID
-    opt global logging.enabled is true
-      Runtime->>Runtime: Logslines v1 validation and serialization
-      Runtime->>Log: append one sanitized JSON line
-    end
-    Tool->>Tool: queue refresh after successful retain/remove
-    Tool-->>Model: bounded canonical JSON or thrown operation error
+  Model->>Tool: invoke a 4R tool
+  Tool->>Tool: map scope/store and safely read host session ID
+  Tool->>Logger: run(operation, session_id, callback)
+  Logger->>Logger: resolve shared config plus Pi user override once per instance
+  Logger->>Tool: execute callback
+  alt project operation is untrusted
+    Tool->>Logger: setStatus(blocked)
+    Tool-->>Logger: original project-trust error
+  else non-retain store is absent
+    Tool-->>Logger: null or empty page without creating store
+  else operation can access core
+    Tool->>Tool: map core input, add source pi only for new retains
+    Tool->>Core: open, execute 4R, close
+    Core->>DB: read-only query or writable transaction
+    DB-->>Core: result or error
+    Core-->>Tool: canonical result or original error
+    Tool-->>Logger: callback result or original exception
   end
+  opt effective logging enabled
+    Logger->>Logger: classify result, blocked duration is null
+    Logger->>Log: append one sanitized Logslines record
+  end
+  Logger-->>Tool: unchanged result or original error
+  Tool->>Tool: queue refresh on successful mutation, format bounded JSON
+  Tool-->>Model: bounded response or original operation error
 ```
 
 ### Pi diagnostic boundary
 
-Pi’s logger records the operation, normalized terminal status, fixed event/message, measured duration where meaningful, service identity, and the host session ID when available. It does **not** receive or emit memory content, IDs, queries, store names, paths, raw arguments, raw errors, model messages, or tool responses. Browser Pin/Unpin/Remove and explicit `/memory` Pin/Unpin/Remove use separate `browser_*` and `command_*` operations, but their event catalog remains owned by the same logger boundary.
+Pi passes normalized correlation from `ctx.sessionManager.getSessionId()` on each action, using null if absent, invalid, or throwing. The shared observer sees the callback result transiently, but emits only the common sanitized envelope. Browser Pin/Unpin/Remove and explicit `/memory` Pin/Unpin/Remove use separate `browser_*` and `command_*` operations in the shared catalog. Pin files remain Pi-owned JSON outside SQLite.
 
-The logger is lazy: the first attempted record creates a Pi logger that reads only global `<Pi agent directory>/nmnm.jsonc` `logging.enabled`. Missing, invalid, or project-local logging settings leave diagnostics disabled. The self-contained `logger-runtime.generated.js` validates through Logslines and appends to `~/.local/share/nanomneme/logs/nmnm-pi.jsonl`. Any session-ID lookup, logger, validation, serialization, sink, or write failure returns no record and must not change the memory result, thrown error, trust decision, notification, or refresh behavior.
+Logger construction precedes registration; configuration resolution is lazy on the first eligible invocation. Shared authorization and the user-level `<Pi agent directory>/nmnm.jsonc` override follow the common precedence rules. Enabled outcomes append to `~/.local/share/nanomneme/logs/nmnm-pi.jsonl` through core's generated runtime. Browser Remove preflight emits no record when its target is already inactive, confirmation succeeds, or the user cancels; preflight exceptions can emit a failed outcome. A confirmed mutation starts a separate observation after confirmation, excluding decision time. Notifications and refresh remain outside mutation observation.
 
 Pi’s `session_start`, `session_compact`, and `before_agent_start` hooks separately maintain its bounded transient index. The index reads existing stores/settings/pins without creating them. Automatic context injection and session lifecycle events emit no diagnostics. `/memory` browser navigation, search, back/cancel, read-only commands, and canceled removals also emit no diagnostics.
 
 ## Claude Code adapter
 
-**Implemented path:** Claude Code spawns the local stdio MCP server in `adapters/claude/mcp/server.js`. The server registers four Zod-shaped tools and delegates to `adapters/claude/src/operations.js`, which chooses the store and calls the shared store helper/core. New retains add `metadata.source: "claude-code"`; ID patches preserve existing metadata.
+**Implemented path:** Claude Code spawns `adapters/claude/mcp/server.js`, which registers four schema-shaped tools and one process-shared lazy logger. Host/schema validation precedes handler dispatch. `src/operations.js` observes core input conversion, store resolution/presence checks, and execution; new retains add `metadata.source: "claude-code"` and ID patches preserve source. The shared outcome is selected before formatting content/details or serializing MCP responses.
 
 ```mermaid
 sequenceDiagram
@@ -182,34 +174,37 @@ sequenceDiagram
   actor Model as Claude model
   participant Host as Claude Code host
   participant MCP as local stdio MCP server
-  participant Ops as Claude operations/store helper
+  participant Ops as Claude operations
+  participant Logger as shared logger
   participant Core as nmnm-core
-  participant DB as SQLite database
+  participant DB as selected SQLite store
+  participant Log as nmnm-claude.jsonl
 
-  Model->>Host: invoke native memory tool
-  Host->>MCP: stdio MCP tool request
-  MCP->>MCP: validate input with Zod schema
-  MCP->>Ops: handleTool(name, params, project context)
-  Ops->>Ops: select project/global store
-
-  alt new retain
-    Ops->>Ops: add metadata.source = claude-code
-    Ops->>Core: open writable store and retain
-    Core->>DB: canonical/tag/FTS transaction
-  else recall, retrieve, or remove
-    Ops->>Ops: check selected store exists
-    alt store absent
-      Ops-->>MCP: null or empty page, no database creation
-    else store exists
-      Ops->>Core: read-only read or soft remove
-      Core->>DB: query or writable remove transaction
-      DB-->>Core: result
-      Core-->>Ops: result
-    end
+  Model->>Host: invoke memory tool
+  Host->>MCP: MCP request
+  MCP->>MCP: host/schema validation before handler dispatch
+  MCP->>Ops: handleTool with process-shared lazy logger
+  Ops->>Logger: run(4R operation, session_id = null, callback)
+  Logger->>Logger: resolve shared config plus Claude user override once per instance
+  Logger->>Ops: execute callback
+  Ops->>Ops: map input and resolve selected store
+  alt non-retain store is absent
+    Ops-->>Logger: null or empty page without creating store
+  else core call is required
+    Ops->>Ops: add source claude-code only for new retains
+    Ops->>Core: open, execute 4R, close
+    Core->>DB: read-only query or writable transaction
+    DB-->>Core: result or error
+    Core-->>Ops: canonical result or original error
+    Ops-->>Logger: callback result or original exception
   end
-
-  Ops-->>MCP: JSON text content and details
-  MCP-->>Host: MCP tool response
+  opt effective logging enabled
+    Logger->>Log: append one sanitized terminal outcome
+  end
+  Logger-->>Ops: unchanged result or original error
+  Ops->>Ops: invoke mutation callback and format content/details
+  Ops-->>MCP: tool content or original exception
+  MCP-->>Host: MCP protocol response
   Host-->>Model: native tool result
 ```
 
@@ -218,11 +213,11 @@ sequenceDiagram
 - The MCP process imports core directly. It does not invoke the CLI, parse CLI output, run a daemon, or send network traffic.
 - The `SessionStart` command hook independently builds a bounded read-only project/global index and optional autoretention guidance as transient `additionalContext`; the disabled-by-default `UserPromptSubmit` hook handles periodic reinjection.
 - The deterministic `bin/memory.js` management surface and `/nanomneme:memory` command use the same store/context helpers. Pins are Claude-specific files, not canonical SQLite state.
-- Claude currently has no Logslines instrumentation.
+- Explicit tools append one opt-in terminal record to `nmnm-claude.jsonl` through the shared observer. Management pin/unpin/remove uses `command_*`; ambiguous targets are blocked and missing targets are not_found. Read-only management, schema rejection before dispatch, and context hooks remain unlogged. Current tool/management correlation is null. Restart the MCP process to refresh its cached logging settings.
 
 ## OpenCode adapter
 
-**Implemented path:** OpenCode’s server and TUI plugins run under Bun, which cannot provide the core’s required `node:sqlite`. `adapters/opencode/src/bridge-client.js` therefore spawns a short-lived Node process for every core or context operation. `src/bridge.js` reads one JSON request from stdin, calls operations/context/browser code, and writes one JSON response to stdout. New retains add `metadata.source: "opencode"`.
+**Implemented path:** OpenCode's server and TUI plugins run under Bun and use `adapters/opencode/src/bridge-client.js` to spawn a short-lived Node process. `src/bridge.js` parses one JSON request, validates an optional separate diagnostic context, and dispatches tools to `handleTool` or mutations to `mutate`. These Node helpers own shared logging; the bridge does not add a second observer. New retains add `metadata.source: "opencode"`. The bridge formats its JSON stdout response after the memory/mutation outcome has been observed.
 
 ```mermaid
 sequenceDiagram
@@ -232,35 +227,40 @@ sequenceDiagram
   participant Client as bridge client
   participant Bridge as short-lived Node bridge
   participant Ops as OpenCode operations
+  participant Logger as shared logger
   participant Core as nmnm-core
-  participant DB as SQLite database
+  participant DB as selected SQLite store
+  participant Log as nmnm-opencode.jsonl
 
   Model->>Bun: invoke native memory tool
-  Bun->>Client: runBridge(tool request, store context)
-  Client->>Bridge: spawn node, send JSON on stdin
-  Bridge->>Ops: handleTool(name, params, context)
-  Ops->>Ops: select project/global store
-
-  alt new retain
-    Ops->>Ops: add metadata.source = opencode
-    Ops->>Core: open writable store and retain
-    Core->>DB: canonical/tag/FTS transaction
-  else recall, retrieve, or remove
-    Ops->>Ops: check selected store exists
-    alt store absent
-      Ops-->>Bridge: null or empty page, no database creation
-    else store exists
-      Ops->>Core: read-only read or soft remove
-      Core->>DB: query or writable remove transaction
-      DB-->>Core: result
-      Core-->>Ops: result
-    end
+  Bun->>Client: tool name, parameters, tool-context directory and host session ID
+  Client->>Bridge: spawn Node and send one JSON request
+  Bridge->>Bridge: validate diagnostic_context, derive trusted session ID
+  Bridge->>Ops: handleTool with Node logger and trusted correlation
+  Ops->>Logger: run(4R operation, session_id, callback)
+  Logger->>Logger: resolve shared config plus OpenCode user override
+  Logger->>Ops: execute callback
+  Ops->>Ops: map input and resolve selected store
+  alt non-retain store is absent
+    Ops-->>Logger: null or empty page without creating store
+  else core call is required
+    Ops->>Ops: add source opencode only for new retains
+    Ops->>Core: open, execute 4R, close
+    Core->>DB: read-only query or writable transaction
+    DB-->>Core: result or error
+    Core-->>Ops: canonical result or original error
+    Ops-->>Logger: callback result or original exception
   end
-
-  Ops-->>Bridge: serialized tool result
+  opt effective logging enabled and diagnostic context valid
+    Logger->>Log: append one sanitized terminal outcome
+  end
+  Logger-->>Ops: unchanged result or original error
+  Ops-->>Bridge: formatted tool result or original exception
   Bridge-->>Client: JSON stdout response
-  Client-->>Bun: parsed response or fail-safe error
+  Client-->>Bun: parsed response or safe transport/parse error
   Bun-->>Model: native tool result
+  Note over Client,Logger: Bridge spawn failures emit one host-side failed record, request-parse failures before observation have no diagnostic record
+  Note over Bridge,Client: Response transport failures do not change a completed core outcome
 ```
 
 ### OpenCode-specific boundaries
@@ -268,64 +268,80 @@ sequenceDiagram
 - The Bun-side module graph does not import `@openlines/nmnm-core`; Node bridge processes own all core, SQLite, JSONC, pin, browser, and index imports.
 - `experimental.chat.system.transform` invokes the same bridge for every non-empty model-request context to rebuild transient project/global memory context. OpenCode rebuilds the system prompt per request, so Pi/Claude-style cadence gating is not used.
 - The optional TUI browser and `nmnm-opencode` CLI are model-free management surfaces. They call the same bridge or direct Node-side helpers, respectively; neither adds an MCP server or direct Bun-to-SQLite path.
-- OpenCode currently has no Logslines instrumentation.
+- Tools use the shared 4R catalog; Node `mutate` uses `browser_*` and the direct Node management CLI uses `command_*`. Enabled outcomes append to `nmnm-opencode.jsonl`. Index/status/browse/detail requests and canceled TUI removal do not emit records. The Bun server plugin forwards the tool-context session ID as `diagnostic_context.session_id` and resolves the project store from the tool-context directory; the model-free TUI and CLI management surfaces carry no host session, so their correlation stays null. The bridge accepts a nullable/nonempty session ID separately from model parameters. Malformed diagnostic context suppresses emission without stopping the memory action. Bridge spawn failures emit one `failed` record from the Bun plugin host itself, carrying the spawn error verbatim, because the bridge and its observer provably never ran; request parsing and rejection before observation have no memory diagnostic; later response transport/parse failure does not replace a completed memory outcome.
 
 ## Codex adapter
 
-**Implemented path:** Codex receives one lazy-loaded `memory` skill. The package-relative `skills/memory/runner.js` imports the adapter runner, accepts one JSON request on stdin, invokes the core, and returns one JSON envelope. It supports only project/global 4Rs and soft removal. New retains add `metadata.source: "codex"`.
+**Implemented path:** Codex's lazy-loaded memory skill invokes the cached package-relative `skills/memory/runner.js`. `scripts/runner.js` parses stdin and formats the protocol envelope outside observation. `src/runner.js` validates the request object and allowed operation, reads normalized host correlation, then observes input/store validation, path resolution, missing-store shortcuts, and core execution. New retains add `metadata.source: "codex"`; ID patches preserve source. Local marketplace preparation includes physical core/parser dependencies so the cached runner imports the same logging implementation.
 
 ```mermaid
 sequenceDiagram
   autonumber
   actor Model as Codex model
   participant Skill as lazy memory skill
-  participant Runner as package-relative Node runner
-  participant Core as nmnm-core
-  participant DB as SQLite database
+  participant Runner as cached package-relative Node runner
+  participant Logger as shared logger
+  participant Core as bundled nmnm-core
+  participant DB as selected SQLite store
+  participant Log as nmnm-codex.jsonl
 
-  Model->>Skill: decide to retain, recall, retrieve, or remove
-  Skill->>Runner: execute Node runner with one JSON stdin request
-  Runner->>Runner: validate operation, input object, and store
-  Runner->>Runner: resolve project/global standard path
-
-  alt retain
-    Runner->>Runner: add metadata.source = codex for new record
-    Runner->>Core: open writable store and retain
-    Core->>DB: canonical/tag/FTS transaction
-  else recall, retrieve, or remove
-    Runner->>Runner: test selected store existence
-    alt store absent
-      Runner-->>Skill: null or empty page, no database creation
-    else store exists
-      Runner->>Core: read-only read or soft remove
-      Core->>DB: query or writable remove transaction
-      DB-->>Core: result
-      Core-->>Runner: result
-    end
+  Model->>Skill: choose explicit memory operation
+  Skill->>Runner: execute runner with one JSON stdin request
+  Runner->>Runner: parse request and validate allowed operation
+  Runner->>Runner: read host thread ID, fallback session ID, otherwise null
+  Runner->>Logger: run(operation, host session_id, callback)
+  Logger->>Logger: resolve shared config plus Codex user override
+  Logger->>Runner: execute callback
+  Runner->>Runner: validate input/store and resolve standard path
+  alt non-retain store is absent
+    Runner-->>Logger: null or empty page without creating store
+  else core call is required
+    Runner->>Runner: add source codex only for new retains
+    Runner->>Core: open, execute 4R, close
+    Core->>DB: read-only query or writable transaction
+    DB-->>Core: result or error
+    Core-->>Runner: canonical result or original error
+    Runner-->>Logger: callback result or original exception
   end
-
-  Runner-->>Skill: JSON { ok, result } or nonzero { ok: false, error }
-  Skill-->>Model: decoded operation result
+  opt effective logging enabled
+    Logger->>Log: append one sanitized terminal outcome with host correlation
+  end
+  Logger-->>Runner: unchanged result or original error
+  Runner-->>Skill: JSON result or nonzero JSON error envelope
+  Skill-->>Model: decoded response
+  Note over Runner,Logger: Request session fields are ignored, protocol serialization is outside observation
 ```
 
 ### Codex-specific boundaries
 
-- Codex supports no arbitrary database path, purge, import, export, verify, repair, adapter settings, pins, autoretention, or management CLI. Those remain core/CLI or other-adapter concerns.
+- Codex supports no arbitrary database path, purge, import, export, verify, repair, context settings, pins, autoretention, or management CLI. Its user-level `nmnm.jsonc` supports the logging override only; maintenance remains a CLI concern.
 - Its trusted `SessionStart` hook is a separate read-only path that opens existing stores only, emits no index for empty/unreadable stores, and applies a fixed 1,200-character cap.
-- Codex currently has no Logslines instrumentation.
+- Codex observes explicit 4Rs through the shared logger, using host `CODEX_THREAD_ID` with `CODEX_SESSION_ID` fallback and null when absent. Request-supplied session fields are ignored; the SessionStart hook remains unlogged.
+
+## Management and context flows
+
+| Surface | Observed callback | Catalog operations | Unlogged work or post-action delivery |
+|---|---|---|---|
+| Pi browser | Pin/unpin target check and pin write; confirmed soft remove | `browser_pin`, `browser_unpin`, `browser_remove` | Navigation, successful preflight/confirmation, cancellation, notification, refresh |
+| Pi `/memory` | Mutation target resolution and pin/soft-remove action | `command_pin`, `command_unpin`, `command_remove` | Status/list/refresh, response notification, context rebuild |
+| Claude management | Qualified/unqualified target resolution and pin/soft-remove action | `command_pin`, `command_unpin`, `command_remove` | Invalid command usage, status/list/search/show, final text/protocol relay |
+| OpenCode TUI | Node bridge mutation target check and pin/soft-remove action | `browser_pin`, `browser_unpin`, `browser_remove` | Bun-side confirmation/cancellation, browse/detail/index reads, UI refresh |
+| OpenCode management | Node CLI target resolution and pin/soft-remove action | `command_pin`, `command_unpin`, `command_remove` | Invalid command usage, status/list/search/show, final text output |
+
+Pin/unpin touches each adapter's JSON pin file; soft remove calls core and leaves matching pins configured until explicitly unpinned. Pi pin mutations take an exclusive same-directory lock, reread while held, and atomically replace the file; a lock is never reclaimed automatically, so a crash-left lock requires manual removal after all writers stop. Target resolution may perform several core reads, but only the outer mutation is observed. A missing target yields the catalog's not_found outcome where supported; ambiguous command targets yield blocked for the implemented resolving surfaces. Codex has no management mutation surface. Pi/Claude context hooks, OpenCode's per-request context bridge, and Codex's read-only SessionStart index call core directly without an observer, so startup or prompt-time reads create no diagnostic records.
 
 ## Cross-interface comparison
 
 | Interface | Host-to-core route | New-record provenance | Missing-store read/remove behavior | Context/index path | Management surface | Logslines diagnostics |
 |---|---|---|---|---|---|---|
-| `nmnm-cli` | Node CLI directly imports core | Caller-controlled metadata | Command/store semantics; no implicit fallback | None | CLI itself | None |
-| Pi | Pi extension directly imports core | `"pi"` | `null` for recall/remove; empty page for retrieve; no creation | Hooks build bounded next-prompt index | `/memory` command and browser | Yes: model 4Rs plus browser/command mutations when globally enabled |
-| Claude Code | Local stdio MCP server directly imports core | `"claude-code"` | `null` for recall/remove; empty page for retrieve; no creation | SessionStart and optional UserPromptSubmit hooks | `bin/memory.js` and `/nanomneme:memory` | None |
-| OpenCode | Bun plugin → short-lived Node bridge → core | `"opencode"` | `null` for recall/remove; empty page for retrieve; no creation | Per-request system transform through bridge | `nmnm-opencode` CLI and optional TUI | None |
-| Codex | Lazy skill → package-relative Node runner → core | `"codex"` | `null` for recall/remove; empty page for retrieve; no creation | Read-only SessionStart hook | None | None |
+| `nmnm-cli` | Node CLI directly imports core | Caller-controlled metadata | Single-store 4Rs may create a store; `--both` skips absent stores | None | CLI itself | Yes: explicit commands, including maintenance and output completion |
+| Pi | Pi extension directly imports core | `"pi"` | `null` for recall/remove; empty page for retrieve; no creation | Hooks build bounded next-prompt index | `/memory` command and browser | Yes: model 4Rs and browser/command mutations under effective shared/user settings |
+| Claude Code | Local stdio MCP server directly imports core | `"claude-code"` | `null` for recall/remove; empty page for retrieve; no creation | SessionStart and optional UserPromptSubmit hooks | `bin/memory.js` and `/nanomneme:memory` | Yes: explicit 4Rs and management mutations |
+| OpenCode | Bun plugin → short-lived Node bridge → core | `"opencode"` | `null` for recall/remove; empty page for retrieve; no creation | Per-request system transform through bridge | `nmnm-opencode` CLI and optional TUI | Yes: Node operations and mutations; bridge spawn failures observed host-side, other pre-bridge failures unobserved |
+| Codex | Lazy skill → package-relative Node runner → core | `"codex"` | `null` for recall/remove; empty page for retrieve; no creation | Read-only SessionStart hook | None | Yes: explicit 4Rs; no hook records |
 
 ## Dev notes
 
 - The diagrams intentionally show the normal 4R path and the most consequential missing-store/trust branch. They do not model every validation exception, configuration parse failure, or UI selection state.
-- The core transaction labels group several SQL statements into one semantic step. The authoritative physical schema, constraints, and derived-state details remain in [`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md) and `packages/nmnm-core/src/index.js`.
-- Pi’s diagnostic path is deliberately shown after the terminal operation outcome is known. The logger must observe, not control, memory behavior.
+- The core transaction labels group several SQL statements into one semantic step. The authoritative physical schema, constraints, and derived-state details remain in [the architecture document](ARCHITECTURE.md) and [core source](../packages/nmnm-core/src/index.js).
+- Each logger call surrounds the complete callback; emission follows its terminal result or exception. For asynchronous callbacks, `run` returns the original promise immediately and the record waits for settlement; diagrams group those steps into the terminal outcome. Error arrows group thrown/rejected errors with normal returns for readability. Logger internals combine the catalog, configuration resolver, Logslines emitter, and sink within one generated module. Adapter response serialization lies outside observation; CLI output completion lies inside it.

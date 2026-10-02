@@ -13,11 +13,11 @@ Pi package for the [nanomneme](https://nanomneme.openlines.dev) SQLite memory ad
 ## Features
 
 - **Native memory tools:** model-invoked retain, recall, retrieve, and remove operations over `nmnm-core`; project operations require Pi project trust, while global operations remain available in untrusted projects. Model-visible JSON is bounded to 50 KiB, with explicit summaries for oversized results.
-- **Opt-in Logslines diagnostics:** enable `logging.enabled` in global Pi `nmnm.jsonc` and run `/reload` to apply changes. The shared lazy logger appends privacy-bounded `logslines/v1` outcomes for model-facing 4R tools, browser mutations, and explicit `/memory` pin, unpin, and remove commands to `~/.local/share/nanomneme/logs/nmnm-pi.jsonl`. Navigation, read-only commands, and canceled removal are not logged. The package includes a self-contained generated runtime, so installation does not fetch Logslines source.
+- **Opt-in Logslines diagnostics:** enable the default in `~/.local/share/nanomneme/config.jsonc`, or override `logging.enabled` in user-level Pi `nmnm.jsonc` and run `/reload` to apply changes. The shared lazy logger appends privacy-bounded `logslines/v1` outcomes for model-facing 4R tools, browser mutations, and explicit `/memory` pin, unpin, and remove commands to `~/.local/share/nanomneme/logs/nmnm-pi.jsonl`. Navigation, read-only commands, and canceled removal are not logged. The core dependency includes the shared generated runtime, so installation does not fetch Logslines source.
 - **Project and global memory:** explicit store selection with canonical records and no custom database-path parsing.
 - **Bounded automatic context:** transient autoretention guidance and the first-prompt memory index share one configurable character budget; pinned entries come first, with recent active fallback, store and recorded-source labels, unresolved-pin reporting, and refresh after successful compaction or memory mutations.
 - **Opt-in autoretention:** project/global JSONC rules guide the active model's `retain_memory` calls without a nested model, worker, or direct adapter write.
-- **Adapter-owned configuration:** optional JSONC settings and separate JSON pin files, with project and global locations.
+- **Adapter-owned configuration:** optional JSONC settings and separate JSON pin files, with project and global locations; pin mutations are serialized and atomically replaced.
 - **Direct user controls:** `/memory refresh`, `status`, `list`, `remove`, `pin`, and `unpin` without model involvement; `status` reports injection state, autoretention, the effective index budget, current full-payload character count, and lifecycle metadata without exposing memory content.
 
   ![nmnm-pi status](docs/img/ss-memory-status.png)
@@ -31,12 +31,12 @@ Pi package for the [nanomneme](https://nanomneme.openlines.dev) SQLite memory ad
 - **Readable list UX:** project-first combined listing, pagination, `[project]` and `[global]` labels, exact-store `*` pin markers, and 60-character previews; browser rows omit IDs, which remain in details.
 
   ![nmnm-pi list all](docs/img/ss-memory-list-all.png)
-- **Safety boundaries:** validated pin targets, ambiguity-safe removal, soft-only slash removal, non-creating native reads, and durable unresolved pins.
+- **Safety boundaries:** validated pin targets, serialized atomic pin updates, ambiguity-safe removal, soft-only slash removal, non-creating native reads, and durable unresolved pins.
 
 
 ## Quickstart
 
-Version 0.3.1 targets Pi 0.87.0 or newer, verified through Pi 0.99.1, and Node.js 22.19 or newer. Install it globally with Pi:
+Version 0.4.0 targets Pi 0.87.0 or newer, verified through Pi 1.0.0, and Node.js 22.19 or newer. Install it globally with Pi:
 
 ```sh
 pi install npm:@openlines/nmnm-pi

@@ -168,3 +168,9 @@ node packages/nmnm-cli/bin/nmnm.js retrieve "<query>" --global
 ```
 
 Runtime code and tests are authoritative when this manual disagrees with behavior.
+
+## Shared opt-in diagnostics
+
+Set `"logging": { "enabled": true }` in `~/.local/share/nanomneme/config.jsonc` to enable the shared default. JSONC comments and trailing commas are supported. Adapter user-level `nmnm.jsonc` can explicitly enable or disable logging; absence inherits. Either invalid applicable logging configuration disables that caller. Project settings cannot authorize logging. Records use the shared `logslines/v1` catalog and core-distributed runtime, contain no memory payloads or stack traces, carry thrown-error messages verbatim in failed records, and append to `~/.local/share/nanomneme/logs/<component>.jsonl`. Correlation is null: Claude Code exposes `session_id` only to hook stdin, never to MCP servers or the management CLI, and hook session fields are not forwarded. Logging failures preserve operations and output. Existing databases, pin files, and logs require no migration.
+
+Claude uses its existing user settings resolver (`CLAUDE_PLUGIN_DATA` when supplied, otherwise `~/.claude/nmnm.jsonc`). Explicit MCP 4Rs and management mutations are observed; context hooks and read-only management are unlogged. Restart the MCP process to refresh cached settings. Correlation is null.

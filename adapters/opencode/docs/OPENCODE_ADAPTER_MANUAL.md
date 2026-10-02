@@ -222,3 +222,9 @@ Memory retained through OpenCode is readable by the Pi and Claude Code adapters 
 ```sh
 node packages/nmnm-cli/bin/nmnm.js retrieve "<query>" --global
 ```
+
+## Shared opt-in diagnostics
+
+Set `"logging": { "enabled": true }` in `~/.local/share/nanomneme/config.jsonc` to enable the shared default. JSONC comments and trailing commas are supported. Adapter user-level `nmnm.jsonc` can explicitly enable or disable logging; absence inherits. Either invalid applicable logging configuration disables that caller. Project settings cannot authorize logging. Records use the shared `logslines/v1` catalog and core-distributed runtime, contain no memory payloads or stack traces, carry thrown-error messages verbatim in failed records, and append to `~/.local/share/nanomneme/logs/<component>.jsonl`. Logging failures preserve operations and output. Existing databases, pin files, and logs require no migration.
+
+OpenCode uses its existing user settings resolver under the OpenCode config directory. Node tool operations, CLI mutations, and confirmed TUI mutations are observed; index/navigation reads are unlogged. Each bridge process resolves settings anew. Bridge spawn failures emit one `failed` record from the Bun plugin host itself (the bridge provably never ran), carrying the spawn error verbatim; post-spawn transport/parse failures have no diagnostic record because the bridge may already have logged the true outcome. Correlation is null unless trusted host context supplies a verified ID.

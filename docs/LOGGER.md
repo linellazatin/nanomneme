@@ -6,7 +6,7 @@ This manual is for maintainers of nanomneme’s opt-in diagnostic logging. It co
 
 Nanomneme diagnostics are opt-in and append privacy-bounded `logslines/v1` JSONL records for selected explicit actions. The shared logger classifies an action’s result, resolves logging configuration, validates and serializes the record through Logslines, and writes it to the component log. It must remain subordinate to the action it observes: disabled, invalid, or failed diagnostics never change the action’s result or error.
 
-The logger is intentionally shipped with `@openlines/nmnm-core/logging`, rather than fetched or installed at runtime. This lets the CLI and every adapter use one reviewed implementation and one pinned Logslines release. No memory content, memory IDs, queries, store paths, or raw errors belong in emitted records.
+The logger is intentionally shipped with `@openlines/nmnm-core/logging`, rather than fetched or installed at runtime. This lets the CLI and every adapter use one reviewed implementation and one pinned Logslines release. No memory content, memory IDs, queries, store paths, or stack traces belong in emitted records; failed records carry the thrown error's message and class name in `error`.
 
 ## Source and artifact map
 
@@ -133,7 +133,7 @@ No output and exit code `0` means a comparison matches. Replace `0.2.0` with the
 - Do not replace the external snapshot by copying files manually. Use `external:update` so provenance and replacement are validated and atomic.
 - Do not omit the generated runtime from a shared-logger or external-source change.
 - Do not weaken the offline hash test to accommodate a changed snapshot. Update its exact expected tag, release URL, and hashes after reviewing the upstream release.
-- Do not log memory payloads, identifiers, queries, storage paths, or raw errors. Extend the closed catalog and its tests instead of adding ad hoc diagnostic fields.
+- Do not log memory payloads, identifiers, queries, storage paths, or stack traces. Extend the closed catalog and its tests instead of adding ad hoc diagnostic fields.
 - Do not make memory persistence, context injection, read-only navigation, or diagnostics-disabled execution depend on logging success.
 
 ## Troubleshooting

@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { open } from '@openlines/nmnm-core';
 import { parseArgs, runCli } from '../src/cli.js';
 import { pinsPath, settingsPath, writePins } from '../src/context.js';
-import { runMemory } from '../src/store.js';
+import { databasePath, runMemory } from '../src/store.js';
 
 function temporaryDirectory(name) {
   return mkdtempSync(join(tmpdir(), name));
@@ -173,6 +174,29 @@ test('remove soft-removes an active memory and leaves purge to the CLI operator'
 
     const recalled = runMemory({ cwd: f.project, store: 'project', operation: 'recall', input: { id: memory.id }, create: false, readOnly: true });
     assert.equal(recalled, null);
+  } finally {
+    cleanup(f);
+  }
+});
+
+test('missing ids report not found, while ids in both stores report ambiguity', () => {
+  const f = fixture();
+  try {
+    const missing = runCli({ argv: ['show', 'does-not-exist'], ...f.ctx });
+    assert.equal(missing.ok, false);
+    assert.match(missing.text, /Nanomneme memory not found: does-not-exist/);
+    const removeMissing = runCli({ argv: ['remove', 'does-not-exist'], ...f.ctx });
+    assert.equal(removeMissing.ok, false);
+    assert.match(removeMissing.text, /Nanomneme memory not found: does-not-exist/);
+
+    const memory = runMemory({ cwd: f.project, store: 'project', operation: 'retain', input: { content: 'Duplicated id' } });
+    const globalStore = open(databasePath({ cwd: f.project, home: f.home, platform: 'darwin', store: 'global' }));
+    globalStore.import([{ ...memory, scope: 'global' }]);
+    globalStore.close();
+
+    const ambiguous = runCli({ argv: ['show', memory.id], ...f.ctx });
+    assert.equal(ambiguous.ok, false);
+    assert.match(ambiguous.text, /ambiguous; add project or global/);
   } finally {
     cleanup(f);
   }

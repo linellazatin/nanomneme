@@ -30,4 +30,6 @@ The public API provides `open(path)`, the 4Rs, source-filtered retrieval through
 
 Use `open(path, { readOnly: true })` for diagnostics and exports that must not create, migrate, or modify a database.
 
+Mutations acquire a write transaction before reading their targets or checking existing import IDs. Patches merge supplied fields with the latest committed record, preserving unrelated changes; the last successfully applied patch wins for the same field. Retain results are captured within their transaction, and record, tag, and FTS changes commit or roll back together. Recall, retrieval, export, and verification each use one database snapshot. SQLite lock waiting is bounded by a five-second busy timeout; contention can still fail, and core does not retry operations.
+
 On POSIX systems, new database files request `0600` before SQLite initialization and newly created directories request `0700`; the caller's umask may restrict these further. Existing files and directories keep their permissions. `verify()` reports `file_permissions` for group/other access on the database or existing journal, WAL, and shared-memory files without changing them. Review intentional sharing before manually restricting existing permissions; POSIX mode checks do not audit ACLs or apply on Windows.

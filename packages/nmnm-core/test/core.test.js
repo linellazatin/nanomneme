@@ -4,6 +4,7 @@ import { chmodSync, mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { Worker } from 'node:worker_threads';
 import test from 'node:test';
 
 import { open } from '../src/index.js';
@@ -14,6 +15,266 @@ async function createStore(t) {
   t.after(() => store.close());
   return store;
 }
+
+function runContendedOperation(t, path, operation, input, releaseWriter = () => {}, hold = null) {
+  const worker = new Worker(`
+    const { parentPort, workerData } = require('node:worker_threads');
+    (async () => {
+      const { DatabaseSync } = await import('node:sqlite');
+      const { open } = await import(workerData.core);
+      const store = open(workerData.path, { create: false });
+      const exec = DatabaseSync.prototype.exec;
+      DatabaseSync.prototype.exec = function (sql) {
+        if (sql === 'BEGIN IMMEDIATE') parentPort.postMessage({ type: 'write_requested' });
+        if (sql === 'COMMIT' && workerData.commitGate) {
+          parentPort.postMessage({ type: 'commit_pending' });
+          if (Atomics.wait(new Int32Array(workerData.commitGate), 0, 0, 7000) === 'timed-out') throw new Error('Writer coordination timed out');
+        }
+        return exec.call(this, sql);
+      };
+      try {
+        parentPort.postMessage({ type: 'result', value: store[workerData.operation](workerData.input) });
+      } catch (error) {
+        parentPort.postMessage({ type: 'result', error: { name: error.name, message: error.message, code: error.code } });
+      } finally { store.close(); }
+    })().catch(error => { throw error; });
+  `, { eval: true, workerData: { core: new URL('../src/index.js', import.meta.url).href, path, operation, input, commitGate: hold?.gate } });
+  t.after(() => worker.terminate());
+  return new Promise((resolve, reject) => {
+    let result;
+    worker.on('message', message => {
+      if (message.type === 'write_requested') {
+        try { releaseWriter(); } catch (error) { reject(error); }
+      } else if (message.type === 'commit_pending') hold.ready();
+      else result = message;
+    });
+    worker.once('error', reject);
+    worker.once('exit', code => {
+      if (code !== 0 || !result) reject(new Error(`SQLite worker exited ${code} without a result`));
+      else resolve(result);
+    });
+  });
+}
+
+function afterSqlRead(match, mutation, work) {
+  const prepare = DatabaseSync.prototype.prepare;
+  let fired = false;
+  DatabaseSync.prototype.prepare = function (sql) {
+    const statement = prepare.call(this, sql);
+    if (match(sql)) {
+      for (const method of ['get', 'all']) {
+        const execute = statement[method];
+        statement[method] = function (...args) {
+          const result = execute.apply(this, args);
+          if (!fired) { fired = true; mutation(); }
+          return result;
+        };
+      }
+    }
+    return statement;
+  };
+  try {
+    const result = work();
+    assert.equal(fired, true, 'the concurrent writer must run after the selected read');
+    return result;
+  } finally { DatabaseSync.prototype.prepare = prepare; }
+}
+
+test('a contended content patch preserves an unrelated committed importance change', { timeout: 10000 }, async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-contended-patch-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  t.after(() => store.close());
+  const memory = store.retain({ content: 'Original', importance: 0.5 });
+  const gate = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT);
+  let ready;
+  const held = new Promise(resolve => { ready = resolve; });
+  const writer = runContendedOperation(t, path, 'retain', { id: memory.id, importance: 0.9 }, undefined, { gate, ready });
+  await Promise.race([held, writer.then(() => { throw new Error('Writer finished before holding its transaction'); })]);
+  const release = () => { Atomics.store(new Int32Array(gate), 0, 1); Atomics.notify(new Int32Array(gate), 0); };
+  let result;
+  try { result = await runContendedOperation(t, path, 'retain', { id: memory.id, content: 'Updated' }, release); }
+  finally { release(); }
+  assert.equal((await writer).error, undefined);
+  assert.equal(result.error, undefined);
+  assert.equal(result.value.content, 'Updated');
+  assert.equal(result.value.importance, 0.9);
+  assert.equal(store.recall({ id: memory.id }).importance, 0.9);
+});
+
+test('a contended removal observes a committed expiry instead of removing a stale target', { timeout: 10000 }, async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-contended-remove-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  const raw = new DatabaseSync(path);
+  t.after(() => { raw.close(); store.close(); });
+  const memory = store.retain({ content: 'Expiry target' });
+  raw.exec('BEGIN IMMEDIATE');
+  raw.prepare('UPDATE memories SET expires_at = ? WHERE id = ?').run('2000-01-01T00:00:00.000Z', memory.id);
+  const result = await runContendedOperation(t, path, 'remove', { id: memory.id }, () => raw.exec('COMMIT'));
+  assert.equal(result.error, undefined);
+  assert.equal(result.value, null);
+  assert.equal(store.export()[0].removed_at, null);
+});
+
+test('a contended import reports a committed ID conflict before applying records', { timeout: 10000 }, async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-contended-import-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  const raw = new DatabaseSync(path);
+  t.after(() => { raw.close(); store.close(); });
+  const memory = store.retain({ content: 'Import conflict' });
+  const [record] = store.export();
+  store.remove({ id: memory.id, mode: 'purge' });
+  raw.exec('BEGIN IMMEDIATE');
+  raw.prepare('INSERT INTO memories (id, content, kind, scope, namespace, importance, confidence, created_at, updated_at, expires_at, removed_at, metadata) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(record.id, record.content, record.kind, record.scope, record.namespace, record.importance, record.confidence, record.created_at, record.updated_at, null, null, '{}');
+  raw.prepare('INSERT INTO memories_fts(rowid, content) SELECT rowid, content FROM memories WHERE id = ?').run(record.id);
+  const result = await runContendedOperation(t, path, 'import', [record], () => raw.exec('COMMIT'));
+  assert.equal(result.error?.name, 'RangeError');
+  assert.match(result.error.message, /already exists/);
+  assert.deepEqual(store.export(), [record]);
+  assert.equal(store.verify().ok, true);
+});
+
+for (const operation of ['recall', 'export', 'retrieve', 'verify']) test(`${operation} keeps one snapshot while another connection commits`, async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-snapshot-'));
+  const path = join(directory, 'memory.db');
+  const reader = open(path);
+  const writer = open(path);
+  const raw = new DatabaseSync(path);
+  raw.exec('PRAGMA journal_mode = WAL');
+  t.after(() => { raw.close(); writer.close(); reader.close(); });
+  const memory = writer.retain({ content: 'Before', tags: ['before'] });
+  const result = afterSqlRead(
+    sql => operation === 'recall' ? sql.includes('FROM memories m WHERE m.id = ?')
+      : operation === 'export' ? sql.includes('FROM memories m ORDER BY m.id')
+        : operation === 'retrieve' ? sql.startsWith('SELECT COUNT(*) AS total FROM memories m')
+          : sql === 'SELECT rowid, * FROM memories ORDER BY id',
+    () => writer.retain({ id: memory.id, content: 'After', tags: ['after'] }),
+    () => operation === 'recall' ? reader.recall({ id: memory.id })
+      : operation === 'export' ? reader.export()
+        : operation === 'retrieve' ? reader.retrieve({ query: 'Before' }) : reader.verify(),
+  );
+  if (operation === 'verify') assert.equal(result.ok, true);
+  else {
+    const item = operation === 'recall' ? result : operation === 'export' ? result[0] : result.items[0];
+    if (operation === 'retrieve') assert.equal(result.total, 1);
+    assert.equal(item?.content, 'Before');
+    assert.deepEqual(item.tags, ['before']);
+  }
+  assert.equal(writer.recall({ id: memory.id }).content, 'After');
+});
+
+test('patch input getters run before locking and each supplied field is read once', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-input-before-lock-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  const writer = open(path);
+  t.after(() => { writer.close(); store.close(); });
+  const memory = store.retain({ content: 'Original' });
+  let reads = 0;
+  const result = store.retain({ id: memory.id, get content() {
+    reads += 1;
+    writer.retain({ id: memory.id, importance: 0.9 });
+    return 'Updated';
+  } });
+  assert.equal(reads, 1);
+  assert.equal(result.importance, 0.9);
+  assert.equal(result.content, 'Updated');
+});
+
+test('a failed patch restores record, tags, and search while preserving an automatic rollback error', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-patch-rollback-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  const raw = new DatabaseSync(path);
+  t.after(() => { raw.close(); store.close(); });
+  const memory = store.retain({ content: 'Original rollback target', tags: ['original'] });
+  raw.exec("CREATE TRIGGER reject_tag BEFORE INSERT ON memory_tags WHEN NEW.tag = 'rollback' BEGIN SELECT RAISE(ROLLBACK, 'injected tag rollback'); END");
+  assert.throws(() => store.retain({ id: memory.id, content: 'Replacement', tags: ['rollback'] }), /injected tag rollback/);
+  assert.deepEqual(store.recall({ id: memory.id }), memory);
+  assert.equal(store.retrieve({ query: 'Original' }).total, 1);
+  assert.equal(store.retrieve({ query: 'Replacement' }).total, 0);
+  assert.equal(store.verify().ok, true);
+  assert.equal(store.retain({ id: memory.id, importance: 0.9 }).importance, 0.9);
+});
+
+test('failed soft removal and purge restore canonical rows, tags, and FTS', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-remove-rollback-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  const raw = new DatabaseSync(path);
+  t.after(() => { raw.close(); store.close(); });
+  const memory = store.retain({ content: 'Removal rollback target', tags: ['original'] });
+  raw.exec("CREATE TRIGGER reject_soft BEFORE UPDATE OF removed_at ON memories BEGIN SELECT RAISE(ABORT, 'injected removal failure'); END");
+  raw.exec("CREATE TRIGGER reject_purge BEFORE DELETE ON memories BEGIN SELECT RAISE(ABORT, 'injected removal failure'); END");
+  for (const mode of ['soft', 'purge']) {
+    assert.throws(() => store.remove({ id: memory.id, mode }), /injected removal failure/);
+    assert.deepEqual(store.recall({ id: memory.id }), memory);
+    assert.equal(store.retrieve({ query: 'Removal' }).total, 1);
+    assert.equal(store.verify().ok, true);
+  }
+});
+
+test('a mid-import write failure rolls back the complete batch and its search index', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-import-rollback-'));
+  const path = join(directory, 'memory.db');
+  const target = open(path);
+  const source = open(':memory:');
+  const raw = new DatabaseSync(path);
+  t.after(() => { raw.close(); source.close(); target.close(); });
+  source.retain({ content: 'First import record' });
+  source.retain({ content: 'Rejected import record', tags: ['rollback'] });
+  const records = source.export().sort((left, right) => left.tags.length - right.tags.length);
+  raw.exec("CREATE TRIGGER reject_tag BEFORE INSERT ON memory_tags WHEN NEW.tag = 'rollback' BEGIN SELECT RAISE(ABORT, 'injected import failure'); END");
+  assert.throws(() => target.import(records), /injected import failure/);
+  assert.deepEqual(target.export(), []);
+  assert.equal(target.retrieve({ query: 'import' }).total, 0);
+  assert.equal(target.verify().ok, true);
+});
+
+test('retain returns its own committed record even if another writer immediately patches it', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-return-snapshot-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  const writer = open(path);
+  t.after(() => { writer.close(); store.close(); });
+  const memory = store.retain({ content: 'Original' });
+  const exec = DatabaseSync.prototype.exec;
+  let fired = false;
+  DatabaseSync.prototype.exec = function (sql) {
+    const result = exec.call(this, sql);
+    if (sql === 'COMMIT' && !fired) {
+      fired = true;
+      writer.retain({ id: memory.id, content: 'Later commit', tags: ['later'] });
+    }
+    return result;
+  };
+  let result;
+  try { result = store.retain({ id: memory.id, content: 'My commit', tags: ['mine'] }); }
+  finally { DatabaseSync.prototype.exec = exec; }
+  assert.equal(fired, true);
+  assert.equal(result.content, 'My commit');
+  assert.deepEqual(result.tags, ['mine']);
+  assert.equal(store.recall({ id: memory.id }).content, 'Later commit');
+});
+
+test('a writer held beyond the busy timeout leaves a rejected patch unapplied', { timeout: 10000 }, async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-busy-timeout-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  const raw = new DatabaseSync(path);
+  t.after(() => { raw.close(); store.close(); });
+  const memory = store.retain({ content: 'Busy target', tags: ['original'] });
+  raw.exec('BEGIN IMMEDIATE');
+  const result = await runContendedOperation(t, path, 'retain', { id: memory.id, content: 'Rejected', tags: ['rejected'] });
+  assert.match(result.error?.message ?? '', /locked|busy/i);
+  raw.exec('ROLLBACK');
+  assert.deepEqual(store.recall({ id: memory.id }), memory);
+  assert.equal(store.verify().ok, true);
+  assert.equal(store.retain({ id: memory.id, content: 'Recovered' }).content, 'Recovered');
+});
 
 test('new databases and directories are private under a permissive umask', { skip: process.platform === 'win32' }, (t) => {
   const directory = mkdtempSync(join(tmpdir(), 'nmnm-permissions-'));

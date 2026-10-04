@@ -13,21 +13,21 @@
 
 ### Fixed
 
-- Store creation and file export use short, destination-independent temporary names so valid long filenames remain usable. Text inputs reject unpaired Unicode surrogates before SQLite can silently replace them; valid Unicode pairs remain unchanged.
-- File export rejects the source database's journal, WAL, and shared-memory paths, including existing aliases, before opening the store or replacing output.
-- Concurrent first-use writers publish complete private databases without overwriting another creator; failed initialization leaves no published partial store. New-store publication requires same-filesystem hardlink support.
-- Canonical import and verification require metadata objects instead of silently accepting JSON null. Numeric range selectors reject inherited property names as validation errors.
-- New POSIX database files request `0600` before SQLite initialization; new store directories request `0700`. File exports use private temporary files and preserve stricter owner permissions. Verification reports unsafe database/sidecar mode bits without changing existing permissions; ACLs and Windows are outside this check.
-- Patches and removals read targets inside write transactions; patches preserve unrelated concurrent updates and capture their own committed result. Canonical rows, tags, and FTS updates are atomic. Reads use consistent per-database snapshots; lock waiting is bounded to five seconds without automatic retries.
-- Retrieval supports Unicode terms, Boolean expressions, quoted phrases, prefixes, bounded grouping, and FTS5 NEAR groups. Malformed expressions fall back to literal terms with operator words retained; punctuation-only queries return no matches. Storage failures are not masked as query errors.
-- Patches, restores, and soft removals preserve creation time and strictly advance per-record update time despite frozen or backward clocks. Imports retain canonical timestamps; expiry and purge reporting use wall-clock time. Timestamp-range exhaustion rejects mutations atomically.
-- Writable opens enable SQLite `secure_delete`; write transactions enable FTS5 `secure-delete` atomically. Purge removes canonical rows, tags, and live FTS entries, including expired and soft-removed records. These protections reduce subsequent deletion remnants, not historical data, WAL/journal history, reader snapshots, backups, exports, or device-level copies; no automatic cleanup or forensic-erasure guarantee is added.
+- Short temporary names preserve valid long database/export filenames. Text validation rejects unpaired Unicode surrogates before SQLite replacement; valid pairs remain intact.
+- Export rejects source journal/WAL/shared-memory paths and existing aliases before opening storage or replacing output.
+- Concurrent first-use writers atomically publish complete private stores without overwriting another creator; failed initialization publishes no partial store. Requires same-filesystem hardlinks.
+- Import and verification reject null metadata; numeric ranges reject inherited operator names.
+- New POSIX databases/directories request `0600`/`0700`; private exports preserve stricter owner permissions. Verification reports unsafe database/sidecar mode bits without changing permissions; excludes ACLs and Windows.
+- Transactional target reads preserve unrelated concurrent patches and each patch's committed result. Rows, tags, and FTS commit atomically; reads use per-database snapshots. Lock timeout: five seconds, no automatic retries.
+- Search supports Unicode, Boolean expressions, phrases, prefixes, bounded groups, and FTS5 NEAR. Malformed syntax falls back to literals, retaining operator words; punctuation-only queries return no matches. Storage errors remain unmasked.
+- Patches/restores/soft removals preserve creation time and strictly advance per-record update time under frozen/backward clocks. Imports preserve timestamps; expiry/purge use wall-clock time. Timestamp exhaustion fails atomically.
+- Writes enable SQLite `secure_delete` and transactional FTS5 `secure-delete`. Purge atomically removes rows, tags, and live FTS, including expired/removed records. Protection covers subsequent deletion remnants, not historical data, WAL/journals, reader snapshots, backups/exports, or device copies; no automatic cleanup or forensic-erasure guarantee.
 
 ### Changed
 
-- CLI and all adapters pin core `0.2.1`; Claude and Codex plugin manifests match their package versions. Adapter APIs and package engine floors are unchanged.
-- Reconciled current manuals and READMEs with search, concurrency, timestamps, deletion, permissions, logging privacy, store paths, and adapter behavior. Failed diagnostics preserve thrown error messages without redaction; review logs before sharing.
-- Documented the FTS5 runtime prerequisite: official macOS arm64 Node.js 22.13.0 lacks FTS5; Node.js 22.19.0 is tested. Codex's physical core bundle must be prepared before marketplace reinstall and reload.
+- CLI/adapters pin core `0.2.1`; Claude/Codex manifests match package versions. Adapter APIs and engine floors are unchanged.
+- Aligned manuals/READMEs with runtime contracts, adapter behavior, and manual import validation/guarantees. Diagnostic errors remain unredacted; review logs before sharing.
+- Documented FTS5 requirements: official macOS arm64 Node.js 22.13.0 lacks FTS5; 22.19.0 is tested. Prepare Codex's physical core bundle before marketplace reinstall/reload.
 
 ## 0.6.0 - Shared Logslines diagnostics
 

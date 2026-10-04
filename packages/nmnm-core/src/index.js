@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { closeSync, existsSync, mkdirSync, openSync, statSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { closeSync, existsSync, linkSync, mkdirSync, openSync, statSync, unlinkSync } from 'node:fs';
+import { basename, dirname, join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
 const DEFAULTS = Object.freeze({ kind: 'note', scope: 'project', namespace: 'default', importance: 0.5, confidence: 1 });
@@ -202,9 +202,9 @@ function date(value, name) {
   return value;
 }
 
-function metadata(value) {
-  if (value == null) return {};
-  if (typeof value !== 'object' || Array.isArray(value)) throw new TypeError('metadata must be a JSON object');
+function metadata(value, allowDefault = true) {
+  if (value == null && allowDefault) return {};
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('metadata must be a JSON object');
   try {
     return JSON.parse(JSON.stringify(value, function (_key, item) {
       const original = this[_key];
@@ -235,7 +235,7 @@ function range(value, name) {
   if (typeof value !== 'object' || Array.isArray(value)) throw new TypeError(`${name} must be a number or range object`);
   const operators = { gt: '>', gte: '>=', lt: '<', lte: '<=' };
   const entries = Object.entries(value);
-  if (!entries.length || entries.some(([key]) => !operators[key])) throw new TypeError(`${name} range has unsupported operator`);
+  if (!entries.length || entries.some(([key]) => !Object.hasOwn(operators, key))) throw new TypeError(`${name} range has unsupported operator`);
   return entries.map(([key, item]) => [operators[key], score(item, name)]);
 }
 
@@ -320,7 +320,7 @@ function importedRecord(value) {
     updated_at: updatedAt,
     expires_at: date(value.expires_at, 'expires_at'),
     removed_at: date(value.removed_at, 'removed_at'),
-    metadata: metadata(value.metadata),
+    metadata: metadata(value.metadata, false),
     tags: tags(value.tags),
   };
   for (const field of ['id', 'content', 'kind', 'scope', 'namespace']) {
@@ -328,6 +328,26 @@ function importedRecord(value) {
   }
   if (record.tags.length !== value.tags.length || record.tags.some((tag, index) => tag !== value.tags[index])) throw new TypeError('tags must already be canonical');
   return record;
+}
+
+function createDatabase(path) {
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  const temporary = join(dirname(path), `.${basename(path)}.${randomUUID()}.tmp`);
+  closeSync(openSync(temporary, 'wx', 0o600));
+  try {
+    const db = new DatabaseSync(temporary);
+    try {
+      db.exec('PRAGMA foreign_keys = ON; PRAGMA secure_delete = ON; BEGIN IMMEDIATE;');
+      db.exec(SCHEMA);
+      db.exec('COMMIT');
+    } finally { db.close(); }
+    // Publish a complete, closed database without replacing another creator.
+    try { linkSync(temporary, path); }
+    catch (error) { if (error.code !== 'EEXIST') throw error; }
+  } catch (error) {
+    if (/fts5/i.test(error.message)) throw new Error('SQLite FTS5 support is required', { cause: error });
+    throw error;
+  } finally { unlinkSync(temporary); }
 }
 
 export function open(path, { create = true, readOnly = false } = {}) {
@@ -338,9 +358,7 @@ export function open(path, { create = true, readOnly = false } = {}) {
   const fresh = !existsSync(path);
   if (fresh && (!create || readOnly)) throw new Error(`database does not exist: ${path}`);
   if (fresh && path !== ':memory:') {
-    mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-    // Reserve a private file before SQLite writes schema or journal contents.
-    closeSync(openSync(path, 'wx', 0o600));
+    createDatabase(path);
   }
   const db = new DatabaseSync(path, { readOnly });
   try {
@@ -349,7 +367,7 @@ export function open(path, { create = true, readOnly = false } = {}) {
       db.exec('PRAGMA secure_delete = ON');
       if (db.prepare('PRAGMA secure_delete').get().secure_delete !== 1) throw new Error('SQLite secure_delete support is required for writes');
     }
-    const version = fresh ? (db.exec(SCHEMA), SCHEMA_VERSION) : schemaVersion(db);
+    const version = path === ':memory:' ? (db.exec(SCHEMA), SCHEMA_VERSION) : schemaVersion(db);
     if (version > SCHEMA_VERSION) throw new Error(`database schema version ${version} is newer than this version of nanomneme`);
     if (readOnly && version < SCHEMA_VERSION) throw new Error(`database schema version ${version} requires migration before read-only use`);
     if (!readOnly) migrate(db, version);
@@ -593,7 +611,7 @@ export function open(path, { create = true, readOnly = false } = {}) {
             if (updatedAt < createdAt) throw new TypeError('updated_at must not precede created_at');
             date(memory.expires_at, 'expires_at');
             date(memory.removed_at, 'removed_at');
-            metadata(JSON.parse(memory.metadata));
+            metadata(JSON.parse(memory.metadata), false);
           } catch {
             report.add('memory_field', memory.id);
           }

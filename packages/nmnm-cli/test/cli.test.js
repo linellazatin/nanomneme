@@ -7,10 +7,54 @@ import { DatabaseSync } from 'node:sqlite';
 import test, { after } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import pkg from '../package.json' with { type: 'json' };
+import { open } from '../../nmnm-core/src/index.js';
 
 const isolatedHome = await mkdtemp(join(tmpdir(), 'nmnm-cli-test-home-'));
 after(() => rm(isolatedHome, { recursive: true, force: true }));
 const cli = fileURLToPath(new URL('../bin/nmnm.js', import.meta.url));
+
+test('CLI rejects source sidecars and aliases without replacing WAL data', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-export-sidecars-'));
+  const source = join(directory, 'memory.db');
+  const sourceAlias = join(directory, 'source-alias.db');
+  const first = run('retain', 'Checkpointed', '--db', source, '--scope', 'project');
+  assert.equal(first.status, 0, first.stderr);
+  await symlink(source, sourceAlias);
+  const raw = new DatabaseSync(source);
+  raw.exec('PRAGMA journal_mode = WAL; PRAGMA wal_autocheckpoint = 0');
+  const store = open(source);
+  t.after(() => { store.close(); raw.close(); });
+  const retained = store.retain({ content: 'WAL-only committed memory' });
+  const before = await readFile(source + '-wal');
+  const walAlias = join(directory, 'wal-alias');
+  await link(source + '-wal', walAlias);
+  const walSymlink = join(directory, 'wal-symlink');
+  await symlink(source + '-wal', walSymlink);
+  const directoryAlias = join(directory, 'directory-alias');
+  await symlink(directory, directoryAlias, 'dir');
+  for (const output of [source + '-wal', source + '-shm', source + '-journal', walAlias, walSymlink, join(directoryAlias, 'memory.db-journal')]) {
+    const result = run('export', '--db', sourceAlias, '--out', output);
+    assert.equal(result.status, 1, output);
+    assert.match(result.stderr, /source database/);
+    assert.deepEqual(await readFile(source + '-wal'), before);
+  }
+  const recalled = run('recall', retained.id, '--db', source, '--json');
+  assert.equal(recalled.status, 0, recalled.stderr);
+  assert.equal(JSON.parse(recalled.stdout).content, 'WAL-only committed memory');
+});
+
+test('CLI rejects canonical null metadata before creating an import destination', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-import-null-metadata-'));
+  const source = join(directory, 'source.db');
+  const target = join(directory, 'target.db');
+  const memory = JSON.parse(run('retain', 'Canonical import', '--db', source, '--scope', 'project', '--json').stdout);
+  const file = join(directory, 'invalid.jsonl');
+  await writeFile(file, JSON.stringify({ _format: 'nanomneme', _version: 1 }) + '\n' + JSON.stringify({ ...memory, metadata: null }) + '\n');
+  const result = run('import', file, '--db', target);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /metadata/);
+  await assert.rejects(access(target));
+});
 
 test('CLI exports privately and preserves stricter destination permissions', { skip: process.platform === 'win32' }, async () => {
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-export-permissions-'));

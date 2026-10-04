@@ -190,8 +190,12 @@ function databaseStore(options) {
 }
 
 function sameFile(left, right) {
-  const leftPath = resolve(left);
-  const rightPath = resolve(right);
+  const canonicalParent = path => {
+    const absolute = resolve(path);
+    return existsSync(dirname(absolute)) ? join(realpathSync(dirname(absolute)), basename(absolute)) : absolute;
+  };
+  const leftPath = canonicalParent(left);
+  const rightPath = canonicalParent(right);
   if (leftPath === rightPath) return true;
   if (!existsSync(leftPath) || !existsSync(rightPath)) return false;
   const leftStat = statSync(leftPath);
@@ -274,7 +278,12 @@ export function main(args = process.argv.slice(2)) {
     return { result, json: options.json, failed: false };
   }
   const db = databasePath(options, { create: !requiresExisting });
-  if (command === 'export' && options.out && sameFile(db, options.out)) throw new TypeError('--out cannot reference the source database');
+  if (command === 'export' && options.out) {
+    const sources = [resolve(db), ...(existsSync(db) ? [realpathSync(db)] : [])];
+    if (sources.some(source => ['', '-journal', '-wal', '-shm'].some(suffix => sameFile(source + suffix, options.out)))) {
+      throw new TypeError('--out cannot reference the source database or its SQLite sidecars');
+    }
+  }
   const store = open(db, { create: !requiresExisting, readOnly });
   try {
     let result;

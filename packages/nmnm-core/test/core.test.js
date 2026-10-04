@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { access, mkdtemp } from 'node:fs/promises';
-import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -15,6 +15,77 @@ async function createStore(t) {
   t.after(() => store.close());
   return store;
 }
+
+test('concurrent first-use writers all see a complete initialized store', { timeout: 15000 }, async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-first-use-'));
+  const path = join(directory, 'memory.db');
+  const gate = new SharedArrayBuffer(4);
+  let ready = 0;
+  let release;
+  const started = new Promise(resolve => { release = resolve; });
+  const jobs = Array.from({ length: 12 }, (_, index) => new Promise((resolve, reject) => {
+    const worker = new Worker(`
+      const { parentPort, workerData } = require('node:worker_threads');
+      (async () => {
+        const { open } = await import(workerData.core);
+        parentPort.postMessage({ ready: true });
+        if (Atomics.wait(new Int32Array(workerData.gate), 0, 0, 10000) === 'timed-out') throw new Error('Start gate timed out');
+        try {
+          const store = open(workerData.path);
+          try { store.retain({ content: 'First-use writer ' + workerData.index }); }
+          finally { store.close(); }
+          parentPort.postMessage({ ok: true });
+        } catch (error) { parentPort.postMessage({ error: error.message }); }
+      })();
+    `, { eval: true, execArgv: [], workerData: { core: new URL('../src/index.js', import.meta.url).href, path, gate, index } });
+    t.after(() => worker.terminate());
+    let result;
+    worker.on('message', message => {
+      if (message.ready) { if (++ready === 12) release(); }
+      else result = message;
+    });
+    worker.once('error', reject);
+    worker.once('exit', code => code === 0 && result ? resolve(result) : reject(new Error('Worker exited without a result')));
+  }));
+  await started;
+  Atomics.store(new Int32Array(gate), 0, 1);
+  Atomics.notify(new Int32Array(gate), 0, 12);
+  assert.deepEqual(await Promise.all(jobs), Array.from({ length: 12 }, () => ({ ok: true })));
+  const store = open(path, { readOnly: true });
+  try { assert.equal(store.export().length, 12); assert.equal(store.verify().ok, true); }
+  finally { store.close(); }
+  assert.deepEqual(readdirSync(directory), ['memory.db']);
+});
+
+test('canonical import rejects null metadata without changing records', async (t) => {
+  const store = await createStore(t);
+  const memory = store.retain({ content: 'Canonical object' });
+  assert.throws(() => store.import([{ ...memory, id: '11111111-1111-4111-8111-111111111111', metadata: null }]), /metadata/);
+  assert.deepEqual(store.export(), [memory]);
+});
+
+test('verify reports stored null metadata rather than treating it as an object', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-null-metadata-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  t.after(() => store.close());
+  const memory = store.retain({ content: 'Metadata integrity' });
+  const raw = new DatabaseSync(path);
+  try { raw.prepare('UPDATE memories SET metadata = ? WHERE id = ?').run('null', memory.id); }
+  finally { raw.close(); }
+  assert.deepEqual(store.verify().issues, [{ code: 'memory_field', count: 1, ids: [memory.id] }]);
+});
+
+test('range selectors reject inherited operator names as validation errors', async (t) => {
+  const store = await createStore(t);
+  for (const field of ['importance', 'confidence']) {
+    for (const key of ['constructor', '__proto__', 'toString']) {
+      assert.throws(() => store.retrieve({ [field]: JSON.parse(`{"${key}":0.5}`) }), error => error instanceof TypeError && /unsupported operator/.test(error.message));
+    }
+  }
+  const memory = store.retain({ content: 'Valid range', importance: 0.8 });
+  assert.equal(store.retrieve({ importance: { gte: 0.7, lte: 0.9 } }).items[0].id, memory.id);
+});
 
 function runContendedOperation(t, path, operation, input, releaseWriter = () => {}, hold = null) {
   const worker = new Worker(`

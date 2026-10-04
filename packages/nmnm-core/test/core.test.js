@@ -1055,6 +1055,72 @@ test('purge remove permanently deletes active and soft-removed memories', async 
   assert.throws(() => store.retain({ id: removed.id, content: 'Cannot restore' }), /does not exist/);
 });
 
+test('mutation timestamps advance under frozen and backward clocks across connections', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-clock-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  const other = open(path);
+  t.after(() => { other.close(); store.close(); });
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-04T00:00:00.000Z') });
+  const memory = store.retain({ content: 'Clock target' });
+  assert.equal(memory.created_at, '2026-10-04T00:00:00.000Z');
+  assert.equal(memory.updated_at, memory.created_at);
+  const first = store.retain({ id: memory.id, content: 'Frozen patch' });
+  assert.equal(first.updated_at, '2026-10-04T00:00:00.001Z');
+  t.mock.timers.setTime(Date.parse('2026-10-03T00:00:00.000Z'));
+  const second = other.retain({ id: memory.id, importance: 0.8 });
+  assert.equal(second.updated_at, '2026-10-04T00:00:00.002Z');
+  const removal = store.remove({ id: memory.id });
+  assert.equal(removal.removed_at, '2026-10-04T00:00:00.003Z');
+  assert.equal(store.export()[0].updated_at, removal.removed_at);
+  const restored = other.retain({ id: memory.id });
+  assert.equal(restored.updated_at, '2026-10-04T00:00:00.004Z');
+  assert.equal(restored.created_at, memory.created_at);
+  assert.equal(restored.removed_at, null);
+  t.mock.timers.setTime(Date.parse('2026-10-06T00:00:00.000Z'));
+  assert.equal(store.retain({ id: memory.id }).updated_at, '2026-10-06T00:00:00.000Z');
+  assert.equal(store.verify().ok, true);
+});
+
+test('future imports retain exact timestamps and mutations advance them without changing expiry time', async (t) => {
+  const store = await createStore(t);
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-04T00:00:00.000Z') });
+  const seed = store.retain({ content: 'Future import target' });
+  store.remove({ id: seed.id, mode: 'purge' });
+  const record = { ...seed, created_at: '2099-01-01T00:00:00.000Z', updated_at: '2099-01-02T00:00:00.000Z', expires_at: '2026-10-05T00:00:00.000Z' };
+  store.import([record]);
+  assert.deepEqual(store.export(), [record]);
+  const patched = store.retain({ id: seed.id, tags: ['future'] });
+  assert.equal(patched.updated_at, '2099-01-02T00:00:00.001Z');
+  assert.equal(store.recall({ id: seed.id }).id, seed.id);
+  assert.equal(store.retrieve().total, 1);
+  t.mock.timers.setTime(Date.parse('2026-10-05T00:00:00.000Z'));
+  assert.equal(store.recall({ id: seed.id }), null);
+  assert.equal(store.retrieve().total, 0);
+});
+
+test('timestamp exhaustion rejects patches and soft removal atomically but permits purge', async (t) => {
+  const store = await createStore(t);
+  const seed = store.retain({ content: 'Timestamp boundary', tags: ['original'] });
+  store.remove({ id: seed.id, mode: 'purge' });
+  const record = { ...seed, updated_at: '9999-12-31T23:59:59.999Z' };
+  store.import([record]);
+  assert.throws(() => store.retain({ id: seed.id, content: 'Must roll back', tags: ['changed'] }), RangeError);
+  assert.throws(() => store.remove({ id: seed.id }), RangeError);
+  assert.deepEqual(store.export(), [record]);
+  assert.equal(store.retrieve({ query: 'boundary' }).total, 1);
+  assert.equal(store.verify().ok, true);
+  assert.equal(store.remove({ id: seed.id, mode: 'purge' }).mode, 'purge');
+});
+
+test('creation rejects a clock outside the canonical timestamp range without storing a record', async (t) => {
+  const store = await createStore(t);
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('+010000-01-01T00:00:00.000Z') });
+  assert.throws(() => store.retain({ content: 'Out of range clock', tags: ['clock'] }), /created_at/);
+  assert.deepEqual(store.export(), []);
+  assert.equal(store.verify().ok, true);
+});
+
 test('rejects impossible canonical timestamps on retain and import', async (t) => {
   const store = await createStore(t);
   const memory = store.retain({ content: 'Valid timestamp target' });

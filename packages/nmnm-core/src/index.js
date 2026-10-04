@@ -289,6 +289,14 @@ function issueReporter() {
   };
 }
 
+function mutationTimestamp(memory) {
+  const previous = Date.parse(date(memory.updated_at, 'updated_at'));
+  const created = Date.parse(date(memory.created_at, 'created_at'));
+  const next = Math.max(Date.now(), previous + 1, created);
+  if (!Number.isFinite(next) || next > 253402300799999) throw new RangeError('memory timestamp cannot advance within the supported UTC range');
+  return date(new Date(next).toISOString(), 'updated_at');
+}
+
 function importedRecord(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('import records must be objects');
   const unknown = Object.keys(value).find((field) => !IMPORT_FIELDS.includes(field));
@@ -407,7 +415,7 @@ export function open(path, { create = true, readOnly = false } = {}) {
           const current = read(id, false);
           if (!current) throw new RangeError(`memory ${id} does not exist`);
           const next = { ...current, ...patch };
-          const now = new Date().toISOString();
+          const now = mutationTimestamp(current);
           db.prepare(`UPDATE memories SET content = ?, kind = ?, scope = ?, namespace = ?, importance = ?, confidence = ?, updated_at = ?, expires_at = ?, removed_at = NULL, metadata = ? WHERE id = ?`)
             .run(next.content, next.kind, next.scope, next.namespace, next.importance, next.confidence, now, next.expires_at, JSON.stringify(next.metadata), id);
           writeTags(id, next.tags);
@@ -420,7 +428,7 @@ export function open(path, { create = true, readOnly = false } = {}) {
       text(next.content, 'content');
       const newId = randomUUID();
       return transaction(() => {
-        const now = new Date().toISOString();
+        const now = date(new Date().toISOString(), 'created_at');
         db.prepare(`INSERT INTO memories (id, content, kind, scope, namespace, importance, confidence, created_at, updated_at, expires_at, removed_at, metadata) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`)
           .run(newId, next.content, next.kind, next.scope, next.namespace, next.importance, next.confidence, now, now, next.expires_at, JSON.stringify(next.metadata));
         writeTags(newId, next.tags);
@@ -607,7 +615,7 @@ export function open(path, { create = true, readOnly = false } = {}) {
       return transaction(() => {
         const memory = read(targetId, mode === 'soft');
         if (!memory) return null;
-        const timestamp = new Date().toISOString();
+        const timestamp = mode === 'soft' ? mutationTimestamp(memory) : new Date().toISOString();
         db.prepare('DELETE FROM memories_fts WHERE rowid = (SELECT rowid FROM memories WHERE id = ?)').run(memory.id);
         if (mode === 'purge') {
           db.prepare('DELETE FROM memory_tags WHERE memory_id = ?').run(memory.id);

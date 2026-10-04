@@ -26,7 +26,9 @@
 ### Changed
 
 - CLI/adapters pin core `0.2.1`; Claude/Codex manifests match package versions. Adapter APIs and engine floors are unchanged.
-- Re-assessed Pi against core/CLI hardening: added tool-boundary coverage for Unicode search/validation, unsupported numeric-range operators, private first-use storage, and monotonic patch/restore timestamps. No adapter runtime change was needed.
+- Pi against core/CLI hardening: added tool-boundary coverage for Unicode search/validation, unsupported numeric-range operators, private first-use storage, and monotonic patch/restore timestamps. No adapter runtime change was needed.
+- OpenCode against core/CLI hardening: added Node-bridge coverage for Unicode search/validation, invalid metadata and numeric-range operators, private project/global first-use storage, and handler coverage for monotonic patch/restore timestamps. No adapter runtime change was needed.
+- Claude against core/CLI hardening: added tool-handler coverage for Unicode search/validation, malformed text, invalid metadata and numeric-range operators, null-metadata patch normalization, private project/global first-use storage, and monotonic patch/restore timestamps, plus management-CLI coverage for Unicode/structured search and malformed-query errors. No adapter runtime change was needed.
 - Aligned manuals/READMEs with runtime contracts, adapter behavior, and manual import validation/guarantees. Diagnostic errors remain unredacted; review logs before sharing.
 - Documented FTS5 requirements: official macOS arm64 Node.js 22.13.0 lacks FTS5; 22.19.0 is tested. Prepare Codex's physical core bundle before marketplace reinstall/reload.
 

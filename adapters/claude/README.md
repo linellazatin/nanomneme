@@ -36,6 +36,8 @@ See the [Claude Adapter Manual](docs/CLAUDE_ADAPTER_MANUAL.md) for the full conf
 
 ## Develop
 
+Core `0.2.1` hardening is covered at the tool handlers for Unicode search/validation, invalid metadata/range operators, private project/global first-use storage, and monotonic patch/restore timestamps under frozen/backward clocks; management CLI tests cover Unicode/structured search and malformed-query errors. No adapter runtime change was required. Export/import/verification remain core CLI operations, not adapter tools.
+
 ```sh
 node --test adapters/claude/test/*.test.js
 ```

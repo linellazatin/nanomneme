@@ -69,6 +69,8 @@ See the [OpenCode Adapter Manual](docs/OPENCODE_ADAPTER_MANUAL.md) for the confi
 
 ## Develop
 
+Core `0.2.1` hardening is covered through the real Node bridge for Unicode search/validation, invalid metadata/range operators, and private project/global first-use storage; direct handlers cover monotonic patch/restore timestamps under frozen/backward clocks. No adapter runtime change was required. Export/import/verification remain core CLI operations, not adapter tools.
+
 ```sh
 node --test adapters/opencode/test/*.test.js
 ```

@@ -82,6 +82,7 @@ Behavior:
 - `retain_memory` routes to the global store when `scope: "global"`, otherwise the project store, and it is the **only** operation that creates a missing database.
 - `store: "project" | "global"` selects the physical store for recall/retrieve/remove; a missing selected store returns `null` (or `{ total: 0, items: [] }`) without creating it.
 - `remove_memory` is always soft and reversible; purge is not exposed to the model.
+- Core `0.2.1` hardening passes through unchanged: Unicode/structured search, malformed-text and numeric-range validation, private first-use storage, and monotonic mutation timestamps. Bridge tests cover serialization and project/global creation; handler tests use frozen/backward clocks across reopened stores. Retain still accepts null metadata (new records add the OpenCode source; patches normalize it to `{}`); null rejection applies to core import/verification. Export/import/verification remain `nmnm` CLI operations.
 
 ## System-prompt injection
 

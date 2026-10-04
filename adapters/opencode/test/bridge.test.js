@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runBridge, storeContext } from '../src/bridge-client.js';
@@ -48,6 +48,66 @@ test('the Node bridge loads the SQLite core and runs tool operations', () => {
     assert.equal(recalled.content, 'Bridge memory');
   } finally {
     rmSync(project, { recursive: true, force: true });
+  }
+});
+
+test('the Node bridge preserves Unicode search and returns validation errors without changing records', () => {
+  const project = temporaryDirectory('nmnm-opencode-bridge-hardening-');
+  const home = temporaryDirectory('nmnm-opencode-bridge-hardening-home-');
+  try {
+    const ctx = storeContext({ directory: project, home, platform: 'darwin' });
+    const call = (name, params) => runBridge({ op: 'tool', name, params, ctx });
+    const result = call('retain_memory', { content: '東京 alpha beta 😀' });
+    assert.equal(result.ok, true);
+    const retained = JSON.parse(result.text);
+    for (const query of ['東京', '東*', 'alpha AND beta', 'NEAR(alpha beta, 0)']) {
+      const found = call('retrieve_memory', { query });
+      assert.equal(found.ok, true);
+      assert.deepEqual(JSON.parse(found.text).items.map(item => item.id), [retained.id]);
+    }
+    assert.equal(JSON.parse(call('retrieve_memory', { query: '!!!' }).text).total, 0);
+    for (const content of ['bad\ud800', 'bad\udc00']) {
+      const failed = call('retain_memory', { id: retained.id, content });
+      assert.equal(failed.ok, false);
+      assert.match(failed.error, /well-formed Unicode/);
+    }
+    const metadata = call('retain_memory', { id: retained.id, metadata: [] });
+    assert.equal(metadata.ok, false);
+    assert.match(metadata.error, /metadata must be a JSON object/);
+    for (const field of ['importance', 'confidence']) {
+      for (const operator of ['constructor', 'toString', '__proto__']) {
+        const failed = call('retrieve_memory', { [field]: { [operator]: 0.5 } });
+        assert.equal(failed.ok, false);
+        assert.match(failed.error, /unsupported operator/);
+      }
+    }
+    assert.deepEqual(JSON.parse(call('recall_memory', { id: retained.id }).text), retained);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('bridge first retains publish private complete project and global stores', { skip: process.platform === 'win32' }, () => {
+  const project = temporaryDirectory('nmnm-opencode-bridge-private-');
+  const home = temporaryDirectory('nmnm-opencode-bridge-private-home-');
+  try {
+    const ctx = storeContext({ directory: project, home, platform: 'darwin' });
+    for (const scope of ['project', 'global']) {
+      const result = runBridge({ op: 'tool', name: 'retain_memory', params: { content: 'Private bridge store', scope }, ctx });
+      assert.equal(result.ok, true);
+      const directory = scope === 'project' ? join(project, '.nanomneme') : join(home, '.local/share/nanomneme');
+      assert.equal(statSync(directory).mode & 0o777, 0o700);
+      assert.equal(statSync(join(directory, 'memory.db')).mode & 0o777, 0o600);
+      assert.deepEqual(readdirSync(directory), ['memory.db']);
+      const record = JSON.parse(result.text);
+      const recalled = runBridge({ op: 'tool', name: 'recall_memory', params: { id: record.id, store: scope }, ctx });
+      assert.equal(recalled.ok, true);
+      assert.deepEqual(JSON.parse(recalled.text), record);
+    }
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
   }
 });
 

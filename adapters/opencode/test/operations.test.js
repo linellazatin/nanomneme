@@ -40,6 +40,27 @@ test('handlers retain, recall, retrieve, and soft-remove through the core', () =
   }
 });
 
+test('OpenCode patches and restores advance timestamps across reopened stores under frozen and backward clocks', (t) => {
+  const cwd = temporaryDirectory('nmnm-opencode-ops-clock-');
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-04T00:00:00.000Z') });
+  try {
+    const retained = call('retain_memory', { content: 'Clock test', tags: ['original'] }, { cwd });
+    const patched = call('retain_memory', { id: retained.id, content: 'Clock patch' }, { cwd });
+    t.mock.timers.setTime(Date.parse('2026-10-03T00:00:00.000Z'));
+    call('remove_memory', { id: retained.id }, { cwd });
+    const restored = call('retain_memory', { id: retained.id }, { cwd });
+    assert.equal(patched.created_at, retained.created_at);
+    assert.equal(restored.created_at, retained.created_at);
+    assert.ok(patched.updated_at > retained.updated_at);
+    assert.ok(restored.updated_at > patched.updated_at);
+    assert.equal(restored.content, 'Clock patch');
+    assert.deepEqual(restored.tags, ['original']);
+    assert.equal(restored.metadata.source, 'opencode');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('opencode retain uses the global store when scope is global', () => {
   const cwd = temporaryDirectory('nmnm-opencode-ops-global-');
   const home = temporaryDirectory('nmnm-opencode-home-');

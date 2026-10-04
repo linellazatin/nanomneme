@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { closeSync, existsSync, mkdirSync, openSync, statSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
 const DEFAULTS = Object.freeze({ kind: 'note', scope: 'project', namespace: 'default', importance: 0.5, confidence: 1 });
@@ -295,9 +295,14 @@ export function open(path, { create = true, readOnly = false } = {}) {
   text(path, 'path');
   if (typeof create !== 'boolean') throw new TypeError('create must be a boolean');
   if (typeof readOnly !== 'boolean') throw new TypeError('readOnly must be a boolean');
+  const permissionsPath = path === ':memory:' ? null : resolve(path);
   const fresh = !existsSync(path);
   if (fresh && (!create || readOnly)) throw new Error(`database does not exist: ${path}`);
-  if (fresh) mkdirSync(dirname(path), { recursive: true });
+  if (fresh && path !== ':memory:') {
+    mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+    // Reserve a private file before SQLite writes schema or journal contents.
+    closeSync(openSync(path, 'wx', 0o600));
+  }
   const db = new DatabaseSync(path, { timeout: 5000, readOnly });
   try {
     db.exec('PRAGMA foreign_keys = ON;');
@@ -487,6 +492,15 @@ export function open(path, { create = true, readOnly = false } = {}) {
 
     verify() {
       const report = issueReporter();
+      if (permissionsPath !== null && process.platform !== 'win32') {
+        for (const [label, suffix] of [['database', ''], ['journal', '-journal'], ['wal', '-wal'], ['shm', '-shm']]) {
+          try {
+            if (statSync(`${permissionsPath}${suffix}`).mode & 0o077) report.add('file_permissions', label);
+          } catch (error) {
+            if (error.code !== 'ENOENT' || suffix === '') throw error;
+          }
+        }
+      }
       const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all().map(({ name }) => name);
       const tableColumns = new Map();
       for (const [table, columns] of Object.entries(SCHEMA_COLUMNS)) {

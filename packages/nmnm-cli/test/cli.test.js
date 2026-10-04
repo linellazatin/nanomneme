@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { access, link, mkdir, mkdtemp, readFile, readdir, symlink, writeFile, rm } from 'node:fs/promises';
+import { access, chmod, link, mkdir, mkdtemp, readFile, readdir, stat, symlink, writeFile, rm } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -11,6 +11,39 @@ import pkg from '../package.json' with { type: 'json' };
 const isolatedHome = await mkdtemp(join(tmpdir(), 'nmnm-cli-test-home-'));
 after(() => rm(isolatedHome, { recursive: true, force: true }));
 const cli = fileURLToPath(new URL('../bin/nmnm.js', import.meta.url));
+
+test('CLI exports privately and preserves stricter destination permissions', { skip: process.platform === 'win32' }, async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-export-permissions-'));
+  const source = join(directory, 'memory.db');
+  const output = join(directory, 'memory.jsonl');
+  const retained = run('retain', 'Private export', '--db', source, '--scope', 'project');
+  assert.equal(retained.status, 0, retained.stderr);
+  const exportWithPermissiveUmask = () => spawnSync(process.execPath, ['--input-type=module', '-e',
+    'process.umask(0); const { main } = await import(process.argv[1]); main(["export", "--db", process.argv[2], "--out", process.argv[3]]);',
+    new URL('../bin/nmnm.js', import.meta.url).href, source, output], { encoding: 'utf8' });
+  assert.equal(exportWithPermissiveUmask().status, 0);
+  assert.equal((await stat(output)).mode & 0o777, 0o600);
+  await chmod(output, 0o400);
+  assert.equal(exportWithPermissiveUmask().status, 0);
+  assert.equal((await stat(output)).mode & 0o777, 0o400);
+  await chmod(output, 0o644);
+  assert.equal(exportWithPermissiveUmask().status, 0);
+  assert.equal((await stat(output)).mode & 0o777, 0o600);
+  assert.match(await readFile(output, 'utf8'), /Private export/);
+});
+
+test('CLI verify reports unsafe permissions without modifying the database', { skip: process.platform === 'win32' }, async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-cli-permission-report-'));
+  const source = join(directory, 'memory.db');
+  assert.equal(run('retain', 'Permission report', '--db', source, '--scope', 'project').status, 0);
+  await chmod(source, 0o644);
+  const before = await readFile(source);
+  const result = run('verify', '--db', source, '--json');
+  assert.equal(result.status, 1, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout).issues, [{ code: 'file_permissions', count: 1, ids: ['database'] }]);
+  assert.equal((await stat(source)).mode & 0o777, 0o644);
+  assert.deepEqual(await readFile(source), before);
+});
 
 test('CLI reports its package version without opening a database', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-version-'));

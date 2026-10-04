@@ -202,8 +202,10 @@ function sameFile(left, right) {
 function writeFileAtomic(path, contents) {
   const output = resolve(path);
   const temporary = join(dirname(output), `.${basename(output)}.${randomUUID()}.tmp`);
+  let mode = 0o600;
+  try { mode &= statSync(output).mode; } catch (error) { if (error.code !== 'ENOENT') throw error; }
   try {
-    writeFileSync(temporary, contents, { encoding: 'utf8', flag: 'wx' });
+    writeFileSync(temporary, contents, { encoding: 'utf8', flag: 'wx', mode });
     renameSync(temporary, output);
   } catch (error) {
     rmSync(temporary, { force: true });

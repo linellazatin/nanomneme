@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { access, mkdtemp } from 'node:fs/promises';
+import { chmodSync, mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -13,6 +14,77 @@ async function createStore(t) {
   t.after(() => store.close());
   return store;
 }
+
+test('new databases and directories are private under a permissive umask', { skip: process.platform === 'win32' }, (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'nmnm-permissions-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  chmodSync(directory, 0o755);
+  const path = join(directory, 'private', 'nested', 'memory.db');
+  const previous = process.umask(0);
+  let store;
+  try {
+    store = open(path);
+    store.retain({ content: 'Private memory' });
+    assert.equal(statSync(path).mode & 0o777, 0o600);
+    assert.equal(statSync(join(directory, 'private')).mode & 0o777, 0o700);
+    assert.equal(statSync(join(directory, 'private', 'nested')).mode & 0o777, 0o700);
+    assert.equal(statSync(directory).mode & 0o777, 0o755);
+    assert.equal(process.umask(), 0);
+  } finally { store?.close(); process.umask(previous); }
+});
+
+test('verify reports existing unsafe permissions without changing files or directories', { skip: process.platform === 'win32' }, (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'nmnm-existing-permissions-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const path = join(directory, 'memory.db');
+  open(path).close();
+  chmodSync(path, 0o644);
+  chmodSync(directory, 0o755);
+  const store = open(path, { readOnly: true });
+  try {
+    assert.deepEqual(store.verify().issues, [{ code: 'file_permissions', count: 1, ids: ['database'] }]);
+    assert.equal(statSync(path).mode & 0o777, 0o644);
+    assert.equal(statSync(directory).mode & 0o777, 0o755);
+  } finally { store.close(); }
+  const writable = open(path);
+  writable.close();
+  assert.equal(statSync(path).mode & 0o777, 0o644);
+});
+
+test('permission verification keeps the database path when the working directory changes', { skip: process.platform === 'win32' }, (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'nmnm-permissions-cwd-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const original = process.cwd();
+  let store;
+  try {
+    process.chdir(directory);
+    store = open('memory.db');
+    process.chdir(original);
+    assert.equal(store.verify().ok, true);
+  } finally { process.chdir(original); store?.close(); }
+});
+
+test('new database rollback journals and WAL files remain private', { skip: process.platform === 'win32' }, (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'nmnm-sidefile-permissions-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const path = join(directory, 'memory.db');
+  const previous = process.umask(0);
+  let store, raw;
+  try {
+    store = open(path);
+    const memory = store.retain({ content: 'Journal target' });
+    raw = new DatabaseSync(path);
+    raw.exec('BEGIN IMMEDIATE');
+    raw.prepare('UPDATE memories SET importance = ? WHERE id = ?').run(0.9, memory.id);
+    assert.equal(statSync(`${path}-journal`).mode & 0o777, 0o600);
+    raw.exec('ROLLBACK; PRAGMA journal_mode = WAL');
+    store.retain({ content: 'WAL target' });
+    for (const suffix of ['-wal', '-shm']) assert.equal(statSync(`${path}${suffix}`).mode & 0o777, 0o600);
+    assert.equal(store.verify().ok, true);
+    chmodSync(`${path}-wal`, 0o644);
+    assert.deepEqual(store.verify().issues, [{ code: 'file_permissions', count: 1, ids: ['wal'] }]);
+  } finally { raw?.close(); store?.close(); process.umask(previous); }
+});
 
 test('open refuses a missing database when creation is disabled', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-open-'));

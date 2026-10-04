@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Type } from 'typebox';
@@ -62,6 +62,65 @@ test('Pi tools retain, recall, retrieve, and soft-remove through the core', asyn
     assert.equal(removed.mode, 'soft');
     assert.equal(restored.id, retained.id);
     assert.equal((await execute(tools.get('recall_memory'), { id: retained.id, store: 'project' }, cwd)).content, 'Stored from Pi');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('Pi tools preserve hardened Unicode search and reject invalid input without mutations', async () => {
+  const cwd = temporaryDirectory('nmnm-pi-tools-hardening-');
+  try {
+    const mutations = [];
+    const tools = registeredTools({ onMutation: reason => mutations.push(reason) });
+    const retained = await execute(tools.get('retain_memory'), { content: '東京 alpha beta 😀' }, cwd);
+    for (const query of ['東京', '東*', 'alpha AND beta', 'NEAR(alpha beta, 0)']) {
+      assert.deepEqual((await execute(tools.get('retrieve_memory'), { query }, cwd)).items.map(item => item.id), [retained.id]);
+    }
+    assert.equal((await execute(tools.get('retrieve_memory'), { query: '!!!' }, cwd)).total, 0);
+    for (const content of ['bad\ud800', 'bad\udc00']) {
+      await assert.rejects(execute(tools.get('retain_memory'), { id: retained.id, content }, cwd), /well-formed Unicode/);
+    }
+    for (const operator of ['constructor', 'toString', '__proto__']) {
+      await assert.rejects(execute(tools.get('retrieve_memory'), { importance: { [operator]: 0.5 } }, cwd), /unsupported operator/);
+    }
+    assert.equal((await execute(tools.get('recall_memory'), { id: retained.id }, cwd)).content, retained.content);
+    assert.deepEqual(mutations, ['retain']);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('Pi first retain creates private complete storage without initialization artifacts', { skip: process.platform === 'win32' }, async () => {
+  const cwd = temporaryDirectory('nmnm-pi-tools-private-');
+  try {
+    const tools = registeredTools();
+    const retained = await execute(tools.get('retain_memory'), { content: 'Private Pi store' }, cwd);
+    assert.equal(statSync(databasePath({ cwd })).mode & 0o777, 0o600);
+    assert.equal(statSync(join(cwd, '.nanomneme')).mode & 0o777, 0o700);
+    assert.deepEqual(readdirSync(join(cwd, '.nanomneme')), ['memory.db']);
+    assert.equal((await execute(tools.get('recall_memory'), { id: retained.id }, cwd)).id, retained.id);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('Pi patches and soft removal advance timestamps across reopened stores under frozen clocks', async (t) => {
+  const cwd = temporaryDirectory('nmnm-pi-tools-clock-');
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-04T00:00:00.000Z') });
+  try {
+    const tools = registeredTools();
+    const retained = await execute(tools.get('retain_memory'), { content: 'Clock test', tags: ['original'] }, cwd);
+    const patched = await execute(tools.get('retain_memory'), { id: retained.id, content: 'Clock patch' }, cwd);
+    t.mock.timers.setTime(Date.parse('2026-10-03T00:00:00.000Z'));
+    await execute(tools.get('remove_memory'), { id: retained.id }, cwd);
+    const restored = await execute(tools.get('retain_memory'), { id: retained.id }, cwd);
+    assert.equal(patched.created_at, retained.created_at);
+    assert.equal(restored.created_at, retained.created_at);
+    assert.ok(patched.updated_at > retained.updated_at);
+    assert.ok(restored.updated_at > patched.updated_at);
+    assert.equal(restored.content, 'Clock patch');
+    assert.deepEqual(restored.tags, ['original']);
+    assert.equal(restored.metadata.source, 'pi');
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

@@ -345,6 +345,10 @@ export function open(path, { create = true, readOnly = false } = {}) {
   const db = new DatabaseSync(path, { readOnly });
   try {
     db.exec('PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
+    if (!readOnly) {
+      db.exec('PRAGMA secure_delete = ON');
+      if (db.prepare('PRAGMA secure_delete').get().secure_delete !== 1) throw new Error('SQLite secure_delete support is required for writes');
+    }
     const version = fresh ? (db.exec(SCHEMA), SCHEMA_VERSION) : schemaVersion(db);
     if (version > SCHEMA_VERSION) throw new Error(`database schema version ${version} is newer than this version of nanomneme`);
     if (readOnly && version < SCHEMA_VERSION) throw new Error(`database schema version ${version} requires migration before read-only use`);
@@ -372,6 +376,12 @@ export function open(path, { create = true, readOnly = false } = {}) {
   const transaction = (work, mode = 'IMMEDIATE') => {
     db.exec(`BEGIN ${mode}`);
     try {
+      if (mode === 'IMMEDIATE') {
+        // Persist FTS protection within the mutation, not during read-only opens.
+        // Unsupported FTS5 runtimes fail the transaction rather than skip it.
+        const protection = db.prepare("SELECT v FROM memories_fts_config WHERE k = 'secure-delete'").get();
+        if (protection?.v !== 1) db.exec("INSERT INTO memories_fts(memories_fts, rank) VALUES('secure-delete', 1)");
+      }
       const result = work();
       db.exec('COMMIT');
       return result;

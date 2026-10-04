@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { access, mkdtemp } from 'node:fs/promises';
-import { chmodSync, mkdtempSync, rmSync, statSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -1053,6 +1053,104 @@ test('purge remove permanently deletes active and soft-removed memories', async 
   const purgedRemoved = store.remove({ id: removed.id, mode: 'purge' });
   assert.equal(purgedRemoved.mode, 'purge');
   assert.throws(() => store.retain({ id: removed.id, content: 'Cannot restore' }), /does not exist/);
+});
+
+test('purge scrubs newly deleted ordinary-table content in the live database', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-purge-bytes-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  const marker = 'private_metadata_marker_7d63c9';
+  try {
+    const memory = store.retain({ content: 'Purge byte target', metadata: { secret: marker.repeat(1000) } });
+    assert.equal(readFileSync(path).includes(Buffer.from(marker)), true);
+    store.remove({ id: memory.id, mode: 'purge' });
+  } finally { store.close(); }
+  assert.equal(readFileSync(path).includes(Buffer.from(marker)), false);
+});
+
+test('patch and soft removal scrub newly obsolete FTS segment terms', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-fts-delete-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  const raw = new DatabaseSync(path);
+  t.after(() => { raw.close(); store.close(); });
+  const obsolete = 'obsoletesecret7d63c9';
+  const replacement = 'replacementsecret7d63c9';
+  const memory = store.retain({ content: obsolete });
+  const segmentsContain = term => raw.prepare('SELECT block FROM memories_fts_data').all().some(({ block }) => Buffer.from(block).includes(Buffer.from(term)));
+  assert.equal(segmentsContain(obsolete), true);
+  store.retain({ id: memory.id, content: replacement });
+  assert.equal(segmentsContain(obsolete), false);
+  assert.equal(segmentsContain(replacement), true);
+  store.remove({ id: memory.id });
+  assert.equal(segmentsContain(replacement), false);
+  assert.equal(store.export()[0].content, replacement);
+  assert.equal(store.verify().ok, true);
+});
+
+test('read-only opening does not enable persistent FTS deletion protection', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-readonly-delete-'));
+  const path = join(directory, 'memory.db');
+  open(path).close();
+  const raw = new DatabaseSync(path);
+  raw.exec("INSERT INTO memories_fts(memories_fts, rank) VALUES('secure-delete', 0)");
+  raw.close();
+  const before = readFileSync(path);
+  const store = open(path, { readOnly: true });
+  try { assert.equal(store.verify().ok, true); }
+  finally { store.close(); }
+  assert.deepEqual(readFileSync(path), before);
+});
+
+test('enabling FTS protection rolls back with a failed mutation on an existing store', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-delete-rollback-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  const memory = store.retain({ content: 'Existing deletion target', tags: ['original'] });
+  const raw = new DatabaseSync(path);
+  t.after(() => { raw.close(); store.close(); });
+  raw.exec("INSERT INTO memories_fts(memories_fts, rank) VALUES('secure-delete', 0); CREATE TRIGGER reject_delete BEFORE DELETE ON memories BEGIN SELECT RAISE(ABORT, 'rejected purge'); END");
+  assert.throws(() => store.remove({ id: memory.id, mode: 'purge' }), /rejected purge/);
+  assert.equal(raw.prepare("SELECT v FROM memories_fts_config WHERE k = 'secure-delete'").get().v, 0);
+  assert.deepEqual(store.export(), [memory]);
+  assert.equal(store.verify().ok, true);
+  raw.exec('DROP TRIGGER reject_delete');
+  store.remove({ id: memory.id, mode: 'purge' });
+  assert.equal(raw.prepare("SELECT v FROM memories_fts_config WHERE k = 'secure-delete'").get().v, 1);
+  assert.deepEqual(store.export(), []);
+});
+
+test('purge preserves an existing WAL reader snapshot and does not erase WAL history', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-delete-wal-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  const raw = new DatabaseSync(path);
+  t.after(() => { raw.close(); store.close(); });
+  raw.exec('PRAGMA journal_mode = WAL');
+  const marker = 'walhistorysecret7d63c9';
+  const memory = store.retain({ content: marker });
+  raw.exec('BEGIN DEFERRED');
+  assert.equal(raw.prepare('SELECT content FROM memories WHERE id = ?').get(memory.id).content, marker);
+  store.remove({ id: memory.id, mode: 'purge' });
+  assert.deepEqual(store.export(), []);
+  assert.equal(raw.prepare('SELECT content FROM memories WHERE id = ?').get(memory.id).content, marker);
+  assert.equal(readFileSync(`${path}-wal`).includes(Buffer.from(marker)), true);
+  raw.exec('COMMIT');
+  assert.equal(raw.prepare('SELECT content FROM memories WHERE id = ?').get(memory.id), undefined);
+  assert.equal(store.verify().ok, true);
+});
+
+test('purge covers expired rows, tags, FTS, exports, and repair without erasing other records', async (t) => {
+  const store = await createStore(t);
+  const expired = store.retain({ content: 'Expired purge target', tags: ['expired'], expires_at: '2000-01-01T00:00:00.000Z' });
+  const survivor = store.retain({ content: 'Surviving target', tags: ['survivor'] });
+  assert.equal(store.remove({ id: expired.id }), null);
+  assert.equal(store.remove({ id: expired.id, mode: 'purge' }).mode, 'purge');
+  assert.equal(store.remove({ id: expired.id, mode: 'purge' }), null);
+  assert.deepEqual(store.export(), [survivor]);
+  store.rebuildFts();
+  assert.equal(store.retrieve({ query: 'Expired', expires: 'any' }).total, 0);
+  assert.equal(store.verify().ok, true);
 });
 
 test('mutation timestamps advance under frozen and backward clocks across connections', async (t) => {

@@ -531,6 +531,23 @@ test('CLI validates --both selectors when both databases are missing', async () 
   await assert.rejects(access(join(directory, '.local', 'share', 'nanomneme', 'memory.db')));
 });
 
+test('CLI purge deletes expired rows and enables FTS protection without changing its output contract', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-expired-purge-'));
+  const db = join(directory, 'memory.db');
+  const retained = run('retain', 'Expired purge secret', '--expires-at', '2000-01-01T00:00:00.000Z', '--db', db, '--scope', 'project', '--json');
+  assert.equal(retained.status, 0);
+  const memory = JSON.parse(retained.stdout);
+  const purged = run('remove', memory.id, '--purge', '--db', db, '--json');
+  assert.equal(purged.status, 0);
+  assert.equal(JSON.parse(purged.stdout).mode, 'purge');
+  assert.equal(run('export', '--db', db).stdout, '{"_format":"nanomneme","_version":1}\n');
+  const raw = new DatabaseSync(db, { readOnly: true });
+  try {
+    assert.equal(raw.prepare("SELECT v FROM memories_fts_config WHERE k = 'secure-delete'").get().v, 1);
+    assert.equal(raw.prepare('SELECT COUNT(*) AS count FROM memories_fts').get().count, 0);
+  } finally { raw.close(); }
+});
+
 test('CLI restores soft removals and purges with an explicit flag', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-remove-'));
   const db = join(directory, 'memory.db');

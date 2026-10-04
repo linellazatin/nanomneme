@@ -4,7 +4,7 @@
 
 ## Install
 
-Use Node.js 22.19+ and Pi 0.87.0 or newer, verified through Pi 1.0.0. This manual describes `@openlines/nmnm-pi` 0.4.0. Install the public package:
+Use Node.js 22.19+ and Pi 0.87.0 or newer, verified through Pi 1.0.0. This manual describes `@openlines/nmnm-pi` 0.4.1. Install the public package:
 
 ```sh
 pi install npm:@openlines/nmnm-pi
@@ -94,7 +94,7 @@ When available, the adapter obtains the value from Pi's `ctx.sessionManager.getS
 
 For `retain`, `recall`, `retrieve`, and `remove` calls that pass the trust boundary, the adapter starts a monotonic timer immediately before invoking the core and records the elapsed milliseconds after it returns or throws. The recorded value is clamped to zero or greater. It includes the synchronous adapter-to-core operation, including selected-store presence checks that occur inside the logged operation.
 
-Browser mutation durations include the selected-memory check and attempted mutation. Confirmed removal timing restarts after user confirmation, excluding the time spent deciding in the dialog. Command durations cover target resolution and the attempted action. Model-tool project-trust blocks have `duration_ms: null`; ambiguous command removal has a measured duration.
+Browser mutation durations include the selected-memory check and attempted mutation. Confirmed removal timing restarts after user confirmation, excluding the time spent deciding in the dialog. Command durations cover target resolution and the attempted action. All blocked outcomes, including project-trust and ambiguous command removal, have `duration_ms: null`.
 
 ### Operation outcomes and events
 
@@ -113,7 +113,7 @@ The event catalog is closed by the shared `shared/logger/catalog.js` source. The
 | `retrieve` | `empty` | `info` | `memory.retrieved` | `Memory retrieval completed with no results` | The returned page has `total: 0`, including a missing selected store. |
 | `retrieve` | `blocked` | `warn` | `memory.retrieve_blocked` | `Memory retrieval blocked` | Pi project trust blocks the selected project store. |
 | `retrieve` | `failed` | `error` | `memory.retrieve_failed` | `Memory retrieval failed` | The core retrieve operation throws. |
-| `remove` | `ok` | `info` | `memory.removed` | `Memory removal completed` | The core soft-remove operation returns an active memory. |
+| `remove` | `ok` | `info` | `memory.removed` | `Memory removal completed` | The core soft-remove operation returns a removal result. |
 | `remove` | `not_found` | `info` | `memory.remove_not_found` | `Memory was not found` | The requested memory is absent, inactive, expired, or the selected store does not exist. |
 | `remove` | `blocked` | `warn` | `memory.remove_blocked` | `Memory removal blocked` | Pi project trust blocks the selected project store. |
 | `remove` | `failed` | `error` | `memory.remove_failed` | `Memory removal failed` | The core remove operation throws. |
@@ -159,7 +159,7 @@ For every status other than `failed`, `error` is exactly `null`. In particular, 
 
 ### Privacy boundary
 
-The logger uses an empty `attributes` object for every current event. Records do not contain:
+The logger uses an empty `attributes` object for every current event. The logger does not serialize these payload fields:
 
 - Memory content or previews.
 - Recall or removal IDs.
@@ -169,26 +169,26 @@ The logger uses an empty `attributes` object for every current event. Records do
 - Tool or slash-command arguments, model messages, prompts, or model-visible tool responses.
 - Error stack traces; the `error` object itself carries the thrown message, class name, and derived kind on failures.
 
-The only potentially correlating value is Pi's opaque host-provided `context.session_id`. Operators must handle that opaque value in the append-only diagnostics file according to their own retention and privacy policy.
+Pi's opaque host-provided `context.session_id` can correlate records. Failed records also preserve thrown error messages verbatim without redaction; these may expose sensitive input, memory IDs, or paths. Review logs before sharing and apply your own retention and privacy policy.
 
 ### Example records
 
 A successful retain can emit:
 
 ```json
-{"schema":"logslines/v1","timestamp":"2026-09-27T04:30:00.000Z","level":"info","event":"memory.retained","message":"Memory retention completed","service":{"namespace":"openlines","name":"nanomneme","component":"nmnm-pi","version":"0.4.0"},"context":{"session_id":"<opaque Pi session ID>"},"operation":"retain","status":"ok","duration_ms":2.4,"attributes":{},"error":null}
+{"schema":"logslines/v1","timestamp":"2026-09-27T04:30:00.000Z","level":"info","event":"memory.retained","message":"Memory retention completed","service":{"namespace":"openlines","name":"nanomneme","component":"nmnm-pi","version":"0.4.1"},"context":{"session_id":"<opaque Pi session ID>"},"operation":"retain","status":"ok","duration_ms":2.4,"attributes":{},"error":null}
 ```
 
 A project-trust block for retrieval can emit:
 
 ```json
-{"schema":"logslines/v1","timestamp":"2026-09-27T04:30:00.000Z","level":"warn","event":"memory.retrieve_blocked","message":"Memory retrieval blocked","service":{"namespace":"openlines","name":"nanomneme","component":"nmnm-pi","version":"0.4.0"},"context":{"session_id":"<opaque Pi session ID or null>"},"operation":"retrieve","status":"blocked","duration_ms":null,"attributes":{},"error":null}
+{"schema":"logslines/v1","timestamp":"2026-09-27T04:30:00.000Z","level":"warn","event":"memory.retrieve_blocked","message":"Memory retrieval blocked","service":{"namespace":"openlines","name":"nanomneme","component":"nmnm-pi","version":"0.4.1"},"context":{"session_id":"<opaque Pi session ID or null>"},"operation":"retrieve","status":"blocked","duration_ms":null,"attributes":{},"error":null}
 ```
 
 A failed removal can emit:
 
 ```json
-{"schema":"logslines/v1","timestamp":"2026-09-27T04:30:00.000Z","level":"error","event":"memory.remove_failed","message":"Memory removal failed","service":{"namespace":"openlines","name":"nanomneme","component":"nmnm-pi","version":"0.4.0"},"context":{"session_id":null},"operation":"remove","status":"failed","duration_ms":1,"attributes":{},"error":{"kind":"validation","code":"remove_failed","message":"id must be a UUID generated by nanomneme","retryable":false,"cause_kind":"TypeError"}}
+{"schema":"logslines/v1","timestamp":"2026-09-27T04:30:00.000Z","level":"error","event":"memory.remove_failed","message":"Memory removal failed","service":{"namespace":"openlines","name":"nanomneme","component":"nmnm-pi","version":"0.4.1"},"context":{"session_id":null},"operation":"remove","status":"failed","duration_ms":1,"attributes":{},"error":{"kind":"validation","code":"remove_failed","message":"id must be a UUID generated by nanomneme","retryable":false,"cause_kind":"TypeError"}}
 ```
 
 Successful model-visible tool JSON is limited to 50 KiB (51,200 UTF-8 bytes). Results that fit retain their existing canonical JSON. Oversized results return valid JSON with `truncated: true`, byte-count diagnostics, stable record or page identifiers, bounded content previews, and guidance to narrow the request or use the CLI. This summary does not modify or truncate the canonical stored memory.
@@ -367,7 +367,7 @@ A crash before atomic replacement can also leave an inert same-directory `nmnm-p
 
 ### Pi token overhead
 
-`nmnm-pi` 0.4.x adds four model-visible tool definitions: `retain_memory`, `recall_memory`, `retrieve_memory`, and `remove_memory`. Their JSON schemas total `1,190 characters` (`retain_memory` 440, `recall_memory` 164, `retrieve_memory` 422, `remove_memory` 164). This is a schema-only reference, not a token or cost estimate: Pi adds tool names, descriptions, and provider request structure, while each provider uses its own tokenizer.
+`nmnm-pi` 0.4.x adds four model-visible tool definitions: `retain_memory`, `recall_memory`, `retrieve_memory`, and `remove_memory`. Their JSON schemas total `1,099 characters` (`retain_memory` 349, `recall_memory` 164, `retrieve_memory` 422, `remove_memory` 164). This is a schema-only reference, not a token or cost estimate: Pi adds tool names, descriptions, and provider request structure, while each provider uses its own tokenizer.
 
 The transient memory context is separately bounded. On the first prompt and each queued refresh, Pi appends at most `injection_budget + 2` characters to the system prompt: the configured context plus its two newline separator characters. With the default budget, that is at most 2,002 characters. Autoretention guidance and index rows share that limit. Ordinary prompts without a queued refresh append no memory context unless opt-in periodic `reinjection` queues a rebuild.
 

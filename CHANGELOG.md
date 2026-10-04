@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.6.1 - Core and CLI hardening
+
+### Updated components
+
+| Component | Version |
+| --- | --- |
+| Repository | 0.6.1 |
+| `@openlines/nmnm-core`, `@openlines/nmnm-cli` | 0.2.1 |
+| `@openlines/nmnm-pi` | 0.4.1 |
+| `@openlines/nmnm-opencode`, `@openlines/nmnm-claude`, `@openlines/nmnm-codex` | 0.2.1 |
+
+### Fixed
+
+- Store creation and file export use short, destination-independent temporary names so valid long filenames remain usable. Text inputs reject unpaired Unicode surrogates before SQLite can silently replace them; valid Unicode pairs remain unchanged.
+- File export rejects the source database's journal, WAL, and shared-memory paths, including existing aliases, before opening the store or replacing output.
+- Concurrent first-use writers publish complete private databases without overwriting another creator; failed initialization leaves no published partial store. New-store publication requires same-filesystem hardlink support.
+- Canonical import and verification require metadata objects instead of silently accepting JSON null. Numeric range selectors reject inherited property names as validation errors.
+- New POSIX database files request `0600` before SQLite initialization; new store directories request `0700`. File exports use private temporary files and preserve stricter owner permissions. Verification reports unsafe database/sidecar mode bits without changing existing permissions; ACLs and Windows are outside this check.
+- Patches and removals read targets inside write transactions; patches preserve unrelated concurrent updates and capture their own committed result. Canonical rows, tags, and FTS updates are atomic. Reads use consistent per-database snapshots; lock waiting is bounded to five seconds without automatic retries.
+- Retrieval supports Unicode terms, Boolean expressions, quoted phrases, prefixes, bounded grouping, and FTS5 NEAR groups. Malformed expressions fall back to literal terms with operator words retained; punctuation-only queries return no matches. Storage failures are not masked as query errors.
+- Patches, restores, and soft removals preserve creation time and strictly advance per-record update time despite frozen or backward clocks. Imports retain canonical timestamps; expiry and purge reporting use wall-clock time. Timestamp-range exhaustion rejects mutations atomically.
+- Writable opens enable SQLite `secure_delete`; write transactions enable FTS5 `secure-delete` atomically. Purge removes canonical rows, tags, and live FTS entries, including expired and soft-removed records. These protections reduce subsequent deletion remnants, not historical data, WAL/journal history, reader snapshots, backups, exports, or device-level copies; no automatic cleanup or forensic-erasure guarantee is added.
+
+### Changed
+
+- CLI and all adapters pin core `0.2.1`; Claude and Codex plugin manifests match their package versions. Adapter APIs and package engine floors are unchanged.
+- Reconciled current manuals and READMEs with search, concurrency, timestamps, deletion, permissions, logging privacy, store paths, and adapter behavior. Failed diagnostics preserve thrown error messages without redaction; review logs before sharing.
+- Documented the FTS5 runtime prerequisite: official macOS arm64 Node.js 22.13.0 lacks FTS5; Node.js 22.19.0 is tested. Codex's physical core bundle must be prepared before marketplace reinstall and reload.
+
 ## 0.6.0 - Shared Logslines diagnostics
 
 ### Updated components

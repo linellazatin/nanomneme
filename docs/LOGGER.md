@@ -6,7 +6,7 @@ This manual is for maintainers of nanomneme’s opt-in diagnostic logging. It co
 
 Nanomneme diagnostics are opt-in and append privacy-bounded `logslines/v1` JSONL records for selected explicit actions. The shared logger classifies an action’s result, resolves logging configuration, validates and serializes the record through Logslines, and writes it to the component log. It must remain subordinate to the action it observes: disabled, invalid, or failed diagnostics never change the action’s result or error.
 
-The logger is intentionally shipped with `@openlines/nmnm-core/logging`, rather than fetched or installed at runtime. This lets the CLI and every adapter use one reviewed implementation and one pinned Logslines release. No memory content, memory IDs, queries, store paths, or stack traces belong in emitted records; failed records carry the thrown error's message and class name in `error`.
+The logger is intentionally shipped with `@openlines/nmnm-core/logging`, rather than fetched or installed at runtime. This lets the CLI and every adapter use one reviewed implementation and one pinned Logslines release. The observer does not serialize memory payload fields or stack traces; failed records preserve the thrown error's message and class name in `error`. Error messages are not redacted and may expose sensitive input, memory IDs, queries, or paths. Review logs before sharing.
 
 ## Source and artifact map
 
@@ -121,10 +121,10 @@ cmp packages/nmnm-core/src/logging-runtime.generated.js \
   adapters/codex/node_modules/@openlines/nmnm-core/src/logging-runtime.generated.js
 
 cmp packages/nmnm-core/src/logging-runtime.generated.js \
-  "${CODEX_HOME:-$HOME/.codex}/plugins/cache/nanomneme-local/nmnm-codex/0.2.0/node_modules/@openlines/nmnm-core/src/logging-runtime.generated.js"
+  "${CODEX_HOME:-$HOME/.codex}/plugins/cache/nanomneme-local/nmnm-codex/0.2.1/node_modules/@openlines/nmnm-core/src/logging-runtime.generated.js"
 ```
 
-No output and exit code `0` means a comparison matches. Replace `0.2.0` with the installed version when it changes. An adapter mismatch requires preparation; a cache-only mismatch requires marketplace reinstall and reload. These checks establish logger artifact freshness, not end-to-end memory operation behavior. See the [Codex manual](../adapters/codex/docs/CODEX_ADAPTER_MANUAL.md#refresh-after-checkout-updates) for the complete local installation context.
+No output and exit code `0` means a comparison matches. Replace `0.2.1` with the installed version when it changes. An adapter mismatch requires preparation; a cache-only mismatch requires marketplace reinstall and reload. These checks establish logger artifact freshness, not end-to-end memory operation behavior. See the [Codex manual](../adapters/codex/docs/CODEX_ADAPTER_MANUAL.md#refresh-after-checkout-updates) for the complete local installation context.
 
 ## What not to do
 
@@ -144,7 +144,7 @@ No output and exit code `0` means a comparison matches. Replace `0.2.0` with the
 | `external:check` reports source or provenance differences | The checked-in snapshot does not exactly match the selected upstream release. | Use the intended exact tag, inspect the discrepancy, and use `external:update` only when deliberately adopting that release. |
 | Offline Logslines hash test fails after an update | `test/external-logslines.test.js` still pins the prior release metadata or hashes. | Copy the reviewed values from `external/logslines/PROVENANCE.json`, then regenerate and run `npm test`. |
 | Package check reports missing logging files | A package manifest or bundled dependency does not ship the logging runtime it needs. | Inspect the affected package’s `files` list and packaging preparation; do not suppress the check. |
-| Diagnostics fail while an action succeeds | Diagnostic failures are intentionally subordinate. | Inspect configuration, sink permissions, and the sanitized record path without changing the action’s behavior. |
+| Diagnostics fail while an action succeeds | Diagnostic failures are intentionally subordinate. | Inspect configuration, sink permissions, and the bounded record path without changing the action’s behavior. |
 
 ## Final pre-shipping checklist
 

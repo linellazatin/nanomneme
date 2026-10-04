@@ -2,7 +2,7 @@
 
 ## Scope
 
-`@openlines/nmnm-codex` provides local deterministic Nanomneme memory to Codex without MCP. It is a macOS and Linux prototype for Node.js 22.13+ that bundles its exact `@openlines/nmnm-core` runtime. The package contains one lazy-loaded skill, a constrained JSON runner, and one SessionStart hook.
+`@openlines/nmnm-codex` provides local deterministic Nanomneme memory to Codex without MCP. It is a macOS and Linux prototype for Node.js 22.13+ with FTS5 in built-in `node:sqlite` (22.19.0 is tested) that bundles its exact `@openlines/nmnm-core` runtime. The package contains one lazy-loaded skill, a constrained JSON runner, and one SessionStart hook.
 
 ## Install from a packed local artifact
 
@@ -29,20 +29,26 @@ node scripts/check-logging-packages.js --prepare-codex
 codex plugin add nmnm-codex@nanomneme-local --json
 ```
 
-Preparation requires npm registry access for ordinary dependencies and must complete successfully before reinstalling. The plain package check without `--prepare-codex` validates temporary packages but does not update `adapters/codex/node_modules`. Marketplace reinstall refreshes the cached plugin even when its version remains `0.2.0`.
+Preparation requires npm registry access for ordinary dependencies and must complete successfully before reinstalling. The plain package check without `--prepare-codex` validates temporary packages but does not update `adapters/codex/node_modules`. Marketplace reinstall refreshes the cached plugin even when its version remains `0.2.1`.
 
 3. Reload Codex or start a new session so it uses the refreshed plugin.
-4. Compare the checkout logger with both bundled copies:
+4. Compare the checkout core and logger with both bundled copies:
 
 ```sh
+cmp packages/nmnm-core/src/index.js \
+  adapters/codex/node_modules/@openlines/nmnm-core/src/index.js
+
+cmp packages/nmnm-core/src/index.js \
+  "${CODEX_HOME:-$HOME/.codex}/plugins/cache/nanomneme-local/nmnm-codex/0.2.1/node_modules/@openlines/nmnm-core/src/index.js"
+
 cmp packages/nmnm-core/src/logging-runtime.generated.js \
   adapters/codex/node_modules/@openlines/nmnm-core/src/logging-runtime.generated.js
 
 cmp packages/nmnm-core/src/logging-runtime.generated.js \
-  "${CODEX_HOME:-$HOME/.codex}/plugins/cache/nanomneme-local/nmnm-codex/0.2.0/node_modules/@openlines/nmnm-core/src/logging-runtime.generated.js"
+  "${CODEX_HOME:-$HOME/.codex}/plugins/cache/nanomneme-local/nmnm-codex/0.2.1/node_modules/@openlines/nmnm-core/src/logging-runtime.generated.js"
 ```
 
-Each comparison succeeds with no output and exit code `0`. Replace `0.2.0` with the installed plugin version when it changes. If the adapter copy differs, repeat preparation; if only the cached copy differs, repeat marketplace reinstall and reload. For generation and Logslines maintenance, see the [Logger manual](../../../docs/LOGGER.md).
+Each comparison succeeds with no output and exit code `0`. Replace `0.2.1` with the installed plugin version when it changes. If the adapter copy differs, repeat preparation; if only the cached copy differs, repeat marketplace reinstall and reload. For generation and Logslines maintenance, see the [Logger manual](../../../docs/LOGGER.md).
 
 ## Hook trust and bounded context
 
@@ -66,6 +72,6 @@ This prototype does not add Windows support, MCP, automatic retention, context c
 
 ## Shared opt-in diagnostics
 
-Set `"logging": { "enabled": true }` in `~/.local/share/nanomneme/config.jsonc` to enable the shared default. JSONC comments and trailing commas are supported. Adapter user-level `nmnm.jsonc` can explicitly enable or disable logging; absence inherits. Either invalid applicable logging configuration disables that caller. Project settings cannot authorize logging. Records use the shared `logslines/v1` catalog and core-distributed runtime, contain no memory payloads or stack traces, carry thrown-error messages verbatim in failed records, and append to `~/.local/share/nanomneme/logs/<component>.jsonl`. Logging failures preserve operations and output. Existing databases, pin files, and logs require no migration.
+Set `"logging": { "enabled": true }` in `~/.local/share/nanomneme/config.jsonc` to enable the shared default. JSONC comments and trailing commas are supported. Adapter user-level `nmnm.jsonc` can explicitly enable or disable logging; absence inherits. Either invalid applicable logging configuration disables that caller. Project settings cannot authorize logging. Records use the shared `logslines/v1` catalog and core-distributed runtime, omit structured memory payloads and stack traces, preserve thrown-error messages verbatim without redaction, and append to `~/.local/share/nanomneme/logs/<component>.jsonl`. Error messages may expose sensitive input or paths; review logs before sharing. Logging failures preserve operations and output. Existing databases, pin files, and logs require no migration.
 
 Codex uses `$CODEX_HOME/nmnm.jsonc`, defaulting to `~/.codex/nmnm.jsonc`, for logging only. Explicit runner 4Rs are observed; SessionStart indexes remain unlogged. Correlation uses nonempty host-provided `CODEX_THREAD_ID`, falling back to `CODEX_SESSION_ID`, otherwise null. Request-supplied session fields are ignored. Each runner process resolves settings and correlation anew. Hosts without these environment values retain null correlation; no session mapping or transcript inspection is required.

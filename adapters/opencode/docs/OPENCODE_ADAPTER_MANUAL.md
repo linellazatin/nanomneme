@@ -6,16 +6,16 @@ Runtime code and tests are authoritative if this manual disagrees with behavior.
 
 ## Requirements and architecture
 
-- Node.js 22.13+ with built-in `node:sqlite`, available on `PATH` (or set `NMNM_NODE` to its absolute path).
+- Node.js 22.13+ with FTS5 in built-in `node:sqlite` (22.19.0 is tested), available on `PATH` (or set `NMNM_NODE` to its absolute path).
 - An OpenCode version exposing the `@opencode-ai/plugin` server API, native `tool` registration, and `experimental.chat.system.transform`. Developed and verified against `@opencode-ai/plugin` 1.18.15 / OpenCode 1.18.31. The system-transform hook is marked experimental upstream.
 
-OpenCode loads server plugins under **Bun**, and its Bun build provides no `node:sqlite` (only the incompatible `bun:sqlite`). Because `@openlines/nmnm-core` requires `node:sqlite`, the plugin does **not** import the core in the Bun host. Instead:
+OpenCode loads server plugins under **Bun**, and its Bun build provides no `node:sqlite` (only the incompatible `bun:sqlite`). Because `@openlines/nmnm-core` requires `node:sqlite`, the plugin does **not** import core persistence in the Bun host; it can use the sqlite-free logging subpath. Instead:
 
 ```text
 OpenCode (Bun) plugin  ->  spawns  node  src/bridge.js  (per core call)  ->  @openlines/nmnm-core
 ```
 
-`index.js` (Bun-safe: only `@opencode-ai/plugin`, `node:child_process/os/url`) registers the tools and the system transform; every core operation (a 4R tool call or the bounded index) runs in a short-lived `node` bridge process (`src/bridge.js` via `src/bridge-client.js`). The bridge reads a JSON request on stdin and writes a JSON response on stdout; the core's SQLite experimental warning goes to stderr and never pollutes the result. This is a stateless process-per-call, not a daemon or network service, so the "thin core client, no direct SQLite" rule holds: only `src/*` under Node ever touches `nmnm-core`.
+`index.js` (Bun-safe plugin, bridge, path, and logging imports) registers the tools and the system transform; every core operation (a 4R tool call or the bounded index) runs in a short-lived `node` bridge process (`src/bridge.js` via `src/bridge-client.js`). The bridge reads a JSON request on stdin and writes a JSON response on stdout; the core's SQLite experimental warning goes to stderr and never pollutes the result. This is a stateless process-per-call, not a daemon or network service, so the "thin core client, no direct SQLite" rule holds: only Node bridge processes touch core persistence; the Bun host uses `@openlines/nmnm-core/logging` for proven spawn failures.
 
 The TUI browser (`tui.js`, exported as `./tui`) is a separate OpenCode **TUI plugin** module that runs under the same Bun host, so it reuses the identical Node bridge (`status`/`browse`/`detail`/ `mutate` ops) rather than importing the core. It only drives OpenCode's native dialog and keymap API and never performs an LLM turn.
 
@@ -33,7 +33,7 @@ Add the package to OpenCode config. OpenCode installs npm plugins and their depe
 }
 ```
 
-Pin a version for reproducibility: `"@openlines/nmnm-opencode@0.1.1"`.
+Pin a version for reproducibility: `"@openlines/nmnm-opencode@0.2.1"`.
 
 To also enable the TUI memory browser, register the same package in the **TUI** config; OpenCode resolves its `./tui` export:
 
@@ -225,6 +225,6 @@ node packages/nmnm-cli/bin/nmnm.js retrieve "<query>" --global
 
 ## Shared opt-in diagnostics
 
-Set `"logging": { "enabled": true }` in `~/.local/share/nanomneme/config.jsonc` to enable the shared default. JSONC comments and trailing commas are supported. Adapter user-level `nmnm.jsonc` can explicitly enable or disable logging; absence inherits. Either invalid applicable logging configuration disables that caller. Project settings cannot authorize logging. Records use the shared `logslines/v1` catalog and core-distributed runtime, contain no memory payloads or stack traces, carry thrown-error messages verbatim in failed records, and append to `~/.local/share/nanomneme/logs/<component>.jsonl`. Logging failures preserve operations and output. Existing databases, pin files, and logs require no migration.
+Set `"logging": { "enabled": true }` in `~/.local/share/nanomneme/config.jsonc` to enable the shared default. JSONC comments and trailing commas are supported. Adapter user-level `nmnm.jsonc` can explicitly enable or disable logging; absence inherits. Either invalid applicable logging configuration disables that caller. Project settings cannot authorize logging. Records use the shared `logslines/v1` catalog and core-distributed runtime, omit structured memory payloads and stack traces, preserve thrown-error messages verbatim without redaction, and append to `~/.local/share/nanomneme/logs/<component>.jsonl`. Error messages may expose sensitive input or paths; review logs before sharing. Logging failures preserve operations and output. Existing databases, pin files, and logs require no migration.
 
 OpenCode uses its existing user settings resolver under the OpenCode config directory. Node tool operations, CLI mutations, and confirmed TUI mutations are observed; index/navigation reads are unlogged. Each bridge process resolves settings anew. Bridge spawn failures emit one `failed` record from the Bun plugin host itself (the bridge provably never ran), carrying the spawn error verbatim; post-spawn transport/parse failures have no diagnostic record because the bridge may already have logged the true outcome. Correlation is null unless trusted host context supplies a verified ID.

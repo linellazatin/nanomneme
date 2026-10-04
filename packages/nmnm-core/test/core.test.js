@@ -799,6 +799,82 @@ test('retrieve matches case and diacritics insensitively', async (t) => {
   assert.deepEqual(store.retrieve({ query: 'CAFÉ CRÈME' }).items.map(({ id }) => id), [cafe.id]);
 });
 
+test('retrieve searches Unicode-only terms and Unicode prefixes', async (t) => {
+  const store = await createStore(t);
+  for (const content of ['東京', '中文', 'é', 'Привет', 'مرحبا']) store.retain({ content });
+  for (const query of ['東京', '中文', 'é', 'Привет', 'مرحبا']) {
+    assert.deepEqual(store.retrieve({ query }).items.map(item => item.content), [query]);
+  }
+  assert.deepEqual(store.retrieve({ query: '東*' }).items.map(item => item.content), ['東京']);
+});
+
+test('retrieve combines Boolean groups, adjacent groups, and consistent operator casing', async (t) => {
+  const store = await createStore(t);
+  for (const content of ['foo', 'bar baz', 'bar qux', 'foo baz', 'foo bar']) store.retain({ content });
+  for (const [query, expected] of [
+    ['foo OR (bar AND baz)', ['bar baz', 'foo', 'foo bar', 'foo baz']],
+    ['foo or (bar and baz)', ['bar baz', 'foo', 'foo bar', 'foo baz']],
+    ['(foo OR bar) baz', ['bar baz', 'foo baz']],
+    ['foo (bar OR baz)', ['foo bar', 'foo baz']],
+    ['(foo) (baz)', ['foo baz']],
+    ['foo NOT (bar OR qux)', ['foo', 'foo baz']],
+    ['foo NOT bar baz', ['foo', 'foo bar', 'foo baz']],
+  ]) assert.deepEqual(store.retrieve({ query }).items.map(item => item.content).sort(), expected, query);
+});
+
+test('retrieve uses literal fallback for malformed expressions without broadening Boolean results', async (t) => {
+  const store = await createStore(t);
+  for (const content of ['foo', 'bar', 'foo OR bar literal', 'foo AND OR bar literal']) store.retain({ content });
+  assert.deepEqual(store.retrieve({ query: 'foo OR (bar' }).items.map(item => item.content).sort(), ['foo AND OR bar literal', 'foo OR bar literal']);
+  assert.deepEqual(store.retrieve({ query: 'foo AND OR bar' }).items.map(item => item.content), ['foo AND OR bar literal']);
+  for (const query of ['(())', '(()())', '"!!!"']) assert.deepEqual(store.retrieve({ query }), { total: 0, items: [] });
+});
+
+test('retrieve supports escaped phrases, phrase prefixes, and NUL separators', async (t) => {
+  const store = await createStore(t);
+  for (const content of ['say hello', 'say filler hello', 'foo bar', 'foo baz']) store.retain({ content });
+  assert.deepEqual(store.retrieve({ query: '"say ""hello"""' }).items.map(item => item.content), ['say hello']);
+  assert.deepEqual(store.retrieve({ query: '"foo ba"*' }).items.map(item => item.content).sort(), ['foo bar', 'foo baz']);
+  assert.deepEqual(store.retrieve({ query: 'foo\0bar' }).items.map(item => item.content), ['foo bar']);
+});
+
+test('retrieve implements NEAR groups and keeps infix NEAR literal', async (t) => {
+  const store = await createStore(t);
+  for (const content of ['alpha beta', 'beta alpha', 'alpha x beta', 'alpha near beta', 'alpha beta gamma']) store.retain({ content });
+  for (const query of ['NEAR(alpha beta, 0)', 'near(alpha beta,0)']) {
+    assert.deepEqual(store.retrieve({ query }).items.map(item => item.content).sort(), ['alpha beta', 'alpha beta gamma', 'beta alpha']);
+  }
+  assert.deepEqual(store.retrieve({ query: 'NEAR("alpha beta" gam*, 0)' }).items.map(item => item.content), ['alpha beta gamma']);
+  assert.deepEqual(store.retrieve({ query: 'alpha NEAR beta' }).items.map(item => item.content), ['alpha near beta']);
+});
+
+test('retrieve handles generated malformed syntax and deep groups without parser errors', async (t) => {
+  const store = await createStore(t);
+  store.retain({ content: 'foo bar near and or 東京 é pi-adapter' });
+  const atoms = ['foo', 'bar', '東京', 'é', 'pi-adapter', 'AND', 'or', 'NOT', 'NEAR', '(', ')', '"', '"foo bar"', '*', '!!!', ',', '0', '\0'];
+  let state = 123456789;
+  for (let sample = 0; sample < 1000; sample += 1) {
+    const query = Array.from({ length: 8 }, () => {
+      state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+      return atoms[state % atoms.length];
+    }).join(' ');
+    assert.doesNotThrow(() => store.retrieve({ query }), query);
+  }
+  assert.equal(store.retrieve({ query: '('.repeat(2048) + 'foo' + ')'.repeat(2048) }).total, 1);
+});
+
+test('retrieve preserves database errors instead of labeling them invalid search syntax', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-search-storage-error-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  const raw = new DatabaseSync(path);
+  t.after(() => { raw.close(); store.close(); });
+  store.retain({ content: 'Search target' });
+  raw.exec('DROP TABLE memories_fts');
+  assert.throws(() => store.retrieve({ query: 'Search' }), error => error.code === 'ERR_SQLITE_ERROR' && !(error instanceof TypeError));
+  assert.equal(store.export().length, 1);
+});
+
 test('retrieve filters memories by metadata source', async (t) => {
   const store = await createStore(t);
   const pi = store.retain({ content: 'Pi source memory', metadata: { source: 'pi' } });

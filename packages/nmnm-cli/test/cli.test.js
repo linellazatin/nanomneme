@@ -131,6 +131,24 @@ test('CLI joins unquoted retrieve words into a single query', async () => {
   assert.equal(result.items[0].content, 'embedded SQLite storage engine');
 });
 
+test('CLI exposes Unicode, grouped Boolean, and proximity searches through core', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-cli-search-grammar-'));
+  const path = join(directory, 'memory.db');
+  for (const content of ['東京 alpha beta', 'alpha x beta', 'gamma delta']) {
+    const result = run('retain', content, '--db', path, '--scope', 'project');
+    assert.equal(result.status, 0, result.stderr);
+  }
+  for (const [query, expected] of [
+    ['東京', ['東京 alpha beta']],
+    ['東京 OR (gamma AND delta)', ['gamma delta', '東京 alpha beta']],
+    ['NEAR(alpha beta, 0)', ['東京 alpha beta']],
+  ]) {
+    const result = run('retrieve', query, '--db', path, '--json');
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout).items.map(item => item.content).sort(), expected);
+  }
+});
+
 test('CLI exports canonical JSONL and imports it atomically', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-portable-cli-'));
   const source = join(directory, 'source.db');

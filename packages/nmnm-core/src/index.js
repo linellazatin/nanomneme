@@ -41,18 +41,11 @@ function text(value, name) {
   return value.trim();
 }
 
-// Normalize a user query so ordinary text is searched literally while a small
-// set of FTS5 operators remain available. Terms containing FTS5 syntax
-// characters (dashes, colons, dots, slashes, and other punctuation) are quoted
-// so the default tokenizer reads them as phrases rather than column filters or
-// syntax errors. Operand keywords (`AND`/`OR`/`NOT`/`NEAR`) are kept only in infix
-// position; quoted phrases, balanced parentheses, and a trailing `*` prefix are
-// preserved, and dangling operators or stray punctuation never produce invalid
-// FTS5 expressions.
-const OPERATOR = /^(?:AND|OR|NOT|NEAR)$/i;
-const WORD_CHAR = /[A-Za-z0-9_]/;
-const SAFE_WORD = /^[A-Za-z0-9_]+$/;
-const PREFIX_WORD = /^[A-Za-z0-9_]+\*$/;
+// Compile a small FTS5 grammar; unsupported or malformed expressions fall
+// back to quoted literal terms. SQLite remains responsible for tokenization.
+const BOOLEAN_OPERATOR = /^(?:AND|OR|NOT)$/i;
+const SEARCHABLE_TEXT = /[\p{L}\p{N}\p{Co}_]/u;
+const MAX_QUERY_DEPTH = 32;
 
 function tokenizeQuery(value) {
   const atoms = [];
@@ -61,19 +54,26 @@ function tokenizeQuery(value) {
     const character = value[index];
     if (/\s/.test(character)) { index += 1; continue; }
     if (character === '"') {
-      let end = index + 1;
-      while (end < value.length && value[end] !== '"') end += 1;
-      if (end < value.length) {
-        atoms.push({ type: 'phrase', value: value.slice(index + 1, end) });
-        index = end + 1;
-      } else {
-        atoms.push({ type: 'word', value: value.slice(index + 1) });
-        index = value.length;
+      index += 1;
+      let phrase = '';
+      let closed = false;
+      while (index < value.length) {
+        if (value[index] !== '"') { phrase += value[index++]; continue; }
+        if (value[index + 1] === '"') { phrase += '"'; index += 2; continue; }
+        index += 1;
+        closed = true;
+        break;
       }
+      const prefix = closed && value[index] === '*';
+      if (prefix) index += 1;
+      atoms.push({ type: 'phrase', value: phrase, closed, prefix });
       continue;
     }
-    if (character === '(') { atoms.push({ type: 'open', value: '(' }); index += 1; continue; }
-    if (character === ')') { atoms.push({ type: 'close', value: ')' }); index += 1; continue; }
+    if (character === '(' || character === ')') {
+      atoms.push({ type: character === '(' ? 'open' : 'close', value: character });
+      index += 1;
+      continue;
+    }
     let end = index;
     while (end < value.length && !/[\s"()]/.test(value[end])) end += 1;
     atoms.push({ type: 'word', value: value.slice(index, end) });
@@ -82,57 +82,88 @@ function tokenizeQuery(value) {
   return atoms;
 }
 
-function classifyAtom(atom) {
-  if (atom.type !== 'word') return atom;
-  const word = atom.value;
-  if (OPERATOR.test(word)) return { type: 'operator', value: word };
-  if (PREFIX_WORD.test(word)) return { type: 'word', value: word };
-  if (!WORD_CHAR.test(word)) return { type: 'skip', value: word };
-  if (SAFE_WORD.test(word)) return { type: 'word', value: word };
-  return { type: 'word', value: `"${word}"` };
+function queryTerm(atom, allowPrefix = true) {
+  if (!['word', 'phrase'].includes(atom.type) || !SEARCHABLE_TEXT.test(atom.value)) return null;
+  const prefix = allowPrefix && (atom.prefix || (atom.type === 'word' && /[\p{L}\p{N}_]\*$/u.test(atom.value)));
+  const value = (prefix && atom.type === 'word' ? atom.value.slice(0, -1) : atom.value).replaceAll('\0', ' ');
+  return '"' + value.replaceAll('"', '""') + '"' + (prefix ? '*' : '');
 }
 
-function isOperand(atom) {
-  return atom != null && (atom.type === 'word' || atom.type === 'phrase');
-}
-
-function preserveInfixOperators(atoms) {
-  return atoms.map((atom, index) => {
-    if (atom.type !== 'operator') return atom;
-    if (isOperand(atoms[index - 1]) && isOperand(atoms[index + 1])) return atom;
-    return { type: 'word', value: `"${atom.value}"` };
-  });
-}
-
-function balancedParentheses(atoms) {
-  let depth = 0;
-  for (const atom of atoms) {
-    if (atom.type === 'open') depth += 1;
-    else if (atom.type === 'close') { depth -= 1; if (depth < 0) return false; }
+function nearGroup(atoms, start) {
+  const phrases = [];
+  let distance = null;
+  let index = start + 2;
+  for (; index < atoms.length && atoms[index].type !== 'close'; index += 1) {
+    const atom = atoms[index];
+    if (!['word', 'phrase'].includes(atom.type) || atom.closed === false) return null;
+    if (atom.type === 'word' && atom.value.includes(',')) {
+      const pieces = atom.value.split(',');
+      if (pieces.length !== 2) return null;
+      if (pieces[0]) {
+        const phrase = queryTerm({ type: 'word', value: pieces[0] });
+        if (!phrase) return null;
+        phrases.push(phrase);
+      }
+      const rawDistance = pieces[1] || atoms[++index]?.value;
+      if (typeof rawDistance !== 'string' || !/^\d+$/.test(rawDistance)) return null;
+      distance = Number(rawDistance);
+      if (!Number.isInteger(distance) || distance > 2147483647 || atoms[++index]?.type !== 'close') return null;
+      break;
+    }
+    const phrase = queryTerm(atom);
+    if (!phrase) return null;
+    phrases.push(phrase);
   }
-  return depth === 0;
+  if (atoms[index]?.type !== 'close' || phrases.length < 2) return null;
+  return { value: 'NEAR(' + phrases.join(' ') + (distance === null ? '' : ', ' + distance) + ')', end: index };
 }
 
 function fts5Query(value) {
-  const atoms = preserveInfixOperators(tokenizeQuery(value).map(classifyAtom));
-  const balanced = balancedParentheses(atoms);
+  const atoms = tokenizeQuery(value);
+  const literal = () => atoms.map(atom => queryTerm(atom, false)).filter(Boolean).join(' ');
+  if (atoms.some(atom => atom.closed === false)) return literal();
   const parts = [];
+  let depth = 0;
+  let expectingOperand = true;
+  let previous = null;
   for (let index = 0; index < atoms.length; index += 1) {
     const atom = atoms[index];
-    if (atom.type === 'skip') continue;
-    if (atom.type === 'phrase') {
-      if (atom.value.trim()) parts.push(`"${atom.value}"`);
+    if (atom.type === 'open') {
+      if (++depth > MAX_QUERY_DEPTH) return literal();
+      if (!expectingOperand) parts.push('AND');
+      parts.push('(');
+      expectingOperand = true;
+      previous = 'open';
       continue;
     }
-    if (atom.type === 'open' || atom.type === 'close') {
-      if (!balanced) continue;
-      if (atom.type === 'open' && atoms[index + 1]?.type === 'close') { index += 1; continue; }
-      parts.push(atom.value);
+    if (atom.type === 'close') {
+      if (!depth || expectingOperand) return literal();
+      depth -= 1;
+      parts.push(')');
+      previous = 'close';
       continue;
     }
-    parts.push(atom.value);
+    if (atom.type === 'word' && BOOLEAN_OPERATOR.test(atom.value)) {
+      if (expectingOperand) return literal();
+      parts.push(atom.value.toUpperCase());
+      expectingOperand = true;
+      previous = 'operator';
+      continue;
+    }
+    let term;
+    if (atom.type === 'word' && /^NEAR$/i.test(atom.value) && atoms[index + 1]?.type === 'open') {
+      const near = nearGroup(atoms, index);
+      if (!near) return literal();
+      term = near.value;
+      index = near.end;
+    } else term = queryTerm(atom);
+    if (!term) continue;
+    if (!expectingOperand && previous === 'close') parts.push('AND');
+    parts.push(term);
+    expectingOperand = false;
+    previous = 'term';
   }
-  return parts.join(' ');
+  return depth || expectingOperand ? literal() : parts.join(' ');
 }
 
 function kind(value) {
@@ -450,15 +481,10 @@ export function open(path, { create = true, readOnly = false } = {}) {
       const condition = where.join(' AND ');
       if (unmatched) return { total: 0, items: [] };
       return transaction(() => {
-        try {
-          const total = db.prepare(`SELECT COUNT(*) AS total FROM memories m ${join} WHERE ${condition}`).get(...parameters).total;
-          const rows = db.prepare(`SELECT ${MEMORY_SELECT}, ${query ? 'bm25(memories_fts) AS score' : 'NULL AS score'} FROM memories m ${join} WHERE ${condition} ORDER BY ${ordering} LIMIT ? OFFSET ?`)
-            .all(...parameters, limit, offset);
-          return { total, items: rows.map(hydrate) };
-        } catch (error) {
-          if (query) throw new TypeError(`invalid FTS5 query: ${error.message}`);
-          throw error;
-        }
+        const total = db.prepare(`SELECT COUNT(*) AS total FROM memories m ${join} WHERE ${condition}`).get(...parameters).total;
+        const rows = db.prepare(`SELECT ${MEMORY_SELECT}, ${query ? 'bm25(memories_fts) AS score' : 'NULL AS score'} FROM memories m ${join} WHERE ${condition} ORDER BY ${ordering} LIMIT ? OFFSET ?`)
+          .all(...parameters, limit, offset);
+        return { total, items: rows.map(hydrate) };
       }, 'DEFERRED');
     },
 

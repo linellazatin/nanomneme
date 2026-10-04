@@ -14,8 +14,8 @@ test('Codex package uses the legacy compatibility manifest for hook registration
   const hooks = json(new URL('../hooks/hooks.json', import.meta.url));
 
   assert.equal(pkg.name, '@openlines/nmnm-codex');
-  assert.equal(pkg.version, '0.2.0');
-  assert.equal(pkg.dependencies['@openlines/nmnm-core'], '0.2.0');
+  assert.equal(pkg.version, compatibility.version);
+  assert.equal(pkg.dependencies['@openlines/nmnm-core'], json(new URL('../../../packages/nmnm-core/package.json', import.meta.url)).version);
   assert.deepEqual(pkg.bundleDependencies, ['@openlines/nmnm-core']);
   assert.deepEqual(rootManifest, { name: 'nmnm-codex' });
   assert.equal(compatibility.name, 'nmnm-codex');

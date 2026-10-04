@@ -16,6 +16,44 @@ async function createStore(t) {
   return store;
 }
 
+test('core creates stores with long valid database filenames', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-long-store-'));
+  for (const length of [210, 240]) {
+    const path = join(directory, 'x'.repeat(length) + '.db');
+    const store = open(path);
+    try {
+      const memory = store.retain({ content: 'Long filename survives initialization' });
+      assert.equal(store.recall({ id: memory.id }).content, memory.content);
+      assert.equal(store.verify().ok, true);
+    } finally { store.close(); }
+  }
+  assert.equal(readdirSync(directory).length, 2);
+});
+
+test('retain rejects malformed Unicode without changing records and preserves valid pairs', async (t) => {
+  const store = await createStore(t);
+  const content = 'Valid \ud83d\ude00 東京 text';
+  const memory = store.retain({ content });
+  assert.equal(memory.content, content);
+  for (const content of ['before\ud800after', 'before\udc00after', '\ud800\ud800', '\udc00\ud800']) {
+    assert.throws(() => store.retain({ content }), error => error instanceof TypeError && /Unicode/.test(error.message));
+    assert.throws(() => store.retain({ id: memory.id, content }), error => error instanceof TypeError && /Unicode/.test(error.message));
+  }
+  assert.deepEqual(store.export(), [memory]);
+});
+
+test('canonical import rejects malformed Unicode atomically', async (t) => {
+  const store = await createStore(t);
+  const memory = store.retain({ content: 'Canonical Unicode template' });
+  for (const content of ['before\ud800after', 'before\udc00after']) {
+    assert.throws(() => store.import([
+      { ...memory, id: '11111111-1111-4111-8111-111111111111', content: 'Valid preceding record' },
+      { ...memory, id: '22222222-2222-4222-8222-222222222222', content },
+    ]), error => error instanceof TypeError && /Unicode/.test(error.message));
+    assert.deepEqual(store.export(), [memory]);
+  }
+});
+
 test('concurrent first-use writers all see a complete initialized store', { timeout: 15000 }, async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-first-use-'));
   const path = join(directory, 'memory.db');

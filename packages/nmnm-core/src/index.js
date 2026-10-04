@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { closeSync, existsSync, linkSync, mkdirSync, openSync, statSync, unlinkSync } from 'node:fs';
-import { basename, dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
 const DEFAULTS = Object.freeze({ kind: 'note', scope: 'project', namespace: 'default', importance: 0.5, confidence: 1 });
@@ -38,6 +38,7 @@ const MIGRATIONS = new Map();
 
 function text(value, name) {
   if (typeof value !== 'string' || !value.trim()) throw new TypeError(`${name} must be a non-empty string`);
+  if (!value.isWellFormed()) throw new TypeError(`${name} must contain well-formed Unicode`);
   return value.trim();
 }
 
@@ -332,7 +333,7 @@ function importedRecord(value) {
 
 function createDatabase(path) {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  const temporary = join(dirname(path), `.${basename(path)}.${randomUUID()}.tmp`);
+  const temporary = join(dirname(path), `.nmnm-${randomUUID()}.tmp`);
   closeSync(openSync(temporary, 'wx', 0o600));
   try {
     const db = new DatabaseSync(temporary);

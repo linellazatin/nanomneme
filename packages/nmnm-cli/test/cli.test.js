@@ -13,6 +13,30 @@ const isolatedHome = await mkdtemp(join(tmpdir(), 'nmnm-cli-test-home-'));
 after(() => rm(isolatedHome, { recursive: true, force: true }));
 const cli = fileURLToPath(new URL('../bin/nmnm.js', import.meta.url));
 
+test('CLI exports to a long valid filename without leaving temporary files', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-long-export-'));
+  const source = join(directory, 'memory.db');
+  const output = join(directory, 'x'.repeat(240) + '.jsonl');
+  assert.equal(run('retain', 'Long export filename', '--db', source, '--scope', 'project').status, 0);
+  const result = run('export', '--db', source, '--out', output);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(await readFile(output, 'utf8'), /Long export filename/);
+  assert.equal((await readdir(directory)).length, 2);
+});
+
+test('CLI rejects malformed Unicode import before creating the destination', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-invalid-unicode-'));
+  const source = join(directory, 'source.db');
+  const target = join(directory, 'target.db');
+  const memory = JSON.parse(run('retain', 'Unicode template', '--db', source, '--scope', 'project', '--json').stdout);
+  const file = join(directory, 'invalid.jsonl');
+  await writeFile(file, JSON.stringify({ _format: 'nanomneme', _version: 1 }) + '\n' + JSON.stringify({ ...memory, content: 'before\ud800after' }) + '\n');
+  const result = run('import', file, '--db', target);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Unicode/);
+  await assert.rejects(access(target));
+});
+
 test('CLI rejects source sidecars and aliases without replacing WAL data', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-export-sidecars-'));
   const source = join(directory, 'memory.db');

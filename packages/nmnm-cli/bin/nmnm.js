@@ -205,7 +205,7 @@ function sameFile(left, right) {
 
 function writeFileAtomic(path, contents) {
   const output = resolve(path);
-  const temporary = join(dirname(output), `.${basename(output)}.${randomUUID()}.tmp`);
+  const temporary = join(dirname(output), `.nmnm-${randomUUID()}.tmp`);
   let mode = 0o600;
   try { mode &= statSync(output).mode; } catch (error) { if (error.code !== 'ENOENT') throw error; }
   try {

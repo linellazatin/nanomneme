@@ -26,8 +26,8 @@
 </div>
 
 >
-> ### v0.6.1 - core and CLI hardening
-> - Private new storage, transactional patches, Unicode and Boolean search, ordered record timestamps, and explicit deletion guarantees. All adapters carry core `0.2.1`.
+> ### v0.7.0 - core and CLI hardening
+> - Private new storage, transactional patches, Unicode and Boolean search, ordered record timestamps, and explicit deletion guarantees. All adapters carry core `0.3.0`; Claude/OpenCode pin updates are locked and atomic.
 > ### v0.6.0 - logslines shared logger integration
 > - Initial implementation of shared logger for ALL adapters, including nmnm-cli.
 > ### v0.5.1 - pi adapter v0.3.1

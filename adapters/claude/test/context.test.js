@@ -1,10 +1,12 @@
 import test from 'node:test';
+import { spawnSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildMemoryIndex, claudeGlobalDir, pin, pinsPath, readPins, readSettings, settingsPath, unpin, writePins } from '../src/context.js';
 import { runMemory } from '../src/store.js';
+import * as context from '../src/context.js';
 
 function temporaryDirectory(name) {
   return mkdtempSync(join(tmpdir(), name));
@@ -193,4 +195,59 @@ test('buildMemoryIndex prioritizes pins, falls back to recent records, reports u
     rmSync(project, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });
   }
+});
+
+
+test('pin writes reject an owned lock without replacing pins or reclaiming it', () => {
+  const root = temporaryDirectory('nmnm-pin-lock-');
+  const path = join(root, 'pins.json');
+  try {
+    writePins(path, ['original']);
+    writeFileSync(`${path}.lock`, '{"pid":0}');
+    assert.throws(() => writePins(path, ['replacement']), /pins are being updated/);
+    assert.deepEqual(readPins(path), ['original']);
+    assert.equal(existsSync(`${path}.lock`), true);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('pin mutations read under the lock and release it after failure', () => {
+  const root = temporaryDirectory('nmnm-pin-update-');
+  const path = join(root, 'pins.json');
+  try {
+    assert.equal(typeof context.updatePins, 'function');
+    context.updatePins(path, pins => pin(pins, 'one'));
+    context.updatePins(path, pins => {
+      assert.throws(() => context.updatePins(path, current => pin(current, 'competitor')), /pins are being updated/);
+      assert.deepEqual(readPins(path), ['one']);
+      return pin(pins, 'two');
+    });
+    assert.deepEqual(readPins(path), ['one', 'two']);
+    assert.throws(() => context.updatePins(path, () => { throw new Error('aborted'); }), /aborted/);
+    assert.equal(existsSync(`${path}.lock`), false);
+    assert.deepEqual(readPins(path), ['one', 'two']);
+    context.updatePins(path, pins => unpin(pins, 'one'));
+    assert.deepEqual(readPins(path), ['two']);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+
+test('a competing pin process fails safely and retry preserves both updates', () => {
+  const root = temporaryDirectory('nmnm-pin-process-');
+  const path = join(root, 'pins.json');
+  const moduleUrl = new URL('../src/context.js', import.meta.url).href;
+  const code = `import { updatePins, pin } from ${JSON.stringify(moduleUrl)};
+    updatePins(process.argv[1], pins => pin(pins, 'other-process'));`;
+  const compete = () => spawnSync(process.execPath, ['--input-type=module', '-e', code, path], { encoding: 'utf8' });
+  try {
+    context.updatePins(path, pins => {
+      const child = compete();
+      assert.equal(child.status, 1);
+      assert.match(child.stderr, /pins are being updated/);
+      return pin(pins, 'owner');
+    });
+    const retry = compete();
+    assert.equal(retry.status, 0, retry.stderr);
+    assert.deepEqual(readPins(path), ['owner', 'other-process']);
+    assert.equal(existsSync(`${path}.lock`), false);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });

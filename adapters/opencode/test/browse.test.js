@@ -84,3 +84,11 @@ test('status reports configuration and per-store counts without creating stores'
   assert.match(status, /^Nanomneme status$/m);
   assert.match(status, /Memories:\s+project: 1 • global: 0/);
 });
+
+test('browser unpin removes a pin after its memory becomes inactive', t => {
+  const ctx = context(t);
+  const memory = retain(ctx, { content: 'Inactive browser pin' });
+  mutate({ ctx, store: 'project', id: memory.id, mutation: 'pin' });
+  mutate({ ctx, store: 'project', id: memory.id, mutation: 'remove' });
+  assert.deepEqual(mutate({ ctx, store: 'project', id: memory.id, mutation: 'unpin' }), { pinned: false });
+});

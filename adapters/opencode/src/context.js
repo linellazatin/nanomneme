@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { parse } from 'jsonc-parser';
@@ -80,9 +81,53 @@ export function readPins(path) {
 
 export function writePins(path, pins) {
   const next = normalizedPins(pins);
+  return updatePins(path, () => next);
+}
+
+function acquirePinLock(path) {
+  const lock = `${path}.lock`;
+  try {
+    const descriptor = openSync(lock, 'wx', 0o600);
+    try {
+      writeFileSync(descriptor, JSON.stringify({ pid: process.pid }));
+    } catch (error) {
+      try { closeSync(descriptor); } catch { /* Preserve the acquisition error. */ }
+      try { rmSync(lock, { force: true }); } catch { /* A later operator can remove an incomplete lock. */ }
+      throw error;
+    }
+    return { lock, descriptor };
+  } catch (error) {
+    if (error?.code === 'EEXIST') throw new Error('Nanomneme pins are being updated; retry the command.');
+    throw error;
+  }
+}
+
+export function updatePins(path, update) {
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(next, null, 2)}\n`);
-  return next;
+  const { lock, descriptor } = acquirePinLock(path);
+  const temporary = join(dirname(path), `.nmnm-pins-${randomUUID()}.tmp`);
+  let committed = false;
+  try {
+    const next = normalizedPins(update(readPins(path)));
+    writeFileSync(temporary, `${JSON.stringify(next, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
+    renameSync(temporary, path);
+    committed = true;
+    return next;
+  } finally {
+    let cleanupError;
+    for (const cleanup of [
+      () => rmSync(temporary, { force: true }),
+      () => closeSync(descriptor),
+      () => rmSync(lock, { force: true }),
+    ]) {
+      try { cleanup(); } catch (error) { cleanupError ??= error; }
+    }
+    if (committed && cleanupError) {
+      const error = new Error('Nanomneme pins were updated, but cleanup failed. Stop adapter writers, remove the pin lock manually, then refresh or retry.', { cause: cleanupError });
+      error.code = 'NMNM_PIN_LOCK_CLEANUP_FAILED';
+      throw error;
+    }
+  }
 }
 
 export function pin(pins, id) {

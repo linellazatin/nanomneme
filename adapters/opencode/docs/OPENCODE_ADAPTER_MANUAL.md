@@ -82,7 +82,7 @@ Behavior:
 - `retain_memory` routes to the global store when `scope: "global"`, otherwise the project store, and it is the **only** operation that creates a missing database.
 - `store: "project" | "global"` selects the physical store for recall/retrieve/remove; a missing selected store returns `null` (or `{ total: 0, items: [] }`) without creating it.
 - `remove_memory` is always soft and reversible; purge is not exposed to the model.
-- Core `0.2.1` hardening passes through unchanged: Unicode/structured search, malformed-text and numeric-range validation, private first-use storage, and monotonic mutation timestamps. Bridge tests cover serialization and project/global creation; handler tests use frozen/backward clocks across reopened stores. Retain still accepts null metadata (new records add the OpenCode source; patches normalize it to `{}`); null rejection applies to core import/verification. Export/import/verification remain `nmnm` CLI operations.
+- Core `0.3.0` hardening passes through unchanged: Unicode/structured search, malformed-text and numeric-range validation, private first-use storage, and monotonic mutation timestamps. Bridge tests cover serialization and project/global creation; handler tests use frozen/backward clocks across reopened stores. Retain still accepts null metadata (new records add the OpenCode source; patches normalize it to `{}`); null rejection applies to core import/verification. Export/import/verification remain `nmnm` CLI operations.
 
 ## System-prompt injection
 
@@ -169,7 +169,9 @@ JSON array of memory IDs, adapter-owned.
 - **Project**: `<project>/.nanomneme/nmnm-opencode.json`.
 - **Global**: `~/.local/share/nanomneme/nmnm-opencode.json`.
 
-Pinned memories are injected first, in store order (project then global). Missing, expired, or soft-removed pin targets remain configured and are counted as unresolved; they are not silently rewritten. Manage pins with `nmnm-opencode pin`/`unpin` or by editing the files.
+Pinned memories are injected first, in store order (project then global). Missing, expired, or soft-removed pin targets remain configured and are counted as unresolved; they are not silently rewritten. Manage pins with `nmnm-opencode pin`/`unpin` or by editing the files. Unpin resolves IDs from pin files without reading the database, including unresolved targets; an ID pinned in both stores requires an explicit project or global selection.
+
+Pin mutations use a same-directory lock and atomic replacement. Competing writers receive a retry error; locks are never reclaimed automatically. After a crash, stop all adapter writers, remove the affected pin file’s `.lock` manually, then retry.
 
 ## Safety boundaries
 

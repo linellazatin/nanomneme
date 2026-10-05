@@ -38,7 +38,7 @@
   "dependencies": {
     "@opencode-ai/plugin": "1.18.15",
     "jsonc-parser": "3.3.1",
-    "@openlines/nmnm-core": "0.2.1"
+    "@openlines/nmnm-core": "0.3.0"
   },
   "engines": {
     "node": ">=22.13.0"

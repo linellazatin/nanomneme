@@ -23,7 +23,7 @@
     "LICENSE"
   ],
   "dependencies": {
-    "@openlines/nmnm-core": "0.2.1"
+    "@openlines/nmnm-core": "0.3.0"
   },
   "bundleDependencies": [
     "@openlines/nmnm-core"

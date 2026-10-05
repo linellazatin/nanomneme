@@ -1526,3 +1526,28 @@ test('memory remove refuses an unqualified ID present in both stores', async () 
     rmSync(home, { recursive: true, force: true });
   }
 });
+
+
+test('memory unpin removes unresolved targets without reading their memories', async () => {
+  const project = temporaryDirectory('nmnm-pi-unresolved-project-');
+  const home = temporaryDirectory('nmnm-pi-unresolved-home-');
+  try {
+    const commands = new Map();
+    registerPiMemory({ on() {}, registerCommand: (name, command) => commands.set(name, command) }, { home, platform: 'darwin' });
+    const ctx = { cwd: project, ui: { notify() {} } };
+    for (const store of ['project', 'global']) {
+      const path = pinsPath({ cwd: project, home, store });
+      const memory = runMemory({ cwd: project, home, platform: 'darwin', store, operation: 'retain', input: { content: 'Pi removed pin' } });
+      writePins(path, [memory.id]);
+      runMemory({ cwd: project, home, platform: 'darwin', store, operation: 'remove', input: { id: memory.id } });
+      await commands.get('memory').handler(`unpin ${store} ${memory.id}`, ctx);
+      assert.deepEqual(readPins(path), []);
+      writePins(path, ['missing-target']);
+      await commands.get('memory').handler(`unpin ${store} missing-target`, ctx);
+      assert.deepEqual(readPins(path), []);
+    }
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});

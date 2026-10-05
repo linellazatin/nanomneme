@@ -57,7 +57,7 @@ flowchart TB
   API --> PROJECT
   API --> GLOBAL
   API --> CUSTOM
-  LOGGER -->|one sanitized outcome when enabled| JSONL
+  LOGGER -->|one bounded outcome when enabled| JSONL
   SHARED --> BUNDLE
   EXTERNAL --> BUNDLE
   BUNDLE -.->|core logging-runtime.generated.js| LOGGER
@@ -104,7 +104,7 @@ erDiagram
   }
 
   memories_fts {
-    TEXT content "FTS5 indexed active content"
+    TEXT content "FTS5 indexed non-removed content"
   }
 
   memories ||--o{ memory_tags : "has tags"
@@ -115,7 +115,7 @@ erDiagram
 - `nmnm_meta` stores schema metadata. A newly created store contains `schema_version`; `open()` rejects unknown, invalid, or newer schema versions and migrates writable older stores.
 - `memories` is canonical. `id` is a UUID; `metadata` is serialized JSON; `removed_at` implements reversible soft removal; and `expires_at` controls whether a record is active. A purge deletes the canonical row.
 - `memory_tags` is derived from a memory’s normalized tag set. Its composite primary key prevents duplicate tags per memory, and `memory_id` is the schema’s database-enforced foreign key to `memories.id`.
-- `memories_fts` is an FTS5 virtual table, not a foreign-key child. Core explicitly maintains it by SQLite `rowid`: retain/import inserts or refreshes an active memory’s content, soft removal deletes its index row, and `rebuildFts()` reconstructs it from active canonical records. Query retrieval joins it only when an FTS query is supplied and ranks matching rows with `bm25`.
+- `memories_fts` is an FTS5 virtual table, not a foreign-key child. Core explicitly maintains it by SQLite `rowid`: retain/import inserts or refreshes an active memory’s content, soft removal deletes its index row, and `rebuildFts()` reconstructs it from non-removed canonical records, including expired rows. Here an active index entry means non-removed, not necessarily unexpired. Query retrieval joins it only when an FTS query is supplied and ranks matching rows with `bm25`.
 - Core enables SQLite foreign keys and performs canonical writes, tag replacement, and FTS synchronization inside `BEGIN IMMEDIATE` transactions. This avoids treating direct SQLite writes as a supported integration surface.
 
 ## Persistence lifecycle
@@ -138,6 +138,6 @@ The CLI logs recognized retain/recall/retrieve/remove/import/export/verify/repai
 
 The shared logger caches effective authorization on the first eligible invocation for that instance. Invalid applicable configuration disables that caller; an explicit adapter true cannot rescue an invalid shared file. Enabling logging creates neither a database nor a log file immediately. The first successful emission creates the component's log file; the sink applies `0700` to the log directory and `0600` to regular JSONL files. No historical logs, databases, or pin files require migration.
 
-Logs remain in `~/.local/share/nanomneme/logs/<component>.jsonl`, where component is `nmnm-cli`, `nmnm-pi`, `nmnm-claude`, `nmnm-opencode`, or `nmnm-codex`. The observer may inspect callback results and exceptions transiently for classification. The emitted closed `logslines/v1` envelope contains fixed catalog fields, component/version identity, normalized session correlation, duration, empty attributes, and error summaries carrying the thrown error's message and class; it excludes memory content/IDs, queries, store paths, and stack traces. Every blocked outcome has null duration. Diagnostic failures suppress emission without changing the action, its result, or original error, and there is no stderr fallback. Model request fields cannot select diagnostic identity, configuration, or correlation. Direct core callers opt in explicitly with `createMemoryLogger().run({ operation, session_id: null }, observation => action())`.
+Logs remain in `~/.local/share/nanomneme/logs/<component>.jsonl`, where component is `nmnm-cli`, `nmnm-pi`, `nmnm-claude`, `nmnm-opencode`, or `nmnm-codex`. The observer may inspect callback results and exceptions transiently for classification. The emitted closed `logslines/v1` envelope contains fixed catalog fields, component/version identity, normalized session correlation, duration, empty attributes, and error summaries carrying the thrown error's message and class; it does not serialize memory payload fields or stack traces. Thrown error messages are not redacted and may contain sensitive input, IDs, queries, or store paths. Every blocked outcome has null duration. Diagnostic failures suppress emission without changing the action, its result, or original error, and there is no stderr fallback. Model request fields cannot select diagnostic identity, configuration, or correlation. Direct core callers opt in explicitly with `createMemoryLogger().run({ operation, session_id: null }, observation => action())`.
 
 Run `node scripts/check-logging-packages.js` to verify installed tarballs outside the workspace, including Codex's bundled core and JSONC parser. This is an explicit package check with npm registry access for ordinary dependencies; runtime and CI contract tests do not fetch Logslines. Older callers keep their previous behavior and must be upgraded to gain shared configuration and coverage.

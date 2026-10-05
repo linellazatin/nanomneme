@@ -10,6 +10,8 @@ Local-first SQLite memory CLI for [nanomneme](https://github.com/linellazatin/na
 
 Requires Node.js 22.13 or later and the built-in `node:sqlite` runtime with FTS5.
 
+Node.js 22.19.0 is tested; the official macOS arm64 Node.js 22.13.0 build lacks FTS5. Core is independently installable and does not require this CLI.
+
 ```sh
 npm install --global @openlines/nmnm-cli
 nmnm --help
@@ -30,8 +32,10 @@ nmnm retrieve "operator documentation" --both
 
 Installing this package also installs its exact `@openlines/nmnm-core` dependency. The CLI defaults to `./.nanomneme/memory.db`. Use `--global` for the standard global database or `--db <path> --scope project|global` for a custom database. See the [Core and CLI Manual](../../docs/CORE_CLI_MANUAL.md) for commands and recovery workflows. `export --out <file>` replaces its destination atomically after the complete JSONL file is written. `verify` and `export` open their source databases read-only; `repair` remains writable.
 
+On POSIX systems, new database files request `0600` and new store directories request `0700`. File exports request `0600` from temporary-file creation, preserving stricter owner permissions when replacing a destination; the caller's umask may restrict these further. Existing database permissions are unchanged, and `verify` reports group/other access as `file_permissions` with exit status `1`. Review intentional sharing before manually restricting permissions. These checks do not audit ACLs or apply on Windows.
+
 ## Shared opt-in diagnostics
 
-Set `"logging": { "enabled": true }` in `~/.local/share/nanomneme/config.jsonc` to enable the shared default. JSONC comments and trailing commas are supported. The CLI has no user-level override; invalid shared logging configuration disables it. Project settings cannot authorize logging. Records use the shared `logslines/v1` catalog and core-distributed runtime, contain no memory payloads or stack traces, carry thrown-error messages verbatim in failed records, and append to `~/.local/share/nanomneme/logs/<component>.jsonl`. Logging failures preserve operations and output. Existing databases, pin files, and logs require no migration.
+Set `"logging": { "enabled": true }` in `~/.local/share/nanomneme/config.jsonc` to enable the shared default. JSONC comments and trailing commas are supported. The CLI has no user-level override; invalid shared logging configuration disables it. Project settings cannot authorize logging. Records use the shared `logslines/v1` catalog and core-distributed runtime, omit structured memory payloads and stack traces, preserve thrown-error messages verbatim without redaction, and append to `~/.local/share/nanomneme/logs/<component>.jsonl`. Error messages may expose sensitive input or paths; review logs before sharing. Logging failures preserve operations and output. Existing databases, pin files, and logs require no migration.
 
 The CLI observes retain, recall, retrieve, remove, import, export, verify, and repair once per command. Combined retrieval and repair have one aggregate outcome; transfer output completion is included. Help/version/unknown commands and temporary validation stores are unlogged. It reads shared settings per invocation and has no adapter override. Correlation is null.

@@ -23,7 +23,7 @@ OpenCode adapter for [nanomneme](https://github.com/linellazatin/nanomneme): a s
 
 ## Install
 
-Requires Node.js 22.13+ with `node:sqlite` on `PATH` (or set `NMNM_NODE`) for the bridge, and an OpenCode version exposing the `@opencode-ai/plugin` server API. Add the npm plugin to your OpenCode config:
+Requires Node.js 22.13+ with FTS5 in `node:sqlite` on `PATH` (or set `NMNM_NODE`) for the bridge, and an OpenCode version exposing the `@opencode-ai/plugin` server API. Add the npm plugin to your OpenCode config:
 
 ```jsonc
 // opencode.json
@@ -69,12 +69,16 @@ See the [OpenCode Adapter Manual](docs/OPENCODE_ADAPTER_MANUAL.md) for the confi
 
 ## Develop
 
+Core `0.3.0` hardening is covered through the real Node bridge for Unicode search/validation, invalid metadata/range operators, and private project/global first-use storage; direct handlers cover monotonic patch/restore timestamps under frozen/backward clocks. Tool-handler APIs are unchanged. Export/import/verification remain core CLI operations, not adapter tools.
+
 ```sh
 node --test adapters/opencode/test/*.test.js
 ```
 
 ## Shared opt-in diagnostics
 
-Set `"logging": { "enabled": true }` in `~/.local/share/nanomneme/config.jsonc` to enable the shared default. JSONC comments and trailing commas are supported. Adapter user-level `nmnm.jsonc` can explicitly enable or disable logging; absence inherits. Either invalid applicable logging configuration disables that caller. Project settings cannot authorize logging. Records use the shared `logslines/v1` catalog and core-distributed runtime, contain no memory payloads or stack traces, carry thrown-error messages verbatim in failed records, and append to `~/.local/share/nanomneme/logs/<component>.jsonl`. Logging failures preserve operations and output. Existing databases, pin files, and logs require no migration.
+Set `"logging": { "enabled": true }` in `~/.local/share/nanomneme/config.jsonc` to enable the shared default. JSONC comments and trailing commas are supported. Adapter user-level `nmnm.jsonc` can explicitly enable or disable logging; absence inherits. Either invalid applicable logging configuration disables that caller. Project settings cannot authorize logging. Records use the shared `logslines/v1` catalog and core-distributed runtime, omit structured memory payloads and stack traces, preserve thrown-error messages verbatim without redaction, and append to `~/.local/share/nanomneme/logs/<component>.jsonl`. Error messages may expose sensitive input or paths; review logs before sharing. Logging failures preserve operations and output. Existing databases, pin files, and logs require no migration.
 
-OpenCode uses its existing user settings resolver under the OpenCode config directory. Node tool operations, CLI mutations, and confirmed TUI mutations are observed; index/navigation reads are unlogged. Each bridge process resolves settings anew. Pre-bridge spawn/transport/parse failures have no diagnostic record. Correlation is null unless trusted host context supplies a verified ID.
+OpenCode uses its existing user settings resolver under the OpenCode config directory. Node tool operations, CLI mutations, and confirmed TUI mutations are observed; index/navigation reads are unlogged. Each bridge process resolves settings anew. Spawn failures emit one host-side failed record because the bridge never ran; ambiguous post-spawn transport/parse failures remain unlogged to avoid contradicting a bridge outcome. Correlation is null unless trusted host context supplies a verified ID.
+
+Pin mutations use a same-directory lock and atomic replacement. Competing writers receive a retry error; locks are never reclaimed automatically. After a crash, stop all adapter writers, remove the affected pin file’s `.lock` manually, then retry.

@@ -64,6 +64,8 @@ The stdio MCP server (`mcp/server.js`) registers four model-facing tools. Claude
 
 For `retain_memory`, omitted scope means the project store and `scope: "global"` means the global store. The other tools accept `store` (`"project"` or `"global"`) to select a physical database. Project data is `./.nanomneme/memory.db`; global data is `~/.local/share/nanomneme/memory.db` on Linux and macOS. Results are canonical core JSON. Only `retain_memory` creates a missing store; reads and removal leave missing stores absent. The server resolves the project directory from `NMNM_PROJECT_DIR`, set to `${CLAUDE_PROJECT_DIR}` in `.mcp.json`, falling back to the process working directory.
 
+Core `0.3.0` hardening passes through unchanged: Unicode/structured search, malformed-text and numeric-range validation, private first-use storage, and monotonic mutation timestamps. Handler tests cover validation rejections and project/global first-use creation; clock tests use frozen and backward mocks across reopened stores. Validation throws reach Claude Code as MCP tool errors with the core message verbatim and never crash the server. Retain still accepts null metadata (new records add the `claude-code` source; patches normalize it to `{}`); null rejection applies to core import/verification. Export/import/verification remain `nmnm` CLI operations, not adapter tools.
+
 The `memory-guide` Skill (invoked as `/nanomneme:memory-guide`) teaches the model when to use these tools, how to choose project vs global scope, and which facts not to retain. It is named `memory-guide`, not `memory`, so it does not collide with the `/nanomneme:memory` management command below (a plugin skill and a command that share a name resolve to the same slash invocation, and the command would win).
 
 ## Session-start injection
@@ -91,14 +93,14 @@ A deterministic, model-free management surface complements the model-facing MCP 
 | `pin` / `unpin` `[project\|global] <id>` | Edit the adapter `nmnm-claude.json` pin file. |
 | `remove [project\|global] <id>` | Reversible soft removal (purge stays CLI-only). |
 
-When the store is omitted for `show`/`pin`/`unpin`/`remove`, the command resolves it by looking the ID up in both stores; an ambiguous ID (present in both) asks you to qualify it. Reads never create a store; `pin`/`unpin`/`remove` are deterministic writes.
+When the store is omitted, `show`/`pin`/`remove` resolve the ID from active memories; `unpin` resolves it from pin files, including unresolved targets. Matches in both stores require an explicit project or global selection. Reads never create a store; `pin`/`unpin`/`remove` are deterministic writes.
 
 Two ways to run it:
 
 - **`/nanomneme:memory <args>`** — a slash command (`commands/memory.md`) that embeds the script via bash execution and relays its output verbatim. This is the closest match to Pi's `/memory list` / `status`. Claude Code slash commands are prompt templates, not native dialogs, so the data is deterministic and model-free but the final relay still passes through the model; there is no interactive navigation like Pi's browser.
 - **`! node ${CLAUDE_PLUGIN_ROOT}/bin/memory.js <args>`** — invoking the CLI with the `!` prefix runs it and shows output with no model turn at all: a fully model-free path.
 
-The command resolves the project store from `NMNM_PROJECT_DIR`/`CLAUDE_PROJECT_DIR` (falling back to the working directory) and the global store via `CLAUDE_PLUGIN_DATA`, matching the MCP server and hooks.
+The command resolves the project store from `NMNM_PROJECT_DIR`/`CLAUDE_PROJECT_DIR` (falling back to the working directory) and the global store at `~/.local/share/nanomneme/memory.db`, matching the MCP server and hooks. `CLAUDE_PLUGIN_DATA` selects global adapter settings and pins, not the memory database.
 
 ## Configuration
 
@@ -113,7 +115,7 @@ JSONC, validated read-only at load. Invalid JSONC or out-of-contract values rais
 
   Note this global location is per-plugin: it is **not** shared with Pi or other adapters, and it moves if the plugin or marketplace is renamed (the directory name is `<plugin>-<marketplace>`). For settings you want shared with Pi, or that should survive a rename, prefer the project `.nanomneme/nmnm.jsonc`.
 
-Project settings override global. Complete v0.2.2 template:
+Project settings override global. Complete settings template:
 
 ```jsonc
 {
@@ -149,13 +151,15 @@ JSON array of memory IDs, adapter-owned (per-adapter, not shared). Memory itself
 - **Project**: `<project>/.nanomneme/nmnm-claude.json`.
 - **Global**: `~/.local/share/nanomneme/nmnm-claude.json`.
 
-Pinned memories are injected first, in store order (project then global). Edit pins with `/nanomneme:memory pin`/`unpin` (see [Memory management command](#memory-management-command)), by editing the pin files directly, or through the MCP tools.
+Pinned memories are injected first, in store order (project then global). Edit pins with `/nanomneme:memory pin`/`unpin` (see [Memory management command](#memory-management-command)), or by editing the pin files directly. MCP tools manage memories, not pins.
+
+Pin mutations use a same-directory lock and atomic replacement. Competing writers receive a retry error; locks are never reclaimed automatically. After a crash, stop all adapter writers, remove the affected pin file’s `.lock` manually, then retry.
 
 ## Safety boundaries
 
 - Model-facing `remove_memory` is soft-only and reversible; irreversible purge stays a deliberate CLI-operator path (`nmnm remove --purge`).
 - Reads and removal never create a missing store; only `retain_memory` does.
-- Injection is transient context, never a persistent session-message snapshot or an automatic write.
+- Injection is transient context, never a persistent session-message snapshot or an automatic memory write.
 - The adapter never writes SQLite directly or parses CLI output; all operations go through `nmnm-core`.
 - Do not commit `.nanomneme/`, personal global databases, or pin files with local data.
 
@@ -171,6 +175,6 @@ Runtime code and tests are authoritative when this manual disagrees with behavio
 
 ## Shared opt-in diagnostics
 
-Set `"logging": { "enabled": true }` in `~/.local/share/nanomneme/config.jsonc` to enable the shared default. JSONC comments and trailing commas are supported. Adapter user-level `nmnm.jsonc` can explicitly enable or disable logging; absence inherits. Either invalid applicable logging configuration disables that caller. Project settings cannot authorize logging. Records use the shared `logslines/v1` catalog and core-distributed runtime, contain no memory payloads or stack traces, carry thrown-error messages verbatim in failed records, and append to `~/.local/share/nanomneme/logs/<component>.jsonl`. Correlation is null: Claude Code exposes `session_id` only to hook stdin, never to MCP servers or the management CLI, and hook session fields are not forwarded. Logging failures preserve operations and output. Existing databases, pin files, and logs require no migration.
+Set `"logging": { "enabled": true }` in `~/.local/share/nanomneme/config.jsonc` to enable the shared default. JSONC comments and trailing commas are supported. Adapter user-level `nmnm.jsonc` can explicitly enable or disable logging; absence inherits. Either invalid applicable logging configuration disables that caller. Project settings cannot authorize logging. Records use the shared `logslines/v1` catalog and core-distributed runtime, omit structured memory payloads and stack traces, preserve thrown-error messages verbatim without redaction, and append to `~/.local/share/nanomneme/logs/<component>.jsonl`. Correlation is null: Claude Code exposes `session_id` only to hook stdin, never to MCP servers or the management CLI, and hook session fields are not forwarded. Error messages may expose sensitive input or paths; review logs before sharing. Logging failures preserve operations and output. Existing databases, pin files, and logs require no migration.
 
 Claude uses its existing user settings resolver (`CLAUDE_PLUGIN_DATA` when supplied, otherwise `~/.claude/nmnm.jsonc`). Explicit MCP 4Rs and management mutations are observed; context hooks and read-only management are unlogged. Restart the MCP process to refresh cached settings. Correlation is null.

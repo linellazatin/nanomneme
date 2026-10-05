@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.7.0 - Core and CLI hardening
+
+### Updated components
+
+| Component | Version |
+| --- | --- |
+| Repository | 0.7.0 |
+| `@openlines/nmnm-core`, `@openlines/nmnm-cli` | 0.3.0 |
+| `@openlines/nmnm-pi` | 0.4.1 |
+| `@openlines/nmnm-opencode`, `@openlines/nmnm-claude`, `@openlines/nmnm-codex` | 0.2.1 |
+
+### Fixed
+
+- Punctuation-only search returns no matches with explicit relevance ordering; invalid selectors still reject.
+- Claude/OpenCode unpin resolves targets from pin files, allowing cleanup of removed, expired, and missing memories without database access; unqualified pins in both stores remain ambiguous. OpenCode browser unpin also handles inactive targets.
+- Claude/OpenCode pin mutations lock the complete read-modify-write and atomically replace private files. Competing writers fail with a retry message; crash-left locks require explicit recovery after all writers stop.
+- Short temporary names preserve valid long database/export filenames. Text validation rejects unpaired Unicode surrogates before SQLite replacement; valid pairs remain intact.
+- Export rejects source journal/WAL/shared-memory paths and existing aliases before opening storage or replacing output.
+- Concurrent first-use writers atomically publish complete private stores without overwriting another creator; failed initialization publishes no partial store. Requires same-filesystem hardlinks.
+- Import and verification reject null metadata; numeric ranges reject inherited operator names.
+- New POSIX databases/directories request `0600`/`0700`; private exports preserve stricter owner permissions. Verification reports unsafe database/sidecar mode bits without changing permissions; excludes ACLs and Windows.
+- Transactional target reads preserve unrelated concurrent patches and each patch's committed result. Rows, tags, and FTS commit atomically; reads use per-database snapshots. Lock timeout: five seconds, no automatic retries.
+- Search supports Unicode, Boolean expressions, phrases, prefixes, bounded groups, and FTS5 NEAR. Malformed syntax falls back to literals, retaining operator words; punctuation-only queries return no matches. Storage errors remain unmasked.
+- Patches/restores/soft removals preserve creation time and strictly advance per-record update time under frozen/backward clocks. Imports preserve timestamps; expiry/purge use wall-clock time. Timestamp exhaustion fails atomically.
+- Writes enable SQLite `secure_delete` and transactional FTS5 `secure-delete`. Purge atomically removes rows, tags, and live FTS, including expired/removed records. Protection covers subsequent deletion remnants, not historical data, WAL/journals, reader snapshots, backups/exports, or device copies; no automatic cleanup or forensic-erasure guarantee.
+
+### Changed
+
+- CLI/adapters pin core `0.3.0`; Claude/Codex manifests match package versions. Adapter APIs and engine floors are unchanged.
+- Pi against core/CLI hardening: added tool-boundary coverage for Unicode search/validation, unsupported numeric-range operators, private first-use storage, and monotonic patch/restore timestamps. No tool-handler runtime change was needed.
+- OpenCode against core/CLI hardening: added Node-bridge coverage for Unicode search/validation, invalid metadata and numeric-range operators, private project/global first-use storage, and handler coverage for monotonic patch/restore timestamps. No tool-handler runtime change was needed.
+- Claude against core/CLI hardening: added tool-handler coverage for Unicode search/validation, malformed text, invalid metadata and numeric-range operators, null-metadata patch normalization, private project/global first-use storage, and monotonic patch/restore timestamps, plus management-CLI coverage for Unicode/structured search and malformed-query errors. No tool-handler runtime change was needed.
+- Aligned manuals/READMEs with runtime contracts, adapter behavior, and manual import validation/guarantees. Diagnostic errors remain unredacted; review logs before sharing.
+- Documented FTS5 requirements: official macOS arm64 Node.js 22.13.0 lacks FTS5; 22.19.0 is tested. Prepare Codex's physical core bundle before marketplace reinstall/reload.
+
 ## 0.6.0 - Shared Logslines diagnostics
 
 ### Updated components

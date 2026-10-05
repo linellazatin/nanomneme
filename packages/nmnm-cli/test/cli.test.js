@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { access, link, mkdir, mkdtemp, readFile, readdir, symlink, writeFile, rm } from 'node:fs/promises';
+import { access, chmod, link, mkdir, mkdtemp, readFile, readdir, stat, symlink, writeFile, rm } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -7,10 +7,111 @@ import { DatabaseSync } from 'node:sqlite';
 import test, { after } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import pkg from '../package.json' with { type: 'json' };
+import { open } from '../../nmnm-core/src/index.js';
 
 const isolatedHome = await mkdtemp(join(tmpdir(), 'nmnm-cli-test-home-'));
 after(() => rm(isolatedHome, { recursive: true, force: true }));
 const cli = fileURLToPath(new URL('../bin/nmnm.js', import.meta.url));
+
+test('CLI exports to a long valid filename without leaving temporary files', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-long-export-'));
+  const source = join(directory, 'memory.db');
+  const output = join(directory, 'x'.repeat(240) + '.jsonl');
+  assert.equal(run('retain', 'Long export filename', '--db', source, '--scope', 'project').status, 0);
+  const result = run('export', '--db', source, '--out', output);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(await readFile(output, 'utf8'), /Long export filename/);
+  assert.equal((await readdir(directory)).length, 2);
+});
+
+test('CLI rejects malformed Unicode import before creating the destination', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-invalid-unicode-'));
+  const source = join(directory, 'source.db');
+  const target = join(directory, 'target.db');
+  const memory = JSON.parse(run('retain', 'Unicode template', '--db', source, '--scope', 'project', '--json').stdout);
+  const file = join(directory, 'invalid.jsonl');
+  await writeFile(file, JSON.stringify({ _format: 'nanomneme', _version: 1 }) + '\n' + JSON.stringify({ ...memory, content: 'before\ud800after' }) + '\n');
+  const result = run('import', file, '--db', target);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Unicode/);
+  await assert.rejects(access(target));
+});
+
+test('CLI rejects source sidecars and aliases without replacing WAL data', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-export-sidecars-'));
+  const source = join(directory, 'memory.db');
+  const sourceAlias = join(directory, 'source-alias.db');
+  const first = run('retain', 'Checkpointed', '--db', source, '--scope', 'project');
+  assert.equal(first.status, 0, first.stderr);
+  await symlink(source, sourceAlias);
+  const raw = new DatabaseSync(source);
+  raw.exec('PRAGMA journal_mode = WAL; PRAGMA wal_autocheckpoint = 0');
+  const store = open(source);
+  t.after(() => { store.close(); raw.close(); });
+  const retained = store.retain({ content: 'WAL-only committed memory' });
+  const before = await readFile(source + '-wal');
+  const walAlias = join(directory, 'wal-alias');
+  await link(source + '-wal', walAlias);
+  const walSymlink = join(directory, 'wal-symlink');
+  await symlink(source + '-wal', walSymlink);
+  const directoryAlias = join(directory, 'directory-alias');
+  await symlink(directory, directoryAlias, 'dir');
+  for (const output of [source + '-wal', source + '-shm', source + '-journal', walAlias, walSymlink, join(directoryAlias, 'memory.db-journal')]) {
+    const result = run('export', '--db', sourceAlias, '--out', output);
+    assert.equal(result.status, 1, output);
+    assert.match(result.stderr, /source database/);
+    assert.deepEqual(await readFile(source + '-wal'), before);
+  }
+  const recalled = run('recall', retained.id, '--db', source, '--json');
+  assert.equal(recalled.status, 0, recalled.stderr);
+  assert.equal(JSON.parse(recalled.stdout).content, 'WAL-only committed memory');
+});
+
+test('CLI rejects canonical null metadata before creating an import destination', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-import-null-metadata-'));
+  const source = join(directory, 'source.db');
+  const target = join(directory, 'target.db');
+  const memory = JSON.parse(run('retain', 'Canonical import', '--db', source, '--scope', 'project', '--json').stdout);
+  const file = join(directory, 'invalid.jsonl');
+  await writeFile(file, JSON.stringify({ _format: 'nanomneme', _version: 1 }) + '\n' + JSON.stringify({ ...memory, metadata: null }) + '\n');
+  const result = run('import', file, '--db', target);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /metadata/);
+  await assert.rejects(access(target));
+});
+
+test('CLI exports privately and preserves stricter destination permissions', { skip: process.platform === 'win32' }, async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-export-permissions-'));
+  const source = join(directory, 'memory.db');
+  const output = join(directory, 'memory.jsonl');
+  const retained = run('retain', 'Private export', '--db', source, '--scope', 'project');
+  assert.equal(retained.status, 0, retained.stderr);
+  const exportWithPermissiveUmask = () => spawnSync(process.execPath, ['--input-type=module', '-e',
+    'process.umask(0); const { main } = await import(process.argv[1]); main(["export", "--db", process.argv[2], "--out", process.argv[3]]);',
+    new URL('../bin/nmnm.js', import.meta.url).href, source, output], { encoding: 'utf8' });
+  assert.equal(exportWithPermissiveUmask().status, 0);
+  assert.equal((await stat(output)).mode & 0o777, 0o600);
+  await chmod(output, 0o400);
+  assert.equal(exportWithPermissiveUmask().status, 0);
+  assert.equal((await stat(output)).mode & 0o777, 0o400);
+  await chmod(output, 0o644);
+  assert.equal(exportWithPermissiveUmask().status, 0);
+  assert.equal((await stat(output)).mode & 0o777, 0o600);
+  assert.match(await readFile(output, 'utf8'), /Private export/);
+});
+
+test('CLI verify reports unsafe permissions without modifying the database', { skip: process.platform === 'win32' }, async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-cli-permission-report-'));
+  const source = join(directory, 'memory.db');
+  assert.equal(run('retain', 'Permission report', '--db', source, '--scope', 'project').status, 0);
+  await chmod(source, 0o644);
+  const before = await readFile(source);
+  const result = run('verify', '--db', source, '--json');
+  assert.equal(result.status, 1, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout).issues, [{ code: 'file_permissions', count: 1, ids: ['database'] }]);
+  assert.equal((await stat(source)).mode & 0o777, 0o644);
+  assert.deepEqual(await readFile(source), before);
+});
 
 test('CLI reports its package version without opening a database', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-version-'));
@@ -96,6 +197,24 @@ test('CLI joins unquoted retrieve words into a single query', async () => {
   const result = JSON.parse(combined.stdout);
   assert.equal(result.total, 1);
   assert.equal(result.items[0].content, 'embedded SQLite storage engine');
+});
+
+test('CLI exposes Unicode, grouped Boolean, and proximity searches through core', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-cli-search-grammar-'));
+  const path = join(directory, 'memory.db');
+  for (const content of ['東京 alpha beta', 'alpha x beta', 'gamma delta']) {
+    const result = run('retain', content, '--db', path, '--scope', 'project');
+    assert.equal(result.status, 0, result.stderr);
+  }
+  for (const [query, expected] of [
+    ['東京', ['東京 alpha beta']],
+    ['東京 OR (gamma AND delta)', ['gamma delta', '東京 alpha beta']],
+    ['NEAR(alpha beta, 0)', ['東京 alpha beta']],
+  ]) {
+    const result = run('retrieve', query, '--db', path, '--json');
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout).items.map(item => item.content).sort(), expected);
+  }
 });
 
 test('CLI exports canonical JSONL and imports it atomically', async () => {
@@ -478,6 +597,23 @@ test('CLI validates --both selectors when both databases are missing', async () 
   }
   await assert.rejects(access(join(directory, '.nanomneme', 'memory.db')));
   await assert.rejects(access(join(directory, '.local', 'share', 'nanomneme', 'memory.db')));
+});
+
+test('CLI purge deletes expired rows and enables FTS protection without changing its output contract', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-expired-purge-'));
+  const db = join(directory, 'memory.db');
+  const retained = run('retain', 'Expired purge secret', '--expires-at', '2000-01-01T00:00:00.000Z', '--db', db, '--scope', 'project', '--json');
+  assert.equal(retained.status, 0);
+  const memory = JSON.parse(retained.stdout);
+  const purged = run('remove', memory.id, '--purge', '--db', db, '--json');
+  assert.equal(purged.status, 0);
+  assert.equal(JSON.parse(purged.stdout).mode, 'purge');
+  assert.equal(run('export', '--db', db).stdout, '{"_format":"nanomneme","_version":1}\n');
+  const raw = new DatabaseSync(db, { readOnly: true });
+  try {
+    assert.equal(raw.prepare("SELECT v FROM memories_fts_config WHERE k = 'secure-delete'").get().v, 1);
+    assert.equal(raw.prepare('SELECT COUNT(*) AS count FROM memories_fts').get().count, 0);
+  } finally { raw.close(); }
 });
 
 test('CLI restores soft removals and purges with an explicit flag', async () => {

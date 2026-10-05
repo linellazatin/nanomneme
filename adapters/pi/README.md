@@ -21,7 +21,7 @@ Pi package for the [nanomneme](https://nanomneme.openlines.dev) SQLite memory ad
 - **Direct user controls:** `/memory refresh`, `status`, `list`, `remove`, `pin`, and `unpin` without model involvement; `status` reports injection state, autoretention, the effective index budget, current full-payload character count, and lifecycle metadata without exposing memory content.
 
   ![nmnm-pi status](docs/img/ss-memory-status.png)
-- **Native memory browser:** `/memory` and `/memory browse` show the shared status card before opening; record details stay inside a native action dialog, so the card remains visible on return. Search and store controls stay above each record page. Standard selection keys honor Pi's configured `tui.select.*` bindings; `h/j/k/l` remain available.
+- **Native memory browser:** `/memory` and `/memory browse` open a Pi TUI menu with `Status`, `All`, `Project`, and `Global` tabs. Record details use a native action dialog; returning preserves selection. Standard selection keys honor configured `tui.select.*` bindings; arrows and `h/j/k/l` support navigation. Non-TUI UI modes use native dialogs.
 
   ![nmnm-pi command](docs/img/ss-memory-command.png)
 
@@ -36,7 +36,7 @@ Pi package for the [nanomneme](https://nanomneme.openlines.dev) SQLite memory ad
 
 ## Quickstart
 
-Version 0.4.0 targets Pi 0.87.0 or newer, verified through Pi 1.0.0, and Node.js 22.19 or newer. Install it globally with Pi:
+Version 0.4.1 targets Pi 0.87.0 or newer, verified through Pi 1.0.0, and Node.js 22.19 or newer. Install it globally with Pi:
 
 ```sh
 pi install npm:@openlines/nmnm-pi
@@ -55,5 +55,7 @@ pi install -l "$(pwd)/adapters/pi"
 ```
 
 Pi settings and pins are adapter-owned files outside SQLite. First load creates neither: `nmnm.jsonc` is optional and user-authored, and `nmnm-pi.json` appears only after a pin change. New `retain_memory` entries record `metadata.source` as `"pi"`; ID-based patches preserve an existing source. In an untrusted Pi project, automatic context reads only global settings, pins, and memory. Model-facing project operations (e.g. model tools) are rejected, global operations continue, and explicit user `/memory` project commands remain available. Oversized successful tool results return valid bounded summary JSON without changing the canonical stored record. Optional `autoretention` only guides the active model's `retain_memory`; disabled-by-default `reinjection` can rebuild the same context every five user prompts. Retain scope selects the matching write store: omit it for project or use `scope: "global"` for global. The browser and `/memory list` can show all records or Pi-source records. The model-facing `remove_memory` tool and `/memory remove` are soft-only; irreversible purge remains an explicit CLI operation. Run `/memory` or `/memory browse` for the model-free custom browser: left/right changes Status, All, Project, and Global tabs. Record details remain in a native action dialog; search and source controls remain in each store tab. `/memory status` remains available for an on-demand card. Explicit list, refresh, pin, unpin, and soft-remove subcommands remain available.
+
+This Pi adapter includes tool-boundary tests for Unicode search and malformed-text rejection, numeric-range validation, private first-use storage, and monotonic patch/restore timestamps. The adapter delegates these guarantees to core; CLI-only maintenance and transfer operations remain outside its API.
 
 See the [Pi Adapter Manual](docs/PI_ADAPTER_MANUAL.md) for npm, Git, and local installation, tools, JSONC settings, pins, list and removal controls, native-read behavior, reinjection, and transient index lifecycle.

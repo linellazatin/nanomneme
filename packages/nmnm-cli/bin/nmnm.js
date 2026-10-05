@@ -190,8 +190,12 @@ function databaseStore(options) {
 }
 
 function sameFile(left, right) {
-  const leftPath = resolve(left);
-  const rightPath = resolve(right);
+  const canonicalParent = path => {
+    const absolute = resolve(path);
+    return existsSync(dirname(absolute)) ? join(realpathSync(dirname(absolute)), basename(absolute)) : absolute;
+  };
+  const leftPath = canonicalParent(left);
+  const rightPath = canonicalParent(right);
   if (leftPath === rightPath) return true;
   if (!existsSync(leftPath) || !existsSync(rightPath)) return false;
   const leftStat = statSync(leftPath);
@@ -201,9 +205,11 @@ function sameFile(left, right) {
 
 function writeFileAtomic(path, contents) {
   const output = resolve(path);
-  const temporary = join(dirname(output), `.${basename(output)}.${randomUUID()}.tmp`);
+  const temporary = join(dirname(output), `.nmnm-${randomUUID()}.tmp`);
+  let mode = 0o600;
+  try { mode &= statSync(output).mode; } catch (error) { if (error.code !== 'ENOENT') throw error; }
   try {
-    writeFileSync(temporary, contents, { encoding: 'utf8', flag: 'wx' });
+    writeFileSync(temporary, contents, { encoding: 'utf8', flag: 'wx', mode });
     renameSync(temporary, output);
   } catch (error) {
     rmSync(temporary, { force: true });
@@ -272,7 +278,12 @@ export function main(args = process.argv.slice(2)) {
     return { result, json: options.json, failed: false };
   }
   const db = databasePath(options, { create: !requiresExisting });
-  if (command === 'export' && options.out && sameFile(db, options.out)) throw new TypeError('--out cannot reference the source database');
+  if (command === 'export' && options.out) {
+    const sources = [resolve(db), ...(existsSync(db) ? [realpathSync(db)] : [])];
+    if (sources.some(source => ['', '-journal', '-wal', '-shm'].some(suffix => sameFile(source + suffix, options.out)))) {
+      throw new TypeError('--out cannot reference the source database or its SQLite sidecars');
+    }
+  }
   const store = open(db, { create: !requiresExisting, readOnly });
   try {
     let result;

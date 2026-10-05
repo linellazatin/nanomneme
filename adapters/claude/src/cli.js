@@ -6,7 +6,7 @@ import {
   pinsPath,
   readPins,
   unpin,
-  writePins,
+  updatePins,
 } from './context.js';
 import { renderContext } from './hooks.js';
 import { databasePath, runMemory } from './store.js';
@@ -202,9 +202,12 @@ function count(autoretention, heading) {
   return total;
 }
 
-function resolveStore(ctx, requested, id) {
-  if (requested) return existingStoreMemory({ ctx, store: requested, operation: 'recall', input: { id } }) ? requested : null;
-  const matches = STORES.filter((store) => existingStoreMemory({ ctx, store, operation: 'recall', input: { id } }));
+function resolveStore(ctx, requested, id, pinsOnly = false) {
+  const matchesStore = store => pinsOnly
+    ? readPins(pinsPath({ cwd: ctx.cwd, home: ctx.home, store })).includes(id)
+    : existingStoreMemory({ ctx, store, operation: 'recall', input: { id } });
+  if (requested) return matchesStore(requested) ? requested : null;
+  const matches = STORES.filter(matchesStore);
   return matches.length === 1 ? matches[0] : { ambiguous: matches.length > 1 };
 }
 
@@ -221,7 +224,7 @@ function runCliRaw({ argv = [], cwd, home, globalDir, platform } = {}, observati
     return { text: formatList({ store: parsed.store, request, result, pins: pinSets(ctx) }), ok: true };
   }
 
-  const resolved = resolveStore(ctx, parsed.store, parsed.id);
+  const resolved = resolveStore(ctx, parsed.store, parsed.id, parsed.command === 'unpin');
   if (resolved === null) { observation?.setStatus('not_found'); return { text: `Nanomneme memory not found: ${parsed.id}`, ok: false }; }
   if (typeof resolved === 'object') {
     if (resolved.ambiguous) {
@@ -241,9 +244,10 @@ function runCliRaw({ argv = [], cwd, home, globalDir, platform } = {}, observati
 
   if (parsed.command === 'pin' || parsed.command === 'unpin') {
     const path = pinsPath({ cwd: ctx.cwd, home: ctx.home, store });
-    const pins = readPins(path);
-    if (parsed.command === 'unpin' && !pins.includes(parsed.id)) observation?.setStatus('not_found');
-    writePins(path, parsed.command === 'pin' ? pin(pins, parsed.id) : unpin(pins, parsed.id));
+    updatePins(path, pins => {
+      if (parsed.command === 'unpin' && !pins.includes(parsed.id)) observation?.setStatus('not_found');
+      return parsed.command === 'pin' ? pin(pins, parsed.id) : unpin(pins, parsed.id);
+    });
     return { text: `Nanomneme ${parsed.command}ned [${store}] ${parsed.id}.`, ok: true };
   }
 

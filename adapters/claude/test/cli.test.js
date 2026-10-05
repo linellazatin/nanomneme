@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { open } from '@openlines/nmnm-core';
@@ -128,6 +128,28 @@ test('search filters memories with a full-text query', () => {
   }
 });
 
+test('search handles Unicode and structured queries and surfaces malformed-text query errors', () => {
+  const f = fixture();
+  try {
+    const memory = runMemory({ cwd: f.project, store: 'project', operation: 'retain', input: { content: '東京 alpha beta' } });
+    for (const query of ['東京', '東*', 'alpha AND beta', 'NEAR(alpha beta, 0)']) {
+      const { text, ok } = runCli({ argv: ['search', query, 'project'], ...f.ctx });
+      assert.equal(ok, true);
+      assert.match(text, new RegExp(memory.id));
+    }
+
+    const punctuation = runCli({ argv: ['search', '!!!', 'project'], ...f.ctx });
+    assert.equal(punctuation.ok, true);
+    assert.match(punctuation.text, /showing 0 of 0/);
+
+    assert.throws(() => runCli({ argv: ['search', 'bad\ud800', 'project'], ...f.ctx }), /query must contain well-formed Unicode/);
+    assert.match(runCli({ argv: ['search', '東京', 'project'], ...f.ctx }).text, new RegExp(memory.id));
+    assert.deepEqual(readdirSync(join(f.project, '.nanomneme')), ['memory.db']);
+  } finally {
+    cleanup(f);
+  }
+});
+
 test('show prints a full record detail card', () => {
   const f = fixture();
   try {
@@ -226,4 +248,57 @@ test('unknown commands return usage text and a non-ok result', () => {
   } finally {
     cleanup(f);
   }
+});
+
+
+test('unpin removes inactive targets and resolves missing targets from pins alone', () => {
+  const f = fixture();
+  try {
+    for (const store of ['project', 'global']) {
+      for (const state of ['removed', 'expired']) {
+        const memory = runMemory({ ...f.ctx, store, operation: 'retain', input: { content: 'Unresolved pin', ...(state === 'expired' ? { expires_at: '2000-01-01T00:00:00.000Z' } : {}) } });
+        const path = pinsPath({ ...f.ctx, store });
+        writePins(path, [memory.id]);
+        if (state === 'removed') runMemory({ ...f.ctx, store, operation: 'remove', input: { id: memory.id } });
+        assert.equal(runCli({ ...f.ctx, argv: ['unpin', store, memory.id] }).ok, true);
+        assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), []);
+      }
+    }
+    const missing = 'missing-target';
+    const projectPath = pinsPath({ ...f.ctx, store: 'project' });
+    const globalPath = pinsPath({ ...f.ctx, store: 'global' });
+    writePins(projectPath, [missing]); writePins(globalPath, [missing]);
+    const ambiguous = runCli({ ...f.ctx, argv: ['unpin', missing] });
+    assert.equal(ambiguous.ok, false); assert.match(ambiguous.text, /ambiguous/);
+    assert.deepEqual(JSON.parse(readFileSync(projectPath, 'utf8')), [missing]);
+    assert.equal(runCli({ ...f.ctx, argv: ['unpin', 'project', missing] }).ok, true);
+    assert.equal(runCli({ ...f.ctx, argv: ['unpin', missing] }).ok, true);
+    assert.deepEqual(JSON.parse(readFileSync(globalPath, 'utf8')), []);
+  } finally { cleanup(f); }
+});
+
+test('unpin of an absent pin does not create storage', () => {
+  const f = fixture();
+  try {
+    for (const argv of [['unpin', 'project', 'missing'], ['unpin', 'global', 'missing'], ['unpin', 'missing']]) {
+      assert.equal(runCli({ ...f.ctx, argv }).ok, false);
+    }
+    assert.equal(existsSync(join(f.project, '.nanomneme')), false);
+    assert.equal(existsSync(join(f.home, '.local')), false);
+  } finally { cleanup(f); }
+});
+
+
+test('unpin cleans a missing-store pin without creating a database', () => {
+  const f = fixture();
+  try {
+    for (const store of ['project', 'global']) {
+      const path = pinsPath({ ...f.ctx, store });
+      writePins(path, ['orphan']);
+      assert.equal(runCli({ ...f.ctx, argv: ['unpin', store, 'orphan'] }).ok, true);
+      assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), []);
+    }
+    assert.equal(existsSync(join(f.project, '.nanomneme', 'memory.db')), false);
+    assert.equal(existsSync(join(f.home, '.local', 'share', 'nanomneme', 'memory.db')), false);
+  } finally { cleanup(f); }
 });

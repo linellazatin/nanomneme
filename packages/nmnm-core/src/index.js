@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { closeSync, existsSync, linkSync, mkdirSync, openSync, statSync, unlinkSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
 const DEFAULTS = Object.freeze({ kind: 'note', scope: 'project', namespace: 'default', importance: 0.5, confidence: 1 });
@@ -38,21 +38,15 @@ const MIGRATIONS = new Map();
 
 function text(value, name) {
   if (typeof value !== 'string' || !value.trim()) throw new TypeError(`${name} must be a non-empty string`);
+  if (!value.isWellFormed()) throw new TypeError(`${name} must contain well-formed Unicode`);
   return value.trim();
 }
 
-// Normalize a user query so ordinary text is searched literally while a small
-// set of FTS5 operators remain available. Terms containing FTS5 syntax
-// characters (dashes, colons, dots, slashes, and other punctuation) are quoted
-// so the default tokenizer reads them as phrases rather than column filters or
-// syntax errors. Operand keywords (`AND`/`OR`/`NOT`/`NEAR`) are kept only in infix
-// position; quoted phrases, balanced parentheses, and a trailing `*` prefix are
-// preserved, and dangling operators or stray punctuation never produce invalid
-// FTS5 expressions.
-const OPERATOR = /^(?:AND|OR|NOT|NEAR)$/i;
-const WORD_CHAR = /[A-Za-z0-9_]/;
-const SAFE_WORD = /^[A-Za-z0-9_]+$/;
-const PREFIX_WORD = /^[A-Za-z0-9_]+\*$/;
+// Compile a small FTS5 grammar; unsupported or malformed expressions fall
+// back to quoted literal terms. SQLite remains responsible for tokenization.
+const BOOLEAN_OPERATOR = /^(?:AND|OR|NOT)$/i;
+const SEARCHABLE_TEXT = /[\p{L}\p{N}\p{Co}_]/u;
+const MAX_QUERY_DEPTH = 32;
 
 function tokenizeQuery(value) {
   const atoms = [];
@@ -61,19 +55,26 @@ function tokenizeQuery(value) {
     const character = value[index];
     if (/\s/.test(character)) { index += 1; continue; }
     if (character === '"') {
-      let end = index + 1;
-      while (end < value.length && value[end] !== '"') end += 1;
-      if (end < value.length) {
-        atoms.push({ type: 'phrase', value: value.slice(index + 1, end) });
-        index = end + 1;
-      } else {
-        atoms.push({ type: 'word', value: value.slice(index + 1) });
-        index = value.length;
+      index += 1;
+      let phrase = '';
+      let closed = false;
+      while (index < value.length) {
+        if (value[index] !== '"') { phrase += value[index++]; continue; }
+        if (value[index + 1] === '"') { phrase += '"'; index += 2; continue; }
+        index += 1;
+        closed = true;
+        break;
       }
+      const prefix = closed && value[index] === '*';
+      if (prefix) index += 1;
+      atoms.push({ type: 'phrase', value: phrase, closed, prefix });
       continue;
     }
-    if (character === '(') { atoms.push({ type: 'open', value: '(' }); index += 1; continue; }
-    if (character === ')') { atoms.push({ type: 'close', value: ')' }); index += 1; continue; }
+    if (character === '(' || character === ')') {
+      atoms.push({ type: character === '(' ? 'open' : 'close', value: character });
+      index += 1;
+      continue;
+    }
     let end = index;
     while (end < value.length && !/[\s"()]/.test(value[end])) end += 1;
     atoms.push({ type: 'word', value: value.slice(index, end) });
@@ -82,57 +83,88 @@ function tokenizeQuery(value) {
   return atoms;
 }
 
-function classifyAtom(atom) {
-  if (atom.type !== 'word') return atom;
-  const word = atom.value;
-  if (OPERATOR.test(word)) return { type: 'operator', value: word };
-  if (PREFIX_WORD.test(word)) return { type: 'word', value: word };
-  if (!WORD_CHAR.test(word)) return { type: 'skip', value: word };
-  if (SAFE_WORD.test(word)) return { type: 'word', value: word };
-  return { type: 'word', value: `"${word}"` };
+function queryTerm(atom, allowPrefix = true) {
+  if (!['word', 'phrase'].includes(atom.type) || !SEARCHABLE_TEXT.test(atom.value)) return null;
+  const prefix = allowPrefix && (atom.prefix || (atom.type === 'word' && /[\p{L}\p{N}_]\*$/u.test(atom.value)));
+  const value = (prefix && atom.type === 'word' ? atom.value.slice(0, -1) : atom.value).replaceAll('\0', ' ');
+  return '"' + value.replaceAll('"', '""') + '"' + (prefix ? '*' : '');
 }
 
-function isOperand(atom) {
-  return atom != null && (atom.type === 'word' || atom.type === 'phrase');
-}
-
-function preserveInfixOperators(atoms) {
-  return atoms.map((atom, index) => {
-    if (atom.type !== 'operator') return atom;
-    if (isOperand(atoms[index - 1]) && isOperand(atoms[index + 1])) return atom;
-    return { type: 'word', value: `"${atom.value}"` };
-  });
-}
-
-function balancedParentheses(atoms) {
-  let depth = 0;
-  for (const atom of atoms) {
-    if (atom.type === 'open') depth += 1;
-    else if (atom.type === 'close') { depth -= 1; if (depth < 0) return false; }
+function nearGroup(atoms, start) {
+  const phrases = [];
+  let distance = null;
+  let index = start + 2;
+  for (; index < atoms.length && atoms[index].type !== 'close'; index += 1) {
+    const atom = atoms[index];
+    if (!['word', 'phrase'].includes(atom.type) || atom.closed === false) return null;
+    if (atom.type === 'word' && atom.value.includes(',')) {
+      const pieces = atom.value.split(',');
+      if (pieces.length !== 2) return null;
+      if (pieces[0]) {
+        const phrase = queryTerm({ type: 'word', value: pieces[0] });
+        if (!phrase) return null;
+        phrases.push(phrase);
+      }
+      const rawDistance = pieces[1] || atoms[++index]?.value;
+      if (typeof rawDistance !== 'string' || !/^\d+$/.test(rawDistance)) return null;
+      distance = Number(rawDistance);
+      if (!Number.isInteger(distance) || distance > 2147483647 || atoms[++index]?.type !== 'close') return null;
+      break;
+    }
+    const phrase = queryTerm(atom);
+    if (!phrase) return null;
+    phrases.push(phrase);
   }
-  return depth === 0;
+  if (atoms[index]?.type !== 'close' || phrases.length < 2) return null;
+  return { value: 'NEAR(' + phrases.join(' ') + (distance === null ? '' : ', ' + distance) + ')', end: index };
 }
 
 function fts5Query(value) {
-  const atoms = preserveInfixOperators(tokenizeQuery(value).map(classifyAtom));
-  const balanced = balancedParentheses(atoms);
+  const atoms = tokenizeQuery(value);
+  const literal = () => atoms.map(atom => queryTerm(atom, false)).filter(Boolean).join(' ');
+  if (atoms.some(atom => atom.closed === false)) return literal();
   const parts = [];
+  let depth = 0;
+  let expectingOperand = true;
+  let previous = null;
   for (let index = 0; index < atoms.length; index += 1) {
     const atom = atoms[index];
-    if (atom.type === 'skip') continue;
-    if (atom.type === 'phrase') {
-      if (atom.value.trim()) parts.push(`"${atom.value}"`);
+    if (atom.type === 'open') {
+      if (++depth > MAX_QUERY_DEPTH) return literal();
+      if (!expectingOperand) parts.push('AND');
+      parts.push('(');
+      expectingOperand = true;
+      previous = 'open';
       continue;
     }
-    if (atom.type === 'open' || atom.type === 'close') {
-      if (!balanced) continue;
-      if (atom.type === 'open' && atoms[index + 1]?.type === 'close') { index += 1; continue; }
-      parts.push(atom.value);
+    if (atom.type === 'close') {
+      if (!depth || expectingOperand) return literal();
+      depth -= 1;
+      parts.push(')');
+      previous = 'close';
       continue;
     }
-    parts.push(atom.value);
+    if (atom.type === 'word' && BOOLEAN_OPERATOR.test(atom.value)) {
+      if (expectingOperand) return literal();
+      parts.push(atom.value.toUpperCase());
+      expectingOperand = true;
+      previous = 'operator';
+      continue;
+    }
+    let term;
+    if (atom.type === 'word' && /^NEAR$/i.test(atom.value) && atoms[index + 1]?.type === 'open') {
+      const near = nearGroup(atoms, index);
+      if (!near) return literal();
+      term = near.value;
+      index = near.end;
+    } else term = queryTerm(atom);
+    if (!term) continue;
+    if (!expectingOperand && previous === 'close') parts.push('AND');
+    parts.push(term);
+    expectingOperand = false;
+    previous = 'term';
   }
-  return parts.join(' ');
+  return depth || expectingOperand ? literal() : parts.join(' ');
 }
 
 function kind(value) {
@@ -171,9 +203,9 @@ function date(value, name) {
   return value;
 }
 
-function metadata(value) {
-  if (value == null) return {};
-  if (typeof value !== 'object' || Array.isArray(value)) throw new TypeError('metadata must be a JSON object');
+function metadata(value, allowDefault = true) {
+  if (value == null && allowDefault) return {};
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('metadata must be a JSON object');
   try {
     return JSON.parse(JSON.stringify(value, function (_key, item) {
       const original = this[_key];
@@ -204,7 +236,7 @@ function range(value, name) {
   if (typeof value !== 'object' || Array.isArray(value)) throw new TypeError(`${name} must be a number or range object`);
   const operators = { gt: '>', gte: '>=', lt: '<', lte: '<=' };
   const entries = Object.entries(value);
-  if (!entries.length || entries.some(([key]) => !operators[key])) throw new TypeError(`${name} range has unsupported operator`);
+  if (!entries.length || entries.some(([key]) => !Object.hasOwn(operators, key))) throw new TypeError(`${name} range has unsupported operator`);
   return entries.map(([key, item]) => [operators[key], score(item, name)]);
 }
 
@@ -258,6 +290,14 @@ function issueReporter() {
   };
 }
 
+function mutationTimestamp(memory) {
+  const previous = Date.parse(date(memory.updated_at, 'updated_at'));
+  const created = Date.parse(date(memory.created_at, 'created_at'));
+  const next = Math.max(Date.now(), previous + 1, created);
+  if (!Number.isFinite(next) || next > 253402300799999) throw new RangeError('memory timestamp cannot advance within the supported UTC range');
+  return date(new Date(next).toISOString(), 'updated_at');
+}
+
 function importedRecord(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('import records must be objects');
   const unknown = Object.keys(value).find((field) => !IMPORT_FIELDS.includes(field));
@@ -281,7 +321,7 @@ function importedRecord(value) {
     updated_at: updatedAt,
     expires_at: date(value.expires_at, 'expires_at'),
     removed_at: date(value.removed_at, 'removed_at'),
-    metadata: metadata(value.metadata),
+    metadata: metadata(value.metadata, false),
     tags: tags(value.tags),
   };
   for (const field of ['id', 'content', 'kind', 'scope', 'namespace']) {
@@ -291,17 +331,44 @@ function importedRecord(value) {
   return record;
 }
 
+function createDatabase(path) {
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  const temporary = join(dirname(path), `.nmnm-${randomUUID()}.tmp`);
+  closeSync(openSync(temporary, 'wx', 0o600));
+  try {
+    const db = new DatabaseSync(temporary);
+    try {
+      db.exec('PRAGMA foreign_keys = ON; PRAGMA secure_delete = ON; BEGIN IMMEDIATE;');
+      db.exec(SCHEMA);
+      db.exec('COMMIT');
+    } finally { db.close(); }
+    // Publish a complete, closed database without replacing another creator.
+    try { linkSync(temporary, path); }
+    catch (error) { if (error.code !== 'EEXIST') throw error; }
+  } catch (error) {
+    if (/fts5/i.test(error.message)) throw new Error('SQLite FTS5 support is required', { cause: error });
+    throw error;
+  } finally { unlinkSync(temporary); }
+}
+
 export function open(path, { create = true, readOnly = false } = {}) {
   text(path, 'path');
   if (typeof create !== 'boolean') throw new TypeError('create must be a boolean');
   if (typeof readOnly !== 'boolean') throw new TypeError('readOnly must be a boolean');
+  const permissionsPath = path === ':memory:' ? null : resolve(path);
   const fresh = !existsSync(path);
   if (fresh && (!create || readOnly)) throw new Error(`database does not exist: ${path}`);
-  if (fresh) mkdirSync(dirname(path), { recursive: true });
-  const db = new DatabaseSync(path, { timeout: 5000, readOnly });
+  if (fresh && path !== ':memory:') {
+    createDatabase(path);
+  }
+  const db = new DatabaseSync(path, { readOnly });
   try {
-    db.exec('PRAGMA foreign_keys = ON;');
-    const version = fresh ? (db.exec(SCHEMA), SCHEMA_VERSION) : schemaVersion(db);
+    db.exec('PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
+    if (!readOnly) {
+      db.exec('PRAGMA secure_delete = ON');
+      if (db.prepare('PRAGMA secure_delete').get().secure_delete !== 1) throw new Error('SQLite secure_delete support is required for writes');
+    }
+    const version = path === ':memory:' ? (db.exec(SCHEMA), SCHEMA_VERSION) : schemaVersion(db);
     if (version > SCHEMA_VERSION) throw new Error(`database schema version ${version} is newer than this version of nanomneme`);
     if (readOnly && version < SCHEMA_VERSION) throw new Error(`database schema version ${version} requires migration before read-only use`);
     if (!readOnly) migrate(db, version);
@@ -325,9 +392,23 @@ export function open(path, { create = true, readOnly = false } = {}) {
       : db.prepare(`SELECT ${MEMORY_SELECT} FROM memories m WHERE m.id = ?`).get(targetId);
     return row ? hydrate(row) : null;
   };
-  const transaction = (work) => {
-    db.exec('BEGIN IMMEDIATE');
-    try { const result = work(); db.exec('COMMIT'); return result; } catch (error) { db.exec('ROLLBACK'); throw error; }
+  const transaction = (work, mode = 'IMMEDIATE') => {
+    db.exec(`BEGIN ${mode}`);
+    try {
+      if (mode === 'IMMEDIATE') {
+        // Persist FTS protection within the mutation, not during read-only opens.
+        // Unsupported FTS5 runtimes fail the transaction rather than skip it.
+        const protection = db.prepare("SELECT v FROM memories_fts_config WHERE k = 'secure-delete'").get();
+        if (protection?.v !== 1) db.exec("INSERT INTO memories_fts(memories_fts, rank) VALUES('secure-delete', 1)");
+      }
+      const result = work();
+      db.exec('COMMIT');
+      return result;
+    } catch (error) {
+      // SQLite may already have rolled back; preserve the original failure.
+      try { db.exec('ROLLBACK'); } catch {}
+      throw error;
+    }
   };
   const writeTags = (id, nextTags) => {
     db.prepare('DELETE FROM memory_tags WHERE memory_id = ?').run(id);
@@ -343,54 +424,51 @@ export function open(path, { create = true, readOnly = false } = {}) {
   return {
     retain(input) {
       if (!input || typeof input !== 'object' || Array.isArray(input)) throw new TypeError('retain input must be an object');
-      const now = new Date().toISOString();
-      if (input.id != null) {
-        const id = memoryId(input.id);
-        const current = read(id, false);
-        if (!current) throw new RangeError(`memory ${id} does not exist`);
-        const next = {
-          content: input.content === undefined ? current.content : text(input.content, 'content'),
-          kind: input.kind === undefined ? current.kind : kind(input.kind),
-          scope: input.scope === undefined ? current.scope : scope(input.scope),
-          namespace: input.namespace === undefined ? current.namespace : slug(input.namespace, 'namespace'),
-          importance: input.importance === undefined ? current.importance : score(input.importance, 'importance'),
-          confidence: input.confidence === undefined ? current.confidence : score(input.confidence, 'confidence'),
-          expires_at: input.expires_at === undefined ? current.expires_at : date(input.expires_at, 'expires_at'),
-          metadata: input.metadata === undefined ? current.metadata : metadata(input.metadata),
-          tags: input.tags === undefined ? current.tags : tags(input.tags),
-        };
-        transaction(() => {
+      const values = Object.fromEntries(['id', 'content', 'kind', 'scope', 'namespace', 'importance', 'confidence', 'expires_at', 'metadata', 'tags']
+        .map((field) => [field, input[field]]));
+      const id = values.id == null ? null : memoryId(values.id);
+      const normalized = {
+        content: values.content === undefined ? undefined : text(values.content, 'content'),
+        kind: values.kind === undefined ? undefined : kind(values.kind),
+        scope: values.scope === undefined ? undefined : scope(values.scope),
+        namespace: values.namespace === undefined ? undefined : slug(values.namespace, 'namespace'),
+        importance: values.importance === undefined ? undefined : score(values.importance, 'importance'),
+        confidence: values.confidence === undefined ? undefined : score(values.confidence, 'confidence'),
+        expires_at: values.expires_at === undefined ? undefined : date(values.expires_at, 'expires_at'),
+        metadata: values.metadata === undefined ? undefined : metadata(values.metadata),
+        tags: values.tags === undefined ? undefined : tags(values.tags),
+      };
+      const patch = Object.fromEntries(Object.entries(normalized).filter(([, value]) => value !== undefined));
+      if (id !== null) {
+        return transaction(() => {
+          const current = read(id, false);
+          if (!current) throw new RangeError(`memory ${id} does not exist`);
+          const next = { ...current, ...patch };
+          const now = mutationTimestamp(current);
           db.prepare(`UPDATE memories SET content = ?, kind = ?, scope = ?, namespace = ?, importance = ?, confidence = ?, updated_at = ?, expires_at = ?, removed_at = NULL, metadata = ? WHERE id = ?`)
             .run(next.content, next.kind, next.scope, next.namespace, next.importance, next.confidence, now, next.expires_at, JSON.stringify(next.metadata), id);
           writeTags(id, next.tags);
           syncFts(id, next.content);
+          return read(id, false);
         });
-        return read(id, false);
       }
 
-      const next = {
-        content: text(input.content, 'content'),
-        kind: input.kind === undefined ? DEFAULTS.kind : kind(input.kind),
-        scope: input.scope === undefined ? DEFAULTS.scope : scope(input.scope),
-        namespace: input.namespace === undefined ? DEFAULTS.namespace : slug(input.namespace, 'namespace'),
-        importance: input.importance === undefined ? DEFAULTS.importance : score(input.importance, 'importance'),
-        confidence: input.confidence === undefined ? DEFAULTS.confidence : score(input.confidence, 'confidence'),
-        expires_at: date(input.expires_at, 'expires_at'),
-        metadata: metadata(input.metadata),
-        tags: tags(input.tags),
-      };
-      const id = randomUUID();
-      transaction(() => {
+      const next = { ...DEFAULTS, expires_at: null, metadata: {}, tags: [], ...patch };
+      text(next.content, 'content');
+      const newId = randomUUID();
+      return transaction(() => {
+        const now = date(new Date().toISOString(), 'created_at');
         db.prepare(`INSERT INTO memories (id, content, kind, scope, namespace, importance, confidence, created_at, updated_at, expires_at, removed_at, metadata) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`)
-          .run(id, next.content, next.kind, next.scope, next.namespace, next.importance, next.confidence, now, now, next.expires_at, JSON.stringify(next.metadata));
-        writeTags(id, next.tags);
-        syncFts(id, next.content);
+          .run(newId, next.content, next.kind, next.scope, next.namespace, next.importance, next.confidence, now, now, next.expires_at, JSON.stringify(next.metadata));
+        writeTags(newId, next.tags);
+        syncFts(newId, next.content);
+        return read(newId, false);
       });
-      return read(id, false);
     },
 
     recall({ id }) {
-      return read(memoryId(id));
+      const targetId = memoryId(id);
+      return transaction(() => read(targetId), 'DEFERRED');
     },
 
     retrieve(selector = {}) {
@@ -431,7 +509,7 @@ export function open(path, { create = true, readOnly = false } = {}) {
         for (const [operator, target] of range(value, field)) { where.push(`m.${field} ${operator} ?`); parameters.push(target); }
       }
       const orderBy = selector.order_by ?? (query ? 'relevance' : 'updated_at');
-      const ordering = orderBy === 'relevance' && query
+      const ordering = orderBy === 'relevance' && rawQuery != null
         ? 'score ASC, m.importance DESC, m.id ASC'
         : ORDER_FIELDS.has(orderBy)
           ? `m.${orderBy} ${orderBy === 'updated_at' ? 'DESC' : 'ASC'}, m.id ASC`
@@ -439,19 +517,16 @@ export function open(path, { create = true, readOnly = false } = {}) {
       if (!ordering) throw new TypeError('order_by must be relevance, id, created_at, updated_at, importance, or confidence');
       const condition = where.join(' AND ');
       if (unmatched) return { total: 0, items: [] };
-      try {
+      return transaction(() => {
         const total = db.prepare(`SELECT COUNT(*) AS total FROM memories m ${join} WHERE ${condition}`).get(...parameters).total;
         const rows = db.prepare(`SELECT ${MEMORY_SELECT}, ${query ? 'bm25(memories_fts) AS score' : 'NULL AS score'} FROM memories m ${join} WHERE ${condition} ORDER BY ${ordering} LIMIT ? OFFSET ?`)
           .all(...parameters, limit, offset);
         return { total, items: rows.map(hydrate) };
-      } catch (error) {
-        if (query) throw new TypeError(`invalid FTS5 query: ${error.message}`);
-        throw error;
-      }
+      }, 'DEFERRED');
     },
 
     export() {
-      return db.prepare(`SELECT ${MEMORY_SELECT} FROM memories m ORDER BY m.id`).all().map(hydrate);
+      return transaction(() => db.prepare(`SELECT ${MEMORY_SELECT} FROM memories m ORDER BY m.id`).all().map(hydrate), 'DEFERRED');
     },
 
     import(records) {
@@ -461,9 +536,11 @@ export function open(path, { create = true, readOnly = false } = {}) {
       for (const record of next) {
         if (ids.has(record.id)) throw new RangeError(`import contains duplicate id ${record.id}`);
         ids.add(record.id);
-        if (db.prepare('SELECT 1 FROM memories WHERE id = ?').get(record.id)) throw new RangeError(`memory ${record.id} already exists`);
       }
       transaction(() => {
+        for (const record of next) {
+          if (db.prepare('SELECT 1 FROM memories WHERE id = ?').get(record.id)) throw new RangeError(`memory ${record.id} already exists`);
+        }
         for (const record of next) {
           db.prepare(`INSERT INTO memories (id, content, kind, scope, namespace, importance, confidence, created_at, updated_at, expires_at, removed_at, metadata) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
             .run(record.id, record.content, record.kind, record.scope, record.namespace, record.importance, record.confidence, record.created_at, record.updated_at, record.expires_at, record.removed_at, JSON.stringify(record.metadata));
@@ -475,87 +552,99 @@ export function open(path, { create = true, readOnly = false } = {}) {
     },
 
     rebuildFts() {
-      const ftsSchema = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'memories_fts'").get();
-      if (!ftsSchema || !/^CREATE VIRTUAL TABLE\s+memories_fts\s+USING\s+fts5\b/i.test(ftsSchema.sql)) throw new Error('a valid SQLite FTS5 table is required to rebuild FTS');
-      const rebuilt = db.prepare('SELECT COUNT(*) AS count FROM memories WHERE removed_at IS NULL').get().count;
-      transaction(() => {
+      return transaction(() => {
+        const ftsSchema = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'memories_fts'").get();
+        if (!ftsSchema || !/^CREATE VIRTUAL TABLE\s+memories_fts\s+USING\s+fts5\b/i.test(ftsSchema.sql)) throw new Error('a valid SQLite FTS5 table is required to rebuild FTS');
+        const rebuilt = db.prepare('SELECT COUNT(*) AS count FROM memories WHERE removed_at IS NULL').get().count;
         db.exec('DELETE FROM memories_fts');
         db.exec('INSERT INTO memories_fts(rowid, content) SELECT rowid, content FROM memories WHERE removed_at IS NULL');
+        return { mode: 'rebuild-fts', rebuilt };
       });
-      return { mode: 'rebuild-fts', rebuilt };
     },
 
     verify() {
-      const report = issueReporter();
-      const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all().map(({ name }) => name);
-      const tableColumns = new Map();
-      for (const [table, columns] of Object.entries(SCHEMA_COLUMNS)) {
-        if (!tables.includes(table)) {
-          report.add('schema_missing', table);
-          continue;
+      return transaction(() => {
+        const report = issueReporter();
+        if (permissionsPath !== null && process.platform !== 'win32') {
+          for (const [label, suffix] of [['database', ''], ['journal', '-journal'], ['wal', '-wal'], ['shm', '-shm']]) {
+            try {
+              if (statSync(`${permissionsPath}${suffix}`).mode & 0o077) report.add('file_permissions', label);
+            } catch (error) {
+              if (error.code !== 'ENOENT' || suffix === '') throw error;
+            }
+          }
         }
-        const actual = db.prepare(`PRAGMA table_info(${table})`).all().map(({ name }) => name);
-        tableColumns.set(table, actual);
-        if (actual.length !== columns.length || columns.some((column, index) => actual[index] !== column)) report.add('schema_columns', table);
-      }
-      const ftsSchema = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'memories_fts'").get();
-      const validFts = ftsSchema && /^CREATE VIRTUAL TABLE\s+memories_fts\s+USING\s+fts5\b/i.test(ftsSchema.sql);
-      if (ftsSchema && !validFts) report.add('schema_fts', 'memories_fts');
-      for (const row of db.prepare('PRAGMA integrity_check').all()) {
-        const value = Object.values(row)[0];
-        if (value !== 'ok') report.add('sqlite_integrity');
-      }
-      for (const row of db.prepare('PRAGMA foreign_key_check').all()) report.add('foreign_key', `${row.table}:${row.rowid}`);
+        const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all().map(({ name }) => name);
+        const tableColumns = new Map();
+        for (const [table, columns] of Object.entries(SCHEMA_COLUMNS)) {
+          if (!tables.includes(table)) {
+            report.add('schema_missing', table);
+            continue;
+          }
+          const actual = db.prepare(`PRAGMA table_info(${table})`).all().map(({ name }) => name);
+          tableColumns.set(table, actual);
+          if (actual.length !== columns.length || columns.some((column, index) => actual[index] !== column)) report.add('schema_columns', table);
+        }
+        const ftsSchema = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'memories_fts'").get();
+        const validFts = ftsSchema && /^CREATE VIRTUAL TABLE\s+memories_fts\s+USING\s+fts5\b/i.test(ftsSchema.sql);
+        if (ftsSchema && !validFts) report.add('schema_fts', 'memories_fts');
+        for (const row of db.prepare('PRAGMA integrity_check').all()) {
+          const value = Object.values(row)[0];
+          if (value !== 'ok') report.add('sqlite_integrity');
+        }
+        for (const row of db.prepare('PRAGMA foreign_key_check').all()) report.add('foreign_key', `${row.table}:${row.rowid}`);
 
-      const hasColumns = (table) => SCHEMA_COLUMNS[table].every((column) => tableColumns.get(table)?.includes(column));
-      const memories = hasColumns('memories')
-        ? db.prepare('SELECT rowid, * FROM memories ORDER BY id').all()
-        : [];
-      for (const memory of memories) {
-        try {
-          memoryId(memory.id);
-          text(memory.content, 'content');
-          kind(memory.kind);
-          scope(memory.scope);
-          slug(memory.namespace, 'namespace');
-          score(memory.importance, 'importance');
-          score(memory.confidence, 'confidence');
-          const createdAt = date(memory.created_at, 'created_at');
-          const updatedAt = date(memory.updated_at, 'updated_at');
-          if (updatedAt < createdAt) throw new TypeError('updated_at must not precede created_at');
-          date(memory.expires_at, 'expires_at');
-          date(memory.removed_at, 'removed_at');
-          metadata(JSON.parse(memory.metadata));
-        } catch {
-          report.add('memory_field', memory.id);
-        }
-      }
-      if (hasColumns('memory_tags')) {
-        for (const tag of db.prepare('SELECT memory_id, tag FROM memory_tags ORDER BY memory_id, tag').all()) {
-          try { memoryId(tag.memory_id); slug(tag.tag, 'tag'); } catch { report.add('tag_field', tag.memory_id); }
-        }
-      }
-      if (validFts && hasColumns('memories_fts') && hasColumns('memories')) {
-        const fts = new Map(db.prepare('SELECT rowid, content FROM memories_fts').all().map((row) => [row.rowid, row]));
+        const hasColumns = (table) => SCHEMA_COLUMNS[table].every((column) => tableColumns.get(table)?.includes(column));
+        const memories = hasColumns('memories')
+          ? db.prepare('SELECT rowid, * FROM memories ORDER BY id').all()
+          : [];
         for (const memory of memories) {
-          const indexed = fts.get(memory.rowid);
-          fts.delete(memory.rowid);
-          if (memory.removed_at != null && indexed) report.add('fts_removed', memory.id);
-          else if (memory.removed_at == null && !indexed) report.add('fts_missing', memory.id);
-          else if (indexed && indexed.content !== memory.content) report.add('fts_mismatch', memory.id);
+          try {
+            memoryId(memory.id);
+            text(memory.content, 'content');
+            kind(memory.kind);
+            scope(memory.scope);
+            slug(memory.namespace, 'namespace');
+            score(memory.importance, 'importance');
+            score(memory.confidence, 'confidence');
+            const createdAt = date(memory.created_at, 'created_at');
+            const updatedAt = date(memory.updated_at, 'updated_at');
+            if (updatedAt < createdAt) throw new TypeError('updated_at must not precede created_at');
+            date(memory.expires_at, 'expires_at');
+            date(memory.removed_at, 'removed_at');
+            metadata(JSON.parse(memory.metadata), false);
+          } catch {
+            report.add('memory_field', memory.id);
+          }
         }
-        for (const rowid of fts.keys()) report.add('fts_orphan', rowid);
-      }
-      const issues = report.list();
-      return { ok: issues.length === 0, schema_version: SCHEMA_VERSION, issues };
+        if (hasColumns('memory_tags')) {
+          for (const tag of db.prepare('SELECT memory_id, tag FROM memory_tags ORDER BY memory_id, tag').all()) {
+            try { memoryId(tag.memory_id); slug(tag.tag, 'tag'); } catch { report.add('tag_field', tag.memory_id); }
+          }
+        }
+        if (validFts && hasColumns('memories_fts') && hasColumns('memories')) {
+          const fts = new Map(db.prepare('SELECT rowid, content FROM memories_fts').all().map((row) => [row.rowid, row]));
+          for (const memory of memories) {
+            const indexed = fts.get(memory.rowid);
+            fts.delete(memory.rowid);
+            if (memory.removed_at != null && indexed) report.add('fts_removed', memory.id);
+            else if (memory.removed_at == null && !indexed) report.add('fts_missing', memory.id);
+            else if (indexed && indexed.content !== memory.content) report.add('fts_mismatch', memory.id);
+          }
+          for (const rowid of fts.keys()) report.add('fts_orphan', rowid);
+        }
+        const issues = report.list();
+        return { ok: issues.length === 0, schema_version: SCHEMA_VERSION, issues };
+      }, 'DEFERRED');
     },
 
     remove({ id, mode = 'soft' }) {
       if (!['soft', 'purge'].includes(mode)) throw new TypeError('mode must be soft or purge');
-      const memory = read(memoryId(id), mode === 'soft');
-      if (!memory) return null;
-      const timestamp = new Date().toISOString();
-      transaction(() => {
+      const targetId = memoryId(id);
+      return transaction(() => {
+        const memory = read(targetId, mode === 'soft');
+        if (!memory) return null;
+        const timestamp = mode === 'soft' ? mutationTimestamp(memory) : new Date().toISOString();
         db.prepare('DELETE FROM memories_fts WHERE rowid = (SELECT rowid FROM memories WHERE id = ?)').run(memory.id);
         if (mode === 'purge') {
           db.prepare('DELETE FROM memory_tags WHERE memory_id = ?').run(memory.id);
@@ -563,10 +652,10 @@ export function open(path, { create = true, readOnly = false } = {}) {
         } else {
           db.prepare('UPDATE memories SET removed_at = ?, updated_at = ? WHERE id = ?').run(timestamp, timestamp, memory.id);
         }
+        return mode === 'purge'
+          ? { id: memory.id, mode, purged_at: timestamp }
+          : { id: memory.id, mode, removed_at: timestamp };
       });
-      return mode === 'purge'
-        ? { id: memory.id, mode, purged_at: timestamp }
-        : { id: memory.id, mode, removed_at: timestamp };
     },
 
     close() { db.close(); },

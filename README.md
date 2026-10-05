@@ -16,8 +16,8 @@
 ### adapters
 [![nmnm-pi version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-pi?label=pi&logo=pi&color=ffffe0)](https://www.npmjs.com/package/@openlines/nmnm-pi)
 [![nmnm-opencode version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-opencode?label=opencode&logo=opencode&color=gray)](https://www.npmjs.com/package/@openlines/nmnm-opencode)
-[![nmnm-claude version](https://img.shields.io/badge/claude-v0.1.2-orange?logo=claude)](https://github.com/linellazatin/nanomneme/tree/main/adapters/claude)
-[![nmnm-codex version](https://img.shields.io/badge/codex-v0.1.0-black?logo=codex)](https://github.com/linellazatin/nanomneme/tree/main/adapters/codex)
+[![nmnm-claude version](https://img.shields.io/badge/claude-v0.2.1-orange?logo=claude)](https://github.com/linellazatin/nanomneme/tree/main/adapters/claude)
+[![nmnm-codex version](https://img.shields.io/badge/codex-v0.2.1-black?logo=codex)](https://github.com/linellazatin/nanomneme/tree/main/adapters/codex)
 
 >
 
@@ -26,6 +26,8 @@
 </div>
 
 >
+> ### v0.7.0 - core and CLI hardening
+> - Private new storage, transactional patches, Unicode and Boolean search, ordered record timestamps, and explicit deletion guarantees. All adapters carry core `0.3.0`; Claude/OpenCode pin updates are locked and atomic.
 > ### v0.6.0 - logslines shared logger integration
 > - Initial implementation of shared logger for ALL adapters, including nmnm-cli.
 > ### v0.5.1 - pi adapter v0.3.1
@@ -34,7 +36,7 @@
 > see [CHANGELOG](CHANGELOG.md) for more details.
 >
 
-nanomneme is a small, deterministic SQLite core for coding-agent memory: useful context survives a session without becoming an opaque service. Inspired by [`openpi-memory`](https://github.com/linellazatin/openpi-memory) and [`openclaude-memory`](https://github.com/linellazatin/openclaude-memory), and their demonstration that memory can persist in inspectable files, it replaces per-harness memory formats with one shared system for `Pi`, `Claude Code`, Codex, and future adapters.
+nanomneme is a small, deterministic SQLite core for coding-agent memory: useful context survives a session without becoming an opaque service. Inspired by [`openpi-memory`](https://github.com/linellazatin/openpi-memory) and [`openclaude-memory`](https://github.com/linellazatin/openclaude-memory), and their demonstration that memory can persist in inspectable files, it replaces per-harness memory formats with one shared system for `Pi`, `Claude Code`, `OpenCode`, `Codex`, and future adapters.
 
 ## What the name means
 
@@ -59,9 +61,9 @@ Nanomneme helps agents remember without pretending to be human memory.
 - **Local and user-owned:** no required LLM calls, embeddings, vector database, daemon, ORM, or network service; operations are local and deterministic, SQLite is the source of truth, and JSONL portability preserves explicit project/global boundaries.
 - **Harness-agnostic foundation:** one shared memory contract supports Pi, Claude Code, Codex, OpenCode, and future thin adapters.
 - **4Rs lifecycle:** retain, recall, retrieve, and remove; retrieval can filter recorded harness sources; soft removal is reversible and purge is explicit.
-- **Local SQLite storage:** transactional canonical records with derived tags and FTS5 indexes.
+- **Local SQLite storage:** atomic canonical, tag, and FTS5 mutations, snapshot reads, latest-record patching, and strictly increasing per-record update timestamps.
 - **Canonical validation:** UUID v4 IDs, UTC timestamps, supported kinds and scopes, kebab-case namespaces and tags, and JSON metadata.
-- **Deterministic retrieval:** lexical FTS5/BM25 search with literal punctuation terms, structured filters, expiry handling, pagination, and stable relevance, importance, recency, and ID ordering.
+- **Deterministic retrieval:** Unicode FTS5/BM25 search with Boolean expressions, phrases, prefixes, NEAR groups, literal fallback for malformed expressions, structured filters, expiry handling, pagination, and stable relevance, importance, recency, and ID ordering.
 - **Multi-store selection:** project, global, or custom databases; `retrieve --both` returns project-first results with store provenance and preserves duplicate IDs.
 - **Portable data:** canonical JSONL export/import with validation, conflict safety, atomic file replacement, and exact closed SQLite backups.
 - **Integrity tools:** report-only verification, schema lifecycle checks, read-only access, and explicit FTS rebuild repair.
@@ -83,7 +85,7 @@ Nanomneme helps agents remember without pretending to be human memory.
 - **Opt-in autoretention:** project/global JSONC rules guide the active model's `retain_memory` calls without a nested model, worker, or direct adapter write.
 - **Adapter-owned configuration:** optional JSONC settings and separate JSON pin files, with project and global locations.
 - **Direct user controls:** `/memory refresh`, `status`, `list`, `remove`, `pin`, and `unpin` without model involvement; `status` reports injection state, autoretention, the effective index budget, current full-payload character count, and lifecycle metadata without exposing memory content.
-- **Native memory browser:** `/memory` and `/memory browse` show the shared status card before opening; record details stay inside a native action dialog, so the card remains visible on return. Search and store controls stay above each record page. Standard selection keys honor Pi's configured `tui.select.*` bindings; `h/j/k/l` remain available.
+- **Native memory browser:** `/memory` and `/memory browse` open a Pi TUI menu with `Status`, `All`, `Project`, and `Global` tabs. Record details use a native action dialog; returning preserves selection. Standard selection keys honor configured `tui.select.*` bindings; arrows and `h/j/k/l` support navigation. Non-TUI UI modes use native dialogs.
 - **Readable list UX:** project-first combined listing, pagination, `[project]` and `[global]` labels, exact-store `*` pin markers, and 60-character previews; browser rows omit IDs, which remain in details.
 - **Safety boundaries:** validated pin targets, ambiguity-safe removal, soft-only slash removal, non-creating native reads, and durable unresolved pins.
 
@@ -99,14 +101,14 @@ Nanomneme helps agents remember without pretending to be human memory.
 
 - **Native MCP memory tools:** model-invoked retain, recall, retrieve, and remove over a local stdio MCP server that imports `nmnm-core` directly; no daemon, network, or CLI parsing. `retain_memory` records Claude Code source provenance on new entries; `remove_memory` is soft-only.
 - **Bounded session-start context:** a `SessionStart` command hook injects the project/global index and optional autoretention guidance as transient context; disabled-by-default `UserPromptSubmit` reinjection uses a configurable cadence.
-- **Shared and adapter-owned config:** project `nmnm.jsonc` settings shared with Pi, adapter-owned `nmnm-claude.json` pins, and global settings under `${CLAUDE_PLUGIN_DATA}`.
+- **Shared and adapter-owned config:** project `nmnm.jsonc` settings shared with Pi, adapter-owned `nmnm-claude.json` pins, and global settings under `${CLAUDE_PLUGIN_DATA}` (fallback `~/.claude`). Memory databases remain in the standard Nanomneme locations.
 - **Model guidance:** a `memory-guide` Skill (`/nanomneme:memory-guide`) teaches the 4Rs, project-versus-global scope, and safe capture.
 - **Model-free management command:** `bin/memory.js` (`status`, `list`, `search`, `show`, `pin`, `unpin`, `remove`) reuses the shared store/context helpers; `list` and `search` accept `--source all|claude-code`. A `/nanomneme:memory` slash command embeds it and relays output verbatim, or invoke the CLI with `!` for a fully model-free path.
 
 #### Codex prototype
 
-- **MCP-free package:** `@openlines/nmnm-codex` 0.1.0 bundles the exact core runtime and a constrained, shell-backed JSON runner for retain, recall, retrieve, and soft remove. New records carry `metadata.source: "codex"`; reads and no-op removal do not create a store.
-- **Bounded trusted context:** one SessionStart hook reads existing project then global stores without writing them, injects a fixed bounded index, and emits no context on failure. The prototype intentionally has no pins, adapter settings, prompt cadence, automatic retention, adapter management CLI, or Windows support claim.
+- **MCP-free package:** `@openlines/nmnm-codex` 0.2.1 bundles the exact core runtime and a constrained, shell-backed JSON runner for retain, recall, retrieve, and soft remove. New records carry `metadata.source: "codex"`; reads and no-op removal do not create a store.
+- **Bounded trusted context:** one SessionStart hook reads existing project then global stores without writing them, injects a fixed bounded index, and emits no context on failure. The prototype intentionally has no pins, context settings, prompt cadence, automatic retention, adapter management CLI, or Windows support claim.
 - **Lazy guidance:** one `memory` skill resolves the package-relative runner beside its `SKILL.md`; no MCP fallback is supplied.
 
 
@@ -150,6 +152,7 @@ Claude Code remains a separately installed adapter.
 The Codex adapter is a local prototype, not an npm-published install. Create a packed local artifact with:
 
 ```sh
+node scripts/check-logging-packages.js --prepare-codex
 npm pack --workspace @openlines/nmnm-codex
 ```
 
@@ -183,7 +186,7 @@ The CLI defaults to `./.nanomneme/memory.db`. `--global` uses `~/.local/share/na
 # full node tests
 npm test
 # npm package dry run for validation
-npm pack --dry-run --workspace @openlines/nmnm-core --workspace @openlines/nmnm-cli --workspace @openlines/nmnm-... <namespace>/<adapter/package>
+npm pack --dry-run --workspace @openlines/nmnm-core --workspace @openlines/nmnm-cli --workspace @openlines/nmnm-pi --workspace @openlines/nmnm-opencode
 ```
 
 Logslines source is checked in under `external/logslines/`, selected by its upstream Git tag rather than an npm dependency. `npm run external:check -- v0.1.0` fetches that release and verifies the checked-in files and provenance match it; `npm run external:update -- v0.1.0` refreshes the snapshot and its SHA-256 manifest. After an update, run `node scripts/build-logger.js` to refresh core’s checked-in logging runtime, update the pinned hashes in `test/external-logslines.test.js`, then run `npm test`. The offline hash verification runs in CI through `npm test`; the two external commands do not run during CI, installation, or package runtime use. Run `npm test` before submitting changes. Do not commit `.nanomneme/`, personal global databases, or Pi settings and pin files containing local data. Use canonical JSONL for transfer and closed SQLite copies for exact backups. See the manuals for validation, recovery, and adapter-specific safety boundaries.

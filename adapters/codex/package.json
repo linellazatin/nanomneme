@@ -1,6 +1,6 @@
 {
   "name": "@openlines/nmnm-codex",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "MCP-free Codex adapter for nanomneme local SQLite memory",
   "type": "module",
@@ -23,7 +23,7 @@
     "LICENSE"
   ],
   "dependencies": {
-    "@openlines/nmnm-core": "0.2.0"
+    "@openlines/nmnm-core": "0.3.0"
   },
   "bundleDependencies": [
     "@openlines/nmnm-core"

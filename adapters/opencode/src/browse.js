@@ -1,6 +1,6 @@
 import { getMemoryLogger } from './logger.js';
 import { existsSync } from 'node:fs';
-import { pin, pinsPath, readPins, unpin, writePins } from './context.js';
+import { pin, pinsPath, readPins, unpin, updatePins } from './context.js';
 import { databasePath, runMemory } from './store.js';
 import { status } from './cli.js';
 
@@ -88,11 +88,14 @@ export function detail({ ctx, store, id }) {
 
 function mutateRaw({ ctx, store, id, mutation }, observation) {
   if (mutation === 'pin' || mutation === 'unpin') {
-    if (!read(ctx, store, 'recall', { id })) { observation.setStatus('not_found'); return { error: `Nanomneme memory not found: ${id}` }; }
     const path = pinsPath({ cwd: ctx.cwd, home: ctx.home, store });
-    const pins = readPins(path);
-    writePins(path, mutation === 'pin' ? pin(pins, id) : unpin(pins, id));
-    return { pinned: readPins(path).includes(id) };
+    const found = mutation === 'unpin' ? readPins(path).includes(id) : read(ctx, store, 'recall', { id });
+    if (!found) { observation.setStatus('not_found'); return { error: `Nanomneme memory not found: ${id}` }; }
+    const pins = updatePins(path, current => {
+      if (mutation === 'unpin' && !current.includes(id)) observation.setStatus('not_found');
+      return mutation === 'pin' ? pin(current, id) : unpin(current, id);
+    });
+    return { pinned: pins.includes(id) };
   }
   if (mutation === 'remove') {
     if (!read(ctx, store, 'recall', { id })) { observation.setStatus('not_found'); return { error: `Nanomneme memory not found: ${id}` }; }

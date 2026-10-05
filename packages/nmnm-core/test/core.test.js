@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import { access, mkdtemp } from 'node:fs/promises';
+import { chmodSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { Worker } from 'node:worker_threads';
 import test from 'node:test';
 
 import { open } from '../src/index.js';
@@ -13,6 +15,446 @@ async function createStore(t) {
   t.after(() => store.close());
   return store;
 }
+
+test('core creates stores with long valid database filenames', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-long-store-'));
+  for (const length of [210, 240]) {
+    const path = join(directory, 'x'.repeat(length) + '.db');
+    const store = open(path);
+    try {
+      const memory = store.retain({ content: 'Long filename survives initialization' });
+      assert.equal(store.recall({ id: memory.id }).content, memory.content);
+      assert.equal(store.verify().ok, true);
+    } finally { store.close(); }
+  }
+  assert.equal(readdirSync(directory).length, 2);
+});
+
+test('retain rejects malformed Unicode without changing records and preserves valid pairs', async (t) => {
+  const store = await createStore(t);
+  const content = 'Valid \ud83d\ude00 東京 text';
+  const memory = store.retain({ content });
+  assert.equal(memory.content, content);
+  for (const content of ['before\ud800after', 'before\udc00after', '\ud800\ud800', '\udc00\ud800']) {
+    assert.throws(() => store.retain({ content }), error => error instanceof TypeError && /Unicode/.test(error.message));
+    assert.throws(() => store.retain({ id: memory.id, content }), error => error instanceof TypeError && /Unicode/.test(error.message));
+  }
+  assert.deepEqual(store.export(), [memory]);
+});
+
+test('canonical import rejects malformed Unicode atomically', async (t) => {
+  const store = await createStore(t);
+  const memory = store.retain({ content: 'Canonical Unicode template' });
+  for (const content of ['before\ud800after', 'before\udc00after']) {
+    assert.throws(() => store.import([
+      { ...memory, id: '11111111-1111-4111-8111-111111111111', content: 'Valid preceding record' },
+      { ...memory, id: '22222222-2222-4222-8222-222222222222', content },
+    ]), error => error instanceof TypeError && /Unicode/.test(error.message));
+    assert.deepEqual(store.export(), [memory]);
+  }
+});
+
+test('concurrent first-use writers all see a complete initialized store', { timeout: 15000 }, async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-first-use-'));
+  const path = join(directory, 'memory.db');
+  const gate = new SharedArrayBuffer(4);
+  let ready = 0;
+  let release;
+  const started = new Promise(resolve => { release = resolve; });
+  const jobs = Array.from({ length: 12 }, (_, index) => new Promise((resolve, reject) => {
+    const worker = new Worker(`
+      const { parentPort, workerData } = require('node:worker_threads');
+      (async () => {
+        const { open } = await import(workerData.core);
+        parentPort.postMessage({ ready: true });
+        if (Atomics.wait(new Int32Array(workerData.gate), 0, 0, 10000) === 'timed-out') throw new Error('Start gate timed out');
+        try {
+          const store = open(workerData.path);
+          try { store.retain({ content: 'First-use writer ' + workerData.index }); }
+          finally { store.close(); }
+          parentPort.postMessage({ ok: true });
+        } catch (error) { parentPort.postMessage({ error: error.message }); }
+      })();
+    `, { eval: true, execArgv: [], workerData: { core: new URL('../src/index.js', import.meta.url).href, path, gate, index } });
+    t.after(() => worker.terminate());
+    let result;
+    worker.on('message', message => {
+      if (message.ready) { if (++ready === 12) release(); }
+      else result = message;
+    });
+    worker.once('error', reject);
+    worker.once('exit', code => code === 0 && result ? resolve(result) : reject(new Error('Worker exited without a result')));
+  }));
+  await started;
+  Atomics.store(new Int32Array(gate), 0, 1);
+  Atomics.notify(new Int32Array(gate), 0, 12);
+  assert.deepEqual(await Promise.all(jobs), Array.from({ length: 12 }, () => ({ ok: true })));
+  const store = open(path, { readOnly: true });
+  try { assert.equal(store.export().length, 12); assert.equal(store.verify().ok, true); }
+  finally { store.close(); }
+  assert.deepEqual(readdirSync(directory), ['memory.db']);
+});
+
+test('canonical import rejects null metadata without changing records', async (t) => {
+  const store = await createStore(t);
+  const memory = store.retain({ content: 'Canonical object' });
+  assert.throws(() => store.import([{ ...memory, id: '11111111-1111-4111-8111-111111111111', metadata: null }]), /metadata/);
+  assert.deepEqual(store.export(), [memory]);
+});
+
+test('verify reports stored null metadata rather than treating it as an object', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-null-metadata-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  t.after(() => store.close());
+  const memory = store.retain({ content: 'Metadata integrity' });
+  const raw = new DatabaseSync(path);
+  try { raw.prepare('UPDATE memories SET metadata = ? WHERE id = ?').run('null', memory.id); }
+  finally { raw.close(); }
+  assert.deepEqual(store.verify().issues, [{ code: 'memory_field', count: 1, ids: [memory.id] }]);
+});
+
+test('range selectors reject inherited operator names as validation errors', async (t) => {
+  const store = await createStore(t);
+  for (const field of ['importance', 'confidence']) {
+    for (const key of ['constructor', '__proto__', 'toString']) {
+      assert.throws(() => store.retrieve({ [field]: JSON.parse(`{"${key}":0.5}`) }), error => error instanceof TypeError && /unsupported operator/.test(error.message));
+    }
+  }
+  const memory = store.retain({ content: 'Valid range', importance: 0.8 });
+  assert.equal(store.retrieve({ importance: { gte: 0.7, lte: 0.9 } }).items[0].id, memory.id);
+});
+
+function runContendedOperation(t, path, operation, input, releaseWriter = () => {}, hold = null) {
+  const worker = new Worker(`
+    const { parentPort, workerData } = require('node:worker_threads');
+    (async () => {
+      const { DatabaseSync } = await import('node:sqlite');
+      const { open } = await import(workerData.core);
+      const store = open(workerData.path, { create: false });
+      const exec = DatabaseSync.prototype.exec;
+      DatabaseSync.prototype.exec = function (sql) {
+        if (sql === 'BEGIN IMMEDIATE') parentPort.postMessage({ type: 'write_requested' });
+        if (sql === 'COMMIT' && workerData.commitGate) {
+          parentPort.postMessage({ type: 'commit_pending' });
+          if (Atomics.wait(new Int32Array(workerData.commitGate), 0, 0, 7000) === 'timed-out') throw new Error('Writer coordination timed out');
+        }
+        return exec.call(this, sql);
+      };
+      try {
+        parentPort.postMessage({ type: 'result', value: store[workerData.operation](workerData.input) });
+      } catch (error) {
+        parentPort.postMessage({ type: 'result', error: { name: error.name, message: error.message, code: error.code } });
+      } finally { store.close(); }
+    })().catch(error => { throw error; });
+  `, { eval: true, workerData: { core: new URL('../src/index.js', import.meta.url).href, path, operation, input, commitGate: hold?.gate } });
+  t.after(() => worker.terminate());
+  return new Promise((resolve, reject) => {
+    let result;
+    worker.on('message', message => {
+      if (message.type === 'write_requested') {
+        try { releaseWriter(); } catch (error) { reject(error); }
+      } else if (message.type === 'commit_pending') hold.ready();
+      else result = message;
+    });
+    worker.once('error', reject);
+    worker.once('exit', code => {
+      if (code !== 0 || !result) reject(new Error(`SQLite worker exited ${code} without a result`));
+      else resolve(result);
+    });
+  });
+}
+
+function afterSqlRead(match, mutation, work) {
+  const prepare = DatabaseSync.prototype.prepare;
+  let fired = false;
+  DatabaseSync.prototype.prepare = function (sql) {
+    const statement = prepare.call(this, sql);
+    if (match(sql)) {
+      for (const method of ['get', 'all']) {
+        const execute = statement[method];
+        statement[method] = function (...args) {
+          const result = execute.apply(this, args);
+          if (!fired) { fired = true; mutation(); }
+          return result;
+        };
+      }
+    }
+    return statement;
+  };
+  try {
+    const result = work();
+    assert.equal(fired, true, 'the concurrent writer must run after the selected read');
+    return result;
+  } finally { DatabaseSync.prototype.prepare = prepare; }
+}
+
+test('a contended content patch preserves an unrelated committed importance change', { timeout: 10000 }, async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-contended-patch-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  t.after(() => store.close());
+  const memory = store.retain({ content: 'Original', importance: 0.5 });
+  const gate = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT);
+  let ready;
+  const held = new Promise(resolve => { ready = resolve; });
+  const writer = runContendedOperation(t, path, 'retain', { id: memory.id, importance: 0.9 }, undefined, { gate, ready });
+  await Promise.race([held, writer.then(() => { throw new Error('Writer finished before holding its transaction'); })]);
+  const release = () => { Atomics.store(new Int32Array(gate), 0, 1); Atomics.notify(new Int32Array(gate), 0); };
+  let result;
+  try { result = await runContendedOperation(t, path, 'retain', { id: memory.id, content: 'Updated' }, release); }
+  finally { release(); }
+  assert.equal((await writer).error, undefined);
+  assert.equal(result.error, undefined);
+  assert.equal(result.value.content, 'Updated');
+  assert.equal(result.value.importance, 0.9);
+  assert.equal(store.recall({ id: memory.id }).importance, 0.9);
+});
+
+test('a contended removal observes a committed expiry instead of removing a stale target', { timeout: 10000 }, async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-contended-remove-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  const raw = new DatabaseSync(path);
+  t.after(() => { raw.close(); store.close(); });
+  const memory = store.retain({ content: 'Expiry target' });
+  raw.exec('BEGIN IMMEDIATE');
+  raw.prepare('UPDATE memories SET expires_at = ? WHERE id = ?').run('2000-01-01T00:00:00.000Z', memory.id);
+  const result = await runContendedOperation(t, path, 'remove', { id: memory.id }, () => raw.exec('COMMIT'));
+  assert.equal(result.error, undefined);
+  assert.equal(result.value, null);
+  assert.equal(store.export()[0].removed_at, null);
+});
+
+test('a contended import reports a committed ID conflict before applying records', { timeout: 10000 }, async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-contended-import-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  const raw = new DatabaseSync(path);
+  t.after(() => { raw.close(); store.close(); });
+  const memory = store.retain({ content: 'Import conflict' });
+  const [record] = store.export();
+  store.remove({ id: memory.id, mode: 'purge' });
+  raw.exec('BEGIN IMMEDIATE');
+  raw.prepare('INSERT INTO memories (id, content, kind, scope, namespace, importance, confidence, created_at, updated_at, expires_at, removed_at, metadata) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(record.id, record.content, record.kind, record.scope, record.namespace, record.importance, record.confidence, record.created_at, record.updated_at, null, null, '{}');
+  raw.prepare('INSERT INTO memories_fts(rowid, content) SELECT rowid, content FROM memories WHERE id = ?').run(record.id);
+  const result = await runContendedOperation(t, path, 'import', [record], () => raw.exec('COMMIT'));
+  assert.equal(result.error?.name, 'RangeError');
+  assert.match(result.error.message, /already exists/);
+  assert.deepEqual(store.export(), [record]);
+  assert.equal(store.verify().ok, true);
+});
+
+for (const operation of ['recall', 'export', 'retrieve', 'verify']) test(`${operation} keeps one snapshot while another connection commits`, async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-snapshot-'));
+  const path = join(directory, 'memory.db');
+  const reader = open(path);
+  const writer = open(path);
+  const raw = new DatabaseSync(path);
+  raw.exec('PRAGMA journal_mode = WAL');
+  t.after(() => { raw.close(); writer.close(); reader.close(); });
+  const memory = writer.retain({ content: 'Before', tags: ['before'] });
+  const result = afterSqlRead(
+    sql => operation === 'recall' ? sql.includes('FROM memories m WHERE m.id = ?')
+      : operation === 'export' ? sql.includes('FROM memories m ORDER BY m.id')
+        : operation === 'retrieve' ? sql.startsWith('SELECT COUNT(*) AS total FROM memories m')
+          : sql === 'SELECT rowid, * FROM memories ORDER BY id',
+    () => writer.retain({ id: memory.id, content: 'After', tags: ['after'] }),
+    () => operation === 'recall' ? reader.recall({ id: memory.id })
+      : operation === 'export' ? reader.export()
+        : operation === 'retrieve' ? reader.retrieve({ query: 'Before' }) : reader.verify(),
+  );
+  if (operation === 'verify') assert.equal(result.ok, true);
+  else {
+    const item = operation === 'recall' ? result : operation === 'export' ? result[0] : result.items[0];
+    if (operation === 'retrieve') assert.equal(result.total, 1);
+    assert.equal(item?.content, 'Before');
+    assert.deepEqual(item.tags, ['before']);
+  }
+  assert.equal(writer.recall({ id: memory.id }).content, 'After');
+});
+
+test('patch input getters run before locking and each supplied field is read once', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-input-before-lock-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  const writer = open(path);
+  t.after(() => { writer.close(); store.close(); });
+  const memory = store.retain({ content: 'Original' });
+  let reads = 0;
+  const result = store.retain({ id: memory.id, get content() {
+    reads += 1;
+    writer.retain({ id: memory.id, importance: 0.9 });
+    return 'Updated';
+  } });
+  assert.equal(reads, 1);
+  assert.equal(result.importance, 0.9);
+  assert.equal(result.content, 'Updated');
+});
+
+test('a failed patch restores record, tags, and search while preserving an automatic rollback error', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-patch-rollback-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  const raw = new DatabaseSync(path);
+  t.after(() => { raw.close(); store.close(); });
+  const memory = store.retain({ content: 'Original rollback target', tags: ['original'] });
+  raw.exec("CREATE TRIGGER reject_tag BEFORE INSERT ON memory_tags WHEN NEW.tag = 'rollback' BEGIN SELECT RAISE(ROLLBACK, 'injected tag rollback'); END");
+  assert.throws(() => store.retain({ id: memory.id, content: 'Replacement', tags: ['rollback'] }), /injected tag rollback/);
+  assert.deepEqual(store.recall({ id: memory.id }), memory);
+  assert.equal(store.retrieve({ query: 'Original' }).total, 1);
+  assert.equal(store.retrieve({ query: 'Replacement' }).total, 0);
+  assert.equal(store.verify().ok, true);
+  assert.equal(store.retain({ id: memory.id, importance: 0.9 }).importance, 0.9);
+});
+
+test('failed soft removal and purge restore canonical rows, tags, and FTS', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-remove-rollback-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  const raw = new DatabaseSync(path);
+  t.after(() => { raw.close(); store.close(); });
+  const memory = store.retain({ content: 'Removal rollback target', tags: ['original'] });
+  raw.exec("CREATE TRIGGER reject_soft BEFORE UPDATE OF removed_at ON memories BEGIN SELECT RAISE(ABORT, 'injected removal failure'); END");
+  raw.exec("CREATE TRIGGER reject_purge BEFORE DELETE ON memories BEGIN SELECT RAISE(ABORT, 'injected removal failure'); END");
+  for (const mode of ['soft', 'purge']) {
+    assert.throws(() => store.remove({ id: memory.id, mode }), /injected removal failure/);
+    assert.deepEqual(store.recall({ id: memory.id }), memory);
+    assert.equal(store.retrieve({ query: 'Removal' }).total, 1);
+    assert.equal(store.verify().ok, true);
+  }
+});
+
+test('a mid-import write failure rolls back the complete batch and its search index', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-import-rollback-'));
+  const path = join(directory, 'memory.db');
+  const target = open(path);
+  const source = open(':memory:');
+  const raw = new DatabaseSync(path);
+  t.after(() => { raw.close(); source.close(); target.close(); });
+  source.retain({ content: 'First import record' });
+  source.retain({ content: 'Rejected import record', tags: ['rollback'] });
+  const records = source.export().sort((left, right) => left.tags.length - right.tags.length);
+  raw.exec("CREATE TRIGGER reject_tag BEFORE INSERT ON memory_tags WHEN NEW.tag = 'rollback' BEGIN SELECT RAISE(ABORT, 'injected import failure'); END");
+  assert.throws(() => target.import(records), /injected import failure/);
+  assert.deepEqual(target.export(), []);
+  assert.equal(target.retrieve({ query: 'import' }).total, 0);
+  assert.equal(target.verify().ok, true);
+});
+
+test('retain returns its own committed record even if another writer immediately patches it', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-return-snapshot-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  const writer = open(path);
+  t.after(() => { writer.close(); store.close(); });
+  const memory = store.retain({ content: 'Original' });
+  const exec = DatabaseSync.prototype.exec;
+  let fired = false;
+  DatabaseSync.prototype.exec = function (sql) {
+    const result = exec.call(this, sql);
+    if (sql === 'COMMIT' && !fired) {
+      fired = true;
+      writer.retain({ id: memory.id, content: 'Later commit', tags: ['later'] });
+    }
+    return result;
+  };
+  let result;
+  try { result = store.retain({ id: memory.id, content: 'My commit', tags: ['mine'] }); }
+  finally { DatabaseSync.prototype.exec = exec; }
+  assert.equal(fired, true);
+  assert.equal(result.content, 'My commit');
+  assert.deepEqual(result.tags, ['mine']);
+  assert.equal(store.recall({ id: memory.id }).content, 'Later commit');
+});
+
+test('a writer held beyond the busy timeout leaves a rejected patch unapplied', { timeout: 10000 }, async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-busy-timeout-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  const raw = new DatabaseSync(path);
+  t.after(() => { raw.close(); store.close(); });
+  const memory = store.retain({ content: 'Busy target', tags: ['original'] });
+  raw.exec('BEGIN IMMEDIATE');
+  const result = await runContendedOperation(t, path, 'retain', { id: memory.id, content: 'Rejected', tags: ['rejected'] });
+  assert.match(result.error?.message ?? '', /locked|busy/i);
+  raw.exec('ROLLBACK');
+  assert.deepEqual(store.recall({ id: memory.id }), memory);
+  assert.equal(store.verify().ok, true);
+  assert.equal(store.retain({ id: memory.id, content: 'Recovered' }).content, 'Recovered');
+});
+
+test('new databases and directories are private under a permissive umask', { skip: process.platform === 'win32' }, (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'nmnm-permissions-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  chmodSync(directory, 0o755);
+  const path = join(directory, 'private', 'nested', 'memory.db');
+  const previous = process.umask(0);
+  let store;
+  try {
+    store = open(path);
+    store.retain({ content: 'Private memory' });
+    assert.equal(statSync(path).mode & 0o777, 0o600);
+    assert.equal(statSync(join(directory, 'private')).mode & 0o777, 0o700);
+    assert.equal(statSync(join(directory, 'private', 'nested')).mode & 0o777, 0o700);
+    assert.equal(statSync(directory).mode & 0o777, 0o755);
+    assert.equal(process.umask(), 0);
+  } finally { store?.close(); process.umask(previous); }
+});
+
+test('verify reports existing unsafe permissions without changing files or directories', { skip: process.platform === 'win32' }, (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'nmnm-existing-permissions-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const path = join(directory, 'memory.db');
+  open(path).close();
+  chmodSync(path, 0o644);
+  chmodSync(directory, 0o755);
+  const store = open(path, { readOnly: true });
+  try {
+    assert.deepEqual(store.verify().issues, [{ code: 'file_permissions', count: 1, ids: ['database'] }]);
+    assert.equal(statSync(path).mode & 0o777, 0o644);
+    assert.equal(statSync(directory).mode & 0o777, 0o755);
+  } finally { store.close(); }
+  const writable = open(path);
+  writable.close();
+  assert.equal(statSync(path).mode & 0o777, 0o644);
+});
+
+test('permission verification keeps the database path when the working directory changes', { skip: process.platform === 'win32' }, (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'nmnm-permissions-cwd-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const original = process.cwd();
+  let store;
+  try {
+    process.chdir(directory);
+    store = open('memory.db');
+    process.chdir(original);
+    assert.equal(store.verify().ok, true);
+  } finally { process.chdir(original); store?.close(); }
+});
+
+test('new database rollback journals and WAL files remain private', { skip: process.platform === 'win32' }, (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'nmnm-sidefile-permissions-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const path = join(directory, 'memory.db');
+  const previous = process.umask(0);
+  let store, raw;
+  try {
+    store = open(path);
+    const memory = store.retain({ content: 'Journal target' });
+    raw = new DatabaseSync(path);
+    raw.exec('BEGIN IMMEDIATE');
+    raw.prepare('UPDATE memories SET importance = ? WHERE id = ?').run(0.9, memory.id);
+    assert.equal(statSync(`${path}-journal`).mode & 0o777, 0o600);
+    raw.exec('ROLLBACK; PRAGMA journal_mode = WAL');
+    store.retain({ content: 'WAL target' });
+    for (const suffix of ['-wal', '-shm']) assert.equal(statSync(`${path}${suffix}`).mode & 0o777, 0o600);
+    assert.equal(store.verify().ok, true);
+    chmodSync(`${path}-wal`, 0o644);
+    assert.deepEqual(store.verify().issues, [{ code: 'file_permissions', count: 1, ids: ['wal'] }]);
+  } finally { raw?.close(); store?.close(); process.umask(previous); }
+});
 
 test('open refuses a missing database when creation is disabled', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-open-'));
@@ -455,6 +897,8 @@ test('retrieve returns no matches for punctuation-only queries', async (t) => {
 
   for (const query of ['!!!', '...', '---', '*', '"', '()']) {
     assert.deepEqual(store.retrieve({ query }), { total: 0, items: [] }, query);
+    assert.deepEqual(store.retrieve({ query, order_by: 'relevance' }), { total: 0, items: [] }, query);
+    assert.throws(() => store.retrieve({ query, order_by: 'invalid' }), /order_by/);
   }
 });
 
@@ -464,6 +908,82 @@ test('retrieve matches case and diacritics insensitively', async (t) => {
 
   assert.deepEqual(store.retrieve({ query: 'cafe' }).items.map(({ id }) => id), [cafe.id]);
   assert.deepEqual(store.retrieve({ query: 'CAFÉ CRÈME' }).items.map(({ id }) => id), [cafe.id]);
+});
+
+test('retrieve searches Unicode-only terms and Unicode prefixes', async (t) => {
+  const store = await createStore(t);
+  for (const content of ['東京', '中文', 'é', 'Привет', 'مرحبا']) store.retain({ content });
+  for (const query of ['東京', '中文', 'é', 'Привет', 'مرحبا']) {
+    assert.deepEqual(store.retrieve({ query }).items.map(item => item.content), [query]);
+  }
+  assert.deepEqual(store.retrieve({ query: '東*' }).items.map(item => item.content), ['東京']);
+});
+
+test('retrieve combines Boolean groups, adjacent groups, and consistent operator casing', async (t) => {
+  const store = await createStore(t);
+  for (const content of ['foo', 'bar baz', 'bar qux', 'foo baz', 'foo bar']) store.retain({ content });
+  for (const [query, expected] of [
+    ['foo OR (bar AND baz)', ['bar baz', 'foo', 'foo bar', 'foo baz']],
+    ['foo or (bar and baz)', ['bar baz', 'foo', 'foo bar', 'foo baz']],
+    ['(foo OR bar) baz', ['bar baz', 'foo baz']],
+    ['foo (bar OR baz)', ['foo bar', 'foo baz']],
+    ['(foo) (baz)', ['foo baz']],
+    ['foo NOT (bar OR qux)', ['foo', 'foo baz']],
+    ['foo NOT bar baz', ['foo', 'foo bar', 'foo baz']],
+  ]) assert.deepEqual(store.retrieve({ query }).items.map(item => item.content).sort(), expected, query);
+});
+
+test('retrieve uses literal fallback for malformed expressions without broadening Boolean results', async (t) => {
+  const store = await createStore(t);
+  for (const content of ['foo', 'bar', 'foo OR bar literal', 'foo AND OR bar literal']) store.retain({ content });
+  assert.deepEqual(store.retrieve({ query: 'foo OR (bar' }).items.map(item => item.content).sort(), ['foo AND OR bar literal', 'foo OR bar literal']);
+  assert.deepEqual(store.retrieve({ query: 'foo AND OR bar' }).items.map(item => item.content), ['foo AND OR bar literal']);
+  for (const query of ['(())', '(()())', '"!!!"']) assert.deepEqual(store.retrieve({ query }), { total: 0, items: [] });
+});
+
+test('retrieve supports escaped phrases, phrase prefixes, and NUL separators', async (t) => {
+  const store = await createStore(t);
+  for (const content of ['say hello', 'say filler hello', 'foo bar', 'foo baz']) store.retain({ content });
+  assert.deepEqual(store.retrieve({ query: '"say ""hello"""' }).items.map(item => item.content), ['say hello']);
+  assert.deepEqual(store.retrieve({ query: '"foo ba"*' }).items.map(item => item.content).sort(), ['foo bar', 'foo baz']);
+  assert.deepEqual(store.retrieve({ query: 'foo\0bar' }).items.map(item => item.content), ['foo bar']);
+});
+
+test('retrieve implements NEAR groups and keeps infix NEAR literal', async (t) => {
+  const store = await createStore(t);
+  for (const content of ['alpha beta', 'beta alpha', 'alpha x beta', 'alpha near beta', 'alpha beta gamma']) store.retain({ content });
+  for (const query of ['NEAR(alpha beta, 0)', 'near(alpha beta,0)']) {
+    assert.deepEqual(store.retrieve({ query }).items.map(item => item.content).sort(), ['alpha beta', 'alpha beta gamma', 'beta alpha']);
+  }
+  assert.deepEqual(store.retrieve({ query: 'NEAR("alpha beta" gam*, 0)' }).items.map(item => item.content), ['alpha beta gamma']);
+  assert.deepEqual(store.retrieve({ query: 'alpha NEAR beta' }).items.map(item => item.content), ['alpha near beta']);
+});
+
+test('retrieve handles generated malformed syntax and deep groups without parser errors', async (t) => {
+  const store = await createStore(t);
+  store.retain({ content: 'foo bar near and or 東京 é pi-adapter' });
+  const atoms = ['foo', 'bar', '東京', 'é', 'pi-adapter', 'AND', 'or', 'NOT', 'NEAR', '(', ')', '"', '"foo bar"', '*', '!!!', ',', '0', '\0'];
+  let state = 123456789;
+  for (let sample = 0; sample < 1000; sample += 1) {
+    const query = Array.from({ length: 8 }, () => {
+      state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+      return atoms[state % atoms.length];
+    }).join(' ');
+    assert.doesNotThrow(() => store.retrieve({ query }), query);
+  }
+  assert.equal(store.retrieve({ query: '('.repeat(2048) + 'foo' + ')'.repeat(2048) }).total, 1);
+});
+
+test('retrieve preserves database errors instead of labeling them invalid search syntax', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-search-storage-error-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  const raw = new DatabaseSync(path);
+  t.after(() => { raw.close(); store.close(); });
+  store.retain({ content: 'Search target' });
+  raw.exec('DROP TABLE memories_fts');
+  assert.throws(() => store.retrieve({ query: 'Search' }), error => error.code === 'ERR_SQLITE_ERROR' && !(error instanceof TypeError));
+  assert.equal(store.export().length, 1);
 });
 
 test('retrieve filters memories by metadata source', async (t) => {
@@ -644,6 +1164,170 @@ test('purge remove permanently deletes active and soft-removed memories', async 
   const purgedRemoved = store.remove({ id: removed.id, mode: 'purge' });
   assert.equal(purgedRemoved.mode, 'purge');
   assert.throws(() => store.retain({ id: removed.id, content: 'Cannot restore' }), /does not exist/);
+});
+
+test('purge scrubs newly deleted ordinary-table content in the live database', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-purge-bytes-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  const marker = 'private_metadata_marker_7d63c9';
+  try {
+    const memory = store.retain({ content: 'Purge byte target', metadata: { secret: marker.repeat(1000) } });
+    assert.equal(readFileSync(path).includes(Buffer.from(marker)), true);
+    store.remove({ id: memory.id, mode: 'purge' });
+  } finally { store.close(); }
+  assert.equal(readFileSync(path).includes(Buffer.from(marker)), false);
+});
+
+test('patch and soft removal scrub newly obsolete FTS segment terms', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-fts-delete-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  const raw = new DatabaseSync(path);
+  t.after(() => { raw.close(); store.close(); });
+  const obsolete = 'obsoletesecret7d63c9';
+  const replacement = 'replacementsecret7d63c9';
+  const memory = store.retain({ content: obsolete });
+  const segmentsContain = term => raw.prepare('SELECT block FROM memories_fts_data').all().some(({ block }) => Buffer.from(block).includes(Buffer.from(term)));
+  assert.equal(segmentsContain(obsolete), true);
+  store.retain({ id: memory.id, content: replacement });
+  assert.equal(segmentsContain(obsolete), false);
+  assert.equal(segmentsContain(replacement), true);
+  store.remove({ id: memory.id });
+  assert.equal(segmentsContain(replacement), false);
+  assert.equal(store.export()[0].content, replacement);
+  assert.equal(store.verify().ok, true);
+});
+
+test('read-only opening does not enable persistent FTS deletion protection', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-readonly-delete-'));
+  const path = join(directory, 'memory.db');
+  open(path).close();
+  const raw = new DatabaseSync(path);
+  raw.exec("INSERT INTO memories_fts(memories_fts, rank) VALUES('secure-delete', 0)");
+  raw.close();
+  const before = readFileSync(path);
+  const store = open(path, { readOnly: true });
+  try { assert.equal(store.verify().ok, true); }
+  finally { store.close(); }
+  assert.deepEqual(readFileSync(path), before);
+});
+
+test('enabling FTS protection rolls back with a failed mutation on an existing store', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-delete-rollback-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  const memory = store.retain({ content: 'Existing deletion target', tags: ['original'] });
+  const raw = new DatabaseSync(path);
+  t.after(() => { raw.close(); store.close(); });
+  raw.exec("INSERT INTO memories_fts(memories_fts, rank) VALUES('secure-delete', 0); CREATE TRIGGER reject_delete BEFORE DELETE ON memories BEGIN SELECT RAISE(ABORT, 'rejected purge'); END");
+  assert.throws(() => store.remove({ id: memory.id, mode: 'purge' }), /rejected purge/);
+  assert.equal(raw.prepare("SELECT v FROM memories_fts_config WHERE k = 'secure-delete'").get().v, 0);
+  assert.deepEqual(store.export(), [memory]);
+  assert.equal(store.verify().ok, true);
+  raw.exec('DROP TRIGGER reject_delete');
+  store.remove({ id: memory.id, mode: 'purge' });
+  assert.equal(raw.prepare("SELECT v FROM memories_fts_config WHERE k = 'secure-delete'").get().v, 1);
+  assert.deepEqual(store.export(), []);
+});
+
+test('purge preserves an existing WAL reader snapshot and does not erase WAL history', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-delete-wal-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  const raw = new DatabaseSync(path);
+  t.after(() => { raw.close(); store.close(); });
+  raw.exec('PRAGMA journal_mode = WAL');
+  const marker = 'walhistorysecret7d63c9';
+  const memory = store.retain({ content: marker });
+  raw.exec('BEGIN DEFERRED');
+  assert.equal(raw.prepare('SELECT content FROM memories WHERE id = ?').get(memory.id).content, marker);
+  store.remove({ id: memory.id, mode: 'purge' });
+  assert.deepEqual(store.export(), []);
+  assert.equal(raw.prepare('SELECT content FROM memories WHERE id = ?').get(memory.id).content, marker);
+  assert.equal(readFileSync(`${path}-wal`).includes(Buffer.from(marker)), true);
+  raw.exec('COMMIT');
+  assert.equal(raw.prepare('SELECT content FROM memories WHERE id = ?').get(memory.id), undefined);
+  assert.equal(store.verify().ok, true);
+});
+
+test('purge covers expired rows, tags, FTS, exports, and repair without erasing other records', async (t) => {
+  const store = await createStore(t);
+  const expired = store.retain({ content: 'Expired purge target', tags: ['expired'], expires_at: '2000-01-01T00:00:00.000Z' });
+  const survivor = store.retain({ content: 'Surviving target', tags: ['survivor'] });
+  assert.equal(store.remove({ id: expired.id }), null);
+  assert.equal(store.remove({ id: expired.id, mode: 'purge' }).mode, 'purge');
+  assert.equal(store.remove({ id: expired.id, mode: 'purge' }), null);
+  assert.deepEqual(store.export(), [survivor]);
+  store.rebuildFts();
+  assert.equal(store.retrieve({ query: 'Expired', expires: 'any' }).total, 0);
+  assert.equal(store.verify().ok, true);
+});
+
+test('mutation timestamps advance under frozen and backward clocks across connections', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-clock-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  const other = open(path);
+  t.after(() => { other.close(); store.close(); });
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-04T00:00:00.000Z') });
+  const memory = store.retain({ content: 'Clock target' });
+  assert.equal(memory.created_at, '2026-10-04T00:00:00.000Z');
+  assert.equal(memory.updated_at, memory.created_at);
+  const first = store.retain({ id: memory.id, content: 'Frozen patch' });
+  assert.equal(first.updated_at, '2026-10-04T00:00:00.001Z');
+  t.mock.timers.setTime(Date.parse('2026-10-03T00:00:00.000Z'));
+  const second = other.retain({ id: memory.id, importance: 0.8 });
+  assert.equal(second.updated_at, '2026-10-04T00:00:00.002Z');
+  const removal = store.remove({ id: memory.id });
+  assert.equal(removal.removed_at, '2026-10-04T00:00:00.003Z');
+  assert.equal(store.export()[0].updated_at, removal.removed_at);
+  const restored = other.retain({ id: memory.id });
+  assert.equal(restored.updated_at, '2026-10-04T00:00:00.004Z');
+  assert.equal(restored.created_at, memory.created_at);
+  assert.equal(restored.removed_at, null);
+  t.mock.timers.setTime(Date.parse('2026-10-06T00:00:00.000Z'));
+  assert.equal(store.retain({ id: memory.id }).updated_at, '2026-10-06T00:00:00.000Z');
+  assert.equal(store.verify().ok, true);
+});
+
+test('future imports retain exact timestamps and mutations advance them without changing expiry time', async (t) => {
+  const store = await createStore(t);
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-04T00:00:00.000Z') });
+  const seed = store.retain({ content: 'Future import target' });
+  store.remove({ id: seed.id, mode: 'purge' });
+  const record = { ...seed, created_at: '2099-01-01T00:00:00.000Z', updated_at: '2099-01-02T00:00:00.000Z', expires_at: '2026-10-05T00:00:00.000Z' };
+  store.import([record]);
+  assert.deepEqual(store.export(), [record]);
+  const patched = store.retain({ id: seed.id, tags: ['future'] });
+  assert.equal(patched.updated_at, '2099-01-02T00:00:00.001Z');
+  assert.equal(store.recall({ id: seed.id }).id, seed.id);
+  assert.equal(store.retrieve().total, 1);
+  t.mock.timers.setTime(Date.parse('2026-10-05T00:00:00.000Z'));
+  assert.equal(store.recall({ id: seed.id }), null);
+  assert.equal(store.retrieve().total, 0);
+});
+
+test('timestamp exhaustion rejects patches and soft removal atomically but permits purge', async (t) => {
+  const store = await createStore(t);
+  const seed = store.retain({ content: 'Timestamp boundary', tags: ['original'] });
+  store.remove({ id: seed.id, mode: 'purge' });
+  const record = { ...seed, updated_at: '9999-12-31T23:59:59.999Z' };
+  store.import([record]);
+  assert.throws(() => store.retain({ id: seed.id, content: 'Must roll back', tags: ['changed'] }), RangeError);
+  assert.throws(() => store.remove({ id: seed.id }), RangeError);
+  assert.deepEqual(store.export(), [record]);
+  assert.equal(store.retrieve({ query: 'boundary' }).total, 1);
+  assert.equal(store.verify().ok, true);
+  assert.equal(store.remove({ id: seed.id, mode: 'purge' }).mode, 'purge');
+});
+
+test('creation rejects a clock outside the canonical timestamp range without storing a record', async (t) => {
+  const store = await createStore(t);
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('+010000-01-01T00:00:00.000Z') });
+  assert.throws(() => store.retain({ content: 'Out of range clock', tags: ['clock'] }), /created_at/);
+  assert.deepEqual(store.export(), []);
+  assert.equal(store.verify().ok, true);
 });
 
 test('rejects impossible canonical timestamps on retain and import', async (t) => {

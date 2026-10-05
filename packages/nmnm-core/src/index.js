@@ -509,7 +509,7 @@ export function open(path, { create = true, readOnly = false } = {}) {
         for (const [operator, target] of range(value, field)) { where.push(`m.${field} ${operator} ?`); parameters.push(target); }
       }
       const orderBy = selector.order_by ?? (query ? 'relevance' : 'updated_at');
-      const ordering = orderBy === 'relevance' && query
+      const ordering = orderBy === 'relevance' && rawQuery != null
         ? 'score ASC, m.importance DESC, m.id ASC'
         : ORDER_FIELDS.has(orderBy)
           ? `m.${orderBy} ${orderBy === 'updated_at' ? 'DESC' : 'ASC'}, m.id ASC`

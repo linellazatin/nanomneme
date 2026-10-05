@@ -897,6 +897,8 @@ test('retrieve returns no matches for punctuation-only queries', async (t) => {
 
   for (const query of ['!!!', '...', '---', '*', '"', '()']) {
     assert.deepEqual(store.retrieve({ query }), { total: 0, items: [] }, query);
+    assert.deepEqual(store.retrieve({ query, order_by: 'relevance' }), { total: 0, items: [] }, query);
+    assert.throws(() => store.retrieve({ query, order_by: 'invalid' }), /order_by/);
   }
 });
 

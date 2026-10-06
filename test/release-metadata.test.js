@@ -36,6 +36,10 @@ test('release metadata aligns the 0.8.0 UI release and every consumer', () => {
   assert.equal(pi.version, '0.4.2');
   assert.equal(claude.name, '@openlines/nmnm-claude');
   assert.equal(claude.version, '0.2.2');
+  assert.equal(claude.dependencies['@modelcontextprotocol/sdk'], '^1.31.0');
+  assert.equal(lock.packages['adapters/claude'].dependencies['@modelcontextprotocol/sdk'], claude.dependencies['@modelcontextprotocol/sdk']);
+  const [sdkMajor, sdkMinor] = lock.packages['node_modules/@modelcontextprotocol/sdk'].version.split('.').map(Number);
+  assert.ok(sdkMajor > 1 || (sdkMajor === 1 && sdkMinor >= 31), 'MCP SDK must include the OAuth advisory fix');
   assert.equal(codex.version, '0.2.2');
   assert.equal(opencode.version, '0.2.2');
   for (const [path, pkg] of [['', root], ['packages/nmnm-core', core], ['packages/nmnm-cli', cli], ['packages/nmnm-ui', ui],

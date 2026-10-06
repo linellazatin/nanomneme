@@ -33,4 +33,4 @@ jobs:
       - run: npm test
       - run: node scripts/check-logging-packages.js
       - run: git diff --check
-      - run: npm pack --dry-run --workspace @openlines/nmnm-core --workspace @openlines/nmnm-cli --workspace @openlines/nmnm-pi --workspace @openlines/nmnm-opencode --workspace @openlines/nmnm-codex
+      - run: npm pack --dry-run --workspace @openlines/nmnm-core --workspace @openlines/nmnm-ui --workspace @openlines/nmnm-cli --workspace @openlines/nmnm-pi --workspace @openlines/nmnm-opencode

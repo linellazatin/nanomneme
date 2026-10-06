@@ -18,10 +18,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      # Blocking: vulnerabilities reachable from shipped packages.
-      - run: npm audit --audit-level=high --omit=dev
-      # Non-blocking: full tree, including the dev-only Pi host subtree (pinned by Pi's own
-      # npm-shrinkwrap.json, so root overrides cannot move it). See CHANGELOG 0.5.1.
+      # Non-blocking: full tree, including development host dependencies.
+      # Shipped dependencies remain the blocking audit scope. See CHANGELOG 0.5.1.
       - name: Audit full dependency tree (informational)
         run: npm audit --audit-level=high
         continue-on-error: true
@@ -29,8 +27,8 @@ jobs:
         run: |
           version=$(node -p "require('./package.json').version")
           test "$GITHUB_REF_NAME" = "v$version"
-      - run: npm test
-      - run: node scripts/check-logging-packages.js
+      # Blocking: generated runtimes, tests, shipped dependency audit, packages.
+      - run: npm run validate
       - run: git diff --check
       - run: npm pack --dry-run --workspace @openlines/nmnm-core --workspace @openlines/nmnm-ui --workspace @openlines/nmnm-cli --workspace @openlines/nmnm-pi --workspace @openlines/nmnm-opencode
 

@@ -33,6 +33,7 @@
     "logslines:build": "node scripts/maintenance.js logslines:build",
     "logslines:update": "node scripts/maintenance.js logslines:update",
     "codex:update": "node scripts/maintenance.js codex:update",
+    "validate": "node scripts/maintenance.js validate",
     "external:check": "node scripts/external-logslines.js check",
     "external:update": "node scripts/external-logslines.js update",
     "test": "node scripts/build-logger.js --check && node --test scripts/*.test.js shared/logger/test/*.test.js packages/*/test/*.test.js adapters/*/test/*.test.js test/*.test.js"

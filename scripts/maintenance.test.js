@@ -164,3 +164,30 @@ test('upstream validation failures retain updated files and identify review path
   }), /fixture replacement failed/);
   assert.ok(messages.some(message => message.includes('retained')));
 });
+
+test('validation runs read-only tests, shipped audit, and packages in order without repair or Codex refresh', async () => {
+  const calls = []; const messages = [];
+  await runMaintenance(['validate'], {
+    runRepositoryTests: () => calls.push('tests-with-generator-check'),
+    auditProduction: () => calls.push('production-audit'),
+    checkLoggingPackages: () => calls.push('packages'),
+    buildLogger: () => { throw new Error('validation must not invoke repair'); },
+    prepareCodexDependencies: () => { throw new Error('validation must not prepare Codex'); },
+    runCodex: () => { throw new Error('validation must not refresh Codex'); },
+    report: message => messages.push(message),
+  });
+  assert.deepEqual(calls, ['tests-with-generator-check', 'production-audit', 'packages']);
+  assert.ok(messages.includes('validated'));
+  await assert.rejects(runMaintenance(['validate', '--fast']), /accepts no options/);
+});
+
+test('validation stops at the first failed check', async () => {
+  for (const failure of ['tests', 'audit', 'packages']) {
+    const calls = [];
+    const step = name => () => { calls.push(name); if (name === failure) throw new Error(`${name} failed`); };
+    await assert.rejects(runMaintenance(['validate'], {
+      runRepositoryTests: step('tests'), auditProduction: step('audit'), checkLoggingPackages: step('packages'), report: () => {},
+    }), new RegExp(`${failure} failed`));
+    assert.deepEqual(calls, ['tests', 'audit', 'packages'].slice(0, ['tests', 'audit', 'packages'].indexOf(failure) + 1));
+  }
+});

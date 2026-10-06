@@ -79,7 +79,23 @@ test('Codex prototype remains marketplace-local and is not released to npm', () 
 
   assert.equal(codex.private, true);
   assert.equal(codex.publishConfig, undefined);
-  assert.match(ci, /node scripts\/check-logging-packages\.js/);
+  assert.match(ci, /npm run validate/);
   assert.doesNotMatch(release, /@openlines\/nmnm-codex/);
   assert.doesNotMatch(readme, /npmjs\.com\/package\/%40openlines%2Fnmnm-codex/);
+});
+
+test('CI and release use read-only validation while retaining informational audit and publish order', () => {
+  for (const name of ['ci', 'release']) {
+    const workflow = readFileSync(new URL(`../.github/workflows/${name}.yml`, import.meta.url), 'utf8');
+    const validation = workflow.split('\n  publish:')[0];
+    assert.equal((validation.match(/run: npm run validate/g) ?? []).length, 1);
+    assert.match(validation, /run: npm audit --audit-level=high\n\s+continue-on-error: true/);
+    assert.doesNotMatch(validation, /run: npm test|run: node scripts\/check-logging-packages|logslines:build|logslines:update|codex:update|--prepare-codex/);
+    assert.match(validation, /run: git diff --check/);
+    assert.match(validation, /npm pack --dry-run/);
+  }
+  const release = readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
+  const publish = ['core', 'UI', 'CLI', 'Pi adapter', 'OpenCode adapter'].map(name => release.indexOf(`name: Publish ${name} when this version is new`));
+  assert.ok(publish.every((position, index) => position >= 0 && (!index || position > publish[index - 1])));
+  assert.match(release, /Verify release tag/);
 });

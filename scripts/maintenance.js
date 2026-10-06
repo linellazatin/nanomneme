@@ -93,6 +93,17 @@ export async function runMaintenance(args, dependencies = {}) {
   const report = dependencies.report ?? console.log;
   const root = dependencies.root ?? fileURLToPath(new URL('..', import.meta.url));
   const [command, ...flags] = args;
+  if (command === 'validate') {
+    if (flags.length) throw new Error('validate accepts no options');
+    report('validating generated runtimes and repository tests');
+    await (dependencies.runRepositoryTests ?? (() => execFileSync('npm', ['test'], { cwd: root, stdio: 'inherit' })))();
+    report('auditing shipped dependencies (npm registry access required)');
+    await (dependencies.auditProduction ?? (() => execFileSync('npm', ['audit', '--audit-level=high', '--omit=dev'], { cwd: root, stdio: 'inherit' })))();
+    report('validating standalone packages (npm registry access may be required)');
+    await validate();
+    report('validated');
+    return;
+  }
   if (command === 'codex:update') {
     if (flags.length) throw new Error('codex:update accepts no options');
     await refreshCodex(root, dependencies, build, report);
@@ -122,7 +133,7 @@ export async function runMaintenance(args, dependencies = {}) {
     }
     return;
   }
-  if (command !== 'logslines:build') throw new Error('Unknown command. Usage: node scripts/maintenance.js <logslines:build [--fast]|logslines:update vX.Y.Z|codex:update>');
+  if (command !== 'logslines:build') throw new Error('Unknown command. Usage: node scripts/maintenance.js <logslines:build [--fast]|logslines:update vX.Y.Z|codex:update|validate>');
   if (flags.some(flag => flag !== '--fast') || flags.length > 1) throw new Error('Unknown options. Usage: logslines:build [--fast]');
   await refreshLogger(build, report);
   if (flags.includes('--fast')) report('validation skipped (--fast)');

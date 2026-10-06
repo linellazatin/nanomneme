@@ -6,14 +6,23 @@ let stores = [], selected = new Set(), page = 0, total = 0, current = null, dirt
 const fields = ['content', 'kind', 'namespace', 'tags', 'importance', 'confidence', 'expires_at'];
 function node(tag, text, className) { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; if (className) el.className = className; return el; }
 function message(text = '', error = false) { $('message').textContent = text; $('message').className = error ? 'error' : ''; }
-async function api(route, body) { const response = await fetch('/api/' + route, { method: body === undefined ? 'GET' : 'POST', headers: { 'x-nmnm-token': token ?? '', 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) }); const data = await response.json(); if (!response.ok) throw new Error(data.error); return data; }
+async function api(route, body) { const response = await fetch('/api/' + route, { method: body === undefined ? 'GET' : 'POST', headers: { 'x-nmnm-token': token ?? '', 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) }); const data = await response.json(); if (!response.ok) { const error = new Error(data.error); error.reported = true; throw error; } return data; }
+const reportedErrors = new WeakSet();
+function reportClientError(error) {
+  if (!token || error?.reported) return;
+  if (error && typeof error === 'object') { if (reportedErrors.has(error)) return; reportedErrors.add(error); }
+  const text = typeof error?.message === 'string' ? error.message : 'Unexpected browser error';
+  fetch('/api/error', { method: 'POST', headers: { 'x-nmnm-token': token, 'content-type': 'application/json' }, body: JSON.stringify({ message: text.slice(0, 600) || 'Unexpected browser error' }) }).catch(() => {});
+}
+window.addEventListener('error', event => reportClientError(event.error ?? new Error(event.message || 'Browser resource failed to load')), true);
+window.addEventListener('unhandledrejection', event => reportClientError(event.reason));
 function guard() { return !dirty || confirm('Discard unsaved edits?'); }
 function clearDetail() { current = null; dirty = false; $('detail').replaceChildren(node('p', 'Select a memory to inspect its content and origin.', 'placeholder')); document.querySelector('.workbench').classList.remove('detail-open'); }
 async function run(task) {
   if (busy) return;
   busy = true; document.querySelector('main').inert = true; document.querySelector('main').setAttribute('aria-busy', 'true');
   $('store-picker').inert = true;
-  try { await task(); } catch (error) { message(error.message, true); }
+  try { await task(); } catch (error) { message(error.message, true); reportClientError(error); }
   finally { busy = false; document.querySelector('main').inert = false; document.querySelector('main').setAttribute('aria-busy', 'false'); $('store-picker').inert = false; if ($('store-picker').open && !$('store-picker').contains(document.activeElement)) $('directory').focus(); }
 }
 function renderStores() {
@@ -36,11 +45,11 @@ async function browse(path) {
     for (const entry of data.entries) {
       const button = node('button', undefined, 'picker-entry'); button.type = 'button'; button.setAttribute('aria-label', (entry.directory ? 'Open folder ' : 'Select database ') + entry.name);
       button.append(node('span', entry.name), node('small', entry.directory ? 'Folder' : 'File'));
-      button.onclick = async () => { await run(async () => { if (entry.directory) await browse(entry.path); else { try { if (await add(entry.path)) $('store-picker').close(); } catch (error) { $('picker-message').textContent = error.message; } } }); if (!$('store-picker').open) $('add-store').focus(); };
+      button.onclick = async () => { await run(async () => { if (entry.directory) await browse(entry.path); else { try { if (await add(entry.path)) $('store-picker').close(); } catch (error) { $('picker-message').textContent = error.message; reportClientError(error); } } }); if (!$('store-picker').open) $('add-store').focus(); };
       $('picker-entries').append(button);
     }
     $('picker-message').textContent = data.entries.length ? 'Choose a folder to open, or a database file to add.' : 'This directory is empty.';
-  } catch (error) { $('picker-message').textContent = error.message; }
+  } catch (error) { $('picker-message').textContent = error.message; reportClientError(error); }
 }
 async function load() {
   const params = new URLSearchParams({ stores: [...selected].join(','), page, ...Object.fromEntries(['source', 'state', 'query', 'kind', 'namespace', 'tag'].map(id => [id, $(id).value])) });

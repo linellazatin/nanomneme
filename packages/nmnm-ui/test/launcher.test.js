@@ -48,7 +48,7 @@ test('launcher automatically dispatches by default and both flags suppress dispa
   try {
     for (const launcher of launchers) for (const args of [[], ['--port', '0'], ['--no-auto', '--port', '0'], ['-p', '0', '-na']]) {
       if (existsSync(log)) rmSync(log);
-      const child = spawn(process.execPath, [...launcher, ...args], { env: { ...process.env, PATH: dir + delimiter + process.env.PATH, NMNM_UI_OPENER_LOG: log }, stdio: ['ignore', 'pipe', 'pipe'] });
+      const child = spawn(process.execPath, [...launcher, ...args], { env: { ...process.env, HOME: dir, PATH: dir + delimiter + process.env.PATH, NMNM_UI_OPENER_LOG: log }, stdio: ['ignore', 'pipe', 'pipe'] });
       try {
         const [output] = await once(child.stdout, 'data'); const url = output.toString().match(/http:\/\/127\.0\.0\.1:\d+\/#[a-f0-9]+/)[0];
         assert.equal((await fetch(url.split('#')[0])).status, 200);

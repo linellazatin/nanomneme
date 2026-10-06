@@ -4,6 +4,7 @@ import { readFileSync, realpathSync, readdirSync, statSync } from 'node:fs';
 import { resolve, join, dirname } from 'node:path';
 import { homedir, platform } from 'node:os';
 import { open } from '@openlines/nmnm-core';
+import { getUILogger } from './logslines.js';
 
 const uiVersion = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 const editable = new Set(['content', 'kind', 'namespace', 'tags', 'importance', 'confidence', 'expires_at']);
@@ -29,7 +30,7 @@ async function body(req) {
   return value;
 }
 
-export async function startServer({ port = 0, cwd = process.cwd() } = {}) {
+export async function startServer({ port = 0, cwd = process.cwd(), home, diagnostics = getUILogger({ home }) } = {}) {
   const token = randomBytes(32).toString('hex');
   const stores = new Map(); let origin;
   const lookup = id => stores.get(id) ?? fail(404, 'Store is not registered');
@@ -51,6 +52,12 @@ export async function startServer({ port = 0, cwd = process.cwd() } = {}) {
       }
       if (req.headers['x-nmnm-token'] !== token) fail(401, 'Launch token required');
       const route = url.pathname.slice(5); const params = url.searchParams;
+      if (req.method === 'POST' && route === 'error') {
+        const input = await body(req);
+        if (typeof input.message !== 'string' || !input.message.trim() || input.message.length > 600) fail(400, 'Invalid browser error message');
+        diagnostics.error(new Error(input.message));
+        return send(200, { ok: true });
+      }
       if (req.method === 'GET' && route === 'browse') {
         const path = realpathSync(resolve(cwd, params.get('path') || cwd));
         if (!statSync(path).isDirectory()) fail(400, 'Select a directory to browse');
@@ -94,24 +101,32 @@ export async function startServer({ port = 0, cwd = process.cwd() } = {}) {
       }
       if (req.method === 'GET' && route === 'memory') { const row = snapshot([params.get('store')]).find(row => row.id === params.get('id')); if (!row) fail(404, 'Memory no longer exists'); return send(200, row); }
       if (req.method === 'POST' && route === 'mutate') {
-        const input = await body(req); const store = lookup(input.store); if (!store.writer) fail(403, 'Enable editing for this store first');
-        const current = store.writer.export().find(row => row.id === input.id); if (!current) fail(404, 'Memory no longer exists');
-        if (current.updated_at !== input.updated_at) fail(409, 'Memory changed. Refresh and review the newer version before saving.');
-        let result;
-        if (input.action === 'edit') {
-          if (current.removed_at) fail(400, 'Restore before editing');
-          const patch = input.patch; if (!patch || typeof patch !== 'object' || Array.isArray(patch) || Object.keys(patch).some(key => !editable.has(key))) fail(400, 'Invalid editable fields');
-          if (!Object.keys(patch).length) return send(200, current);
-          result = store.writer.retain({ ...patch, id: current.id });
-        } else if (input.action === 'restore') { if (!current.removed_at) fail(400, 'Memory is not removed'); result = store.writer.retain({ id: current.id }); }
-        else if (input.action === 'remove') { if (state(current) !== 'active') fail(400, 'Only active memories support soft removal'); result = store.writer.remove({ id: current.id }); }
-        else if (input.action === 'purge') result = store.writer.remove({ id: current.id, mode: 'purge' });
-        else fail(400, 'Unknown action');
+        const input = await body(req);
+        const store = lookup(input.store);
+        if (!['edit', 'restore', 'remove', 'purge'].includes(input.action)) fail(400, 'Unknown action');
+        const operation = ['edit', 'restore'].includes(input.action) ? 'retain' : 'remove';
+        const result = diagnostics.run(operation, observation => {
+          const blocked = (status, message) => { observation.setStatus('blocked'); fail(status, message); };
+          if (!store.writer) blocked(403, 'Enable editing for this store first');
+          const current = store.writer.export().find(row => row.id === input.id);
+          if (!current) { if (operation === 'remove') { observation.setStatus('not_found'); return null; } fail(404, 'Memory no longer exists'); }
+          if (current.updated_at !== input.updated_at) blocked(409, 'Memory changed. Refresh and review the newer version before saving.');
+          if (input.action === 'edit') {
+            if (current.removed_at) blocked(400, 'Restore before editing');
+            const patch = input.patch; if (!patch || typeof patch !== 'object' || Array.isArray(patch) || Object.keys(patch).some(key => !editable.has(key))) fail(400, 'Invalid editable fields');
+            if (!Object.keys(patch).length) { observation.setStatus('skipped'); return current; }
+            return store.writer.retain({ ...patch, id: current.id });
+          } else if (input.action === 'restore') { if (!current.removed_at) blocked(400, 'Memory is not removed'); return store.writer.retain({ id: current.id }); }
+          else if (input.action === 'remove') { if (state(current) !== 'active') blocked(400, 'Only active memories support soft removal'); return store.writer.remove({ id: current.id }); }
+          return store.writer.remove({ id: current.id, mode: 'purge' });
+        });
+        if (result === null) return send(404, { error: 'Memory no longer exists' });
         return send(200, result);
       }
       fail(404, 'Unknown API route or method');
-    } catch (error) { if (!res.headersSent) send(error.status ?? 400, { error: error.message }); else res.end(); }
+    } catch (error) { diagnostics.error(error); if (!res.headersSent) send(error.status ?? 400, { error: error.message }); else res.end(); }
   });
+  server.on('error', error => diagnostics.error(error));
   server.requestTimeout = 15000;
   await new Promise((resolveReady, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolveReady); });
   origin = `http://127.0.0.1:${server.address().port}`;

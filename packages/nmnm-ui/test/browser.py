@@ -12,6 +12,9 @@ import { startServer } from './packages/nmnm-ui/src/server.js';
 import { open } from './packages/nmnm-core/src/index.js';
 import { join } from 'node:path';
 import { mkdirSync, writeFileSync } from 'node:fs';
+const config = join(process.env.HOME, '.local/share/nanomneme');
+mkdirSync(config, {recursive:true});
+writeFileSync(join(config, 'config.jsonc'), JSON.stringify({logging:{enabled:true}}));
 const path = join(process.env.NMNM_UI_TEST_DIR, 'memory.db');
 mkdirSync(join(process.env.NMNM_UI_TEST_DIR, 'nested'));
 writeFileSync(join(process.env.NMNM_UI_TEST_DIR, 'invalid.db'), 'not a database');
@@ -26,7 +29,7 @@ process.on('SIGTERM',async()=>{await app.close()});
 """
 
 with tempfile.TemporaryDirectory(prefix="nmnm-ui-browser-") as directory:
-    env = {**os.environ, "NMNM_UI_TEST_DIR": directory}
+    env = {**os.environ, "NMNM_UI_TEST_DIR": directory, "HOME": directory}
     server = subprocess.Popen(["node", "--input-type=module", "-e", FIXTURE], cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     try:
         fixture = json.loads(server.stdout.readline())
@@ -37,6 +40,13 @@ with tempfile.TemporaryDirectory(prefix="nmnm-ui-browser-") as directory:
             page.on("pageerror", lambda error: errors.append(str(error)))
             page.goto(fixture["url"])
             page.wait_for_load_state("networkidle")
+            with page.expect_response("**/api/error") as reported:
+                page.evaluate("window.dispatchEvent(new ErrorEvent('error', {error:new Error('Browser diagnostic smoke')}))")
+            assert reported.value.status == 200
+            log = Path(directory) / ".local/share/nanomneme/logs/nmnm-ui.jsonl"
+            records = [json.loads(line) for line in log.read_text().splitlines()]
+            assert records[0]["event"] == "ui.error"
+            assert records[0]["error"]["message"] == "Browser diagnostic smoke"
             version = json.loads((ROOT / "packages/nmnm-ui/package.json").read_text())["version"]
             expect(page.locator("header .brand span")).to_have_text(f"memory workbench {version}")
             page.keyboard.press("Tab")

@@ -19,7 +19,7 @@ test('read-only targeting, lifecycle, provenance, stale edits, and HTTP boundari
   const memory = db.retain({ content: '<script>alert(1)</script> Review Me', metadata: { source: 'pi', extra: true } });
   db.retain({ content: 'Expired', expires_at: '2000-01-01T00:00:00.000Z' });
   const removed = db.retain({ content: 'Removed Review' }); db.remove({ id: removed.id }); db.close();
-  const server = await startServer({ cwd: dir });
+  const server = await startServer({ cwd: dir, home: dir });
   const api = async (route, body, headers = {}) => {
     const response = await fetch(server.origin + '/api/' + route, { method: body === undefined ? 'GET' : 'POST', headers: { 'x-nmnm-token': server.token, 'content-type': 'application/json', ...headers }, body: body === undefined ? undefined : JSON.stringify(body) });
     return { status: response.status, data: await response.json() };
@@ -73,7 +73,7 @@ test('multi-store identities, pagination, missing paths, incompatible schemas, a
   const bad = open(incompatiblePath); bad.close();
   const raw = new DatabaseSync(incompatiblePath); raw.prepare("UPDATE nmnm_meta SET value = '999' WHERE key = 'schema_version'").run(); raw.close();
   const before = readFileSync(firstPath), incompatibleBefore = readFileSync(incompatiblePath);
-  const server = await startServer({ cwd: dir });
+  const server = await startServer({ cwd: dir, home: dir });
   const api = async (route, body) => {
     const response = await fetch(server.origin + '/api/' + route, { method: body === undefined ? 'GET' : 'POST', headers: { 'x-nmnm-token': server.token, 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
     return { status: response.status, data: await response.json() };
@@ -103,11 +103,12 @@ test('multi-store identities, pagination, missing paths, incompatible schemas, a
 });
 
 test('launcher flags and foreground signal shutdown', async () => {
+  const env = { ...process.env, HOME: tmpdir() };
   const launcher = fileURLToPath(new URL('../bin/nmnm-ui.js', import.meta.url));
-  assert.match(execFileSync(process.execPath, [launcher, '--help'], { encoding: 'utf8' }), /--port/);
-  assert.equal(execFileSync(process.execPath, [launcher, '--version'], { encoding: 'utf8' }).trim(), '0.1.0');
-  assert.throws(() => execFileSync(process.execPath, [launcher, '--port', '65536'], { stdio: 'pipe' }));
-  const child = spawn(process.execPath, [launcher, '--no-auto'], { stdio: ['ignore', 'pipe', 'pipe'] });
+  assert.match(execFileSync(process.execPath, [launcher, '--help'], { encoding: 'utf8', env }), /--port/);
+  assert.equal(execFileSync(process.execPath, [launcher, '--version'], { encoding: 'utf8', env }).trim(), '0.1.0');
+  assert.throws(() => execFileSync(process.execPath, [launcher, '--port', '65536'], { stdio: 'pipe', env }));
+  const child = spawn(process.execPath, [launcher, '--no-auto'], { stdio: ['ignore', 'pipe', 'pipe'], env });
   try {
     const [output] = await once(child.stdout, 'data'); assert.match(output.toString(), /http:\/\/127\.0\.0\.1:\d+\/#/);
     const exit = once(child, 'exit'); child.kill('SIGTERM'); const [code] = await exit; assert.equal(code, 0);
@@ -116,7 +117,7 @@ test('launcher flags and foreground signal shutdown', async () => {
 
 test('registration rejects unrelated SQLite and incomplete Nanomneme lookalikes without mutation', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'nmnm-ui-'));
-  const server = await startServer();
+  const server = await startServer({ home: dir });
   try {
     for (const [name, sql, seedCore] of [
       ['unrelated.db', 'CREATE TABLE unrelated (value TEXT)'],
@@ -146,7 +147,7 @@ test('source sentinel is distinct from recorded values and chunked Unicode remai
   const path = join(dir, 'memory.db'); const db = open(path);
   const known = db.retain({ content: 'Known', metadata: { source: 'unknown' } });
   db.retain({ content: 'Unrecorded' }); db.close();
-  const server = await startServer();
+  const server = await startServer({ home: dir });
   const api = async (route, body) => {
     const response = await fetch(server.origin + '/api/' + route, { method: body ? 'POST' : 'GET', headers: { 'x-nmnm-token': server.token, 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
     assert.equal(response.status, 200); return response.json();

@@ -1,10 +1,17 @@
 import { spawn } from 'node:child_process';
 import { platform } from 'node:os';
 import { readFileSync } from 'node:fs';
+import { getUILogger } from './logslines.js';
 
 export const USAGE = 'Usage: nmnm-ui [--port <0..65535> | -p <0..65535>] [--no-auto | -na] [--help | -h] [--version | -v]';
 
-export async function launchWorkbench(args = [], { command = 'nmnm-ui' } = {}) {
+export async function launchWorkbench(args = [], { command = 'nmnm-ui', home } = {}) {
+  const diagnostics = getUILogger({ home });
+  try { return await launch(args, { command, home, diagnostics }); }
+  catch (error) { diagnostics.error(error); throw error; }
+}
+
+async function launch(args, { command, home, diagnostics }) {
   const usage = USAGE.replace('nmnm-ui', command);
   if (args.length === 1 && ['--help', '-h'].includes(args[0])) {
     console.log(usage + '\nStarts a loopback memory workbench and opens your default browser. --no-auto or -na prints the URL without opening it. Ctrl-C stops the server.');
@@ -17,7 +24,7 @@ export async function launchWorkbench(args = [], { command = 'nmnm-ui' } = {}) {
   let options;
   try { options = parseLauncherArgs(args); } catch { throw new Error(usage); }
   const { startServer } = await import('./server.js');
-  const app = await startServer({ port: options.port });
+  const app = await startServer({ port: options.port, home, diagnostics });
   const opening = new AbortController();
   let stopping = false;
   const closeServer = app.close;
@@ -25,14 +32,14 @@ export async function launchWorkbench(args = [], { command = 'nmnm-ui' } = {}) {
     if (stopping) return;
     stopping = true; opening.abort();
     process.removeListener('SIGINT', stop); process.removeListener('SIGTERM', stop);
-    await closeServer();
+    try { await closeServer(); } catch (error) { diagnostics.error(error); throw error; }
   };
   app.close = stop;
   process.on('SIGINT', stop); process.on('SIGTERM', stop);
   console.log(`Open ${app.url}\nCtrl-C stops the workbench.`);
   if (options.autoOpen) {
     try { await openBrowser(app.url, { signal: opening.signal }); }
-    catch { if (!stopping) console.error('Could not open the default browser. The server is running; open the printed URL manually.'); }
+    catch (error) { if (!stopping) { diagnostics.error(error); console.error('Could not open the default browser. The server is running; open the printed URL manually.'); } }
   }
   return app;
 }

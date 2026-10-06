@@ -51,7 +51,7 @@ test('release metadata aligns the 0.8.0 UI release and every consumer', () => {
   assert.equal(root.engines.node, '>=22.19.0');
   assert.equal(pi.engines.node, '>=22.19.0');
   assert.equal(root.devDependencies['@earendil-works/pi-coding-agent'], '>=0.87.0');
-  assert.equal(lock.packages['node_modules/@earendil-works/pi-coding-agent'].version, '1.0.0');
+  assert.equal(lock.packages['node_modules/@earendil-works/pi-coding-agent'].version, '1.0.4');
   assert.deepEqual(pi.peerDependencies, {
     '@earendil-works/pi-tui': '*',
     typebox: '*',

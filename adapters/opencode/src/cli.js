@@ -1,4 +1,4 @@
-import { getMemoryLogger } from './logger.js';
+import { getMemoryLogger } from './logslines.js';
 import { existsSync } from 'node:fs';
 import {
   buildMemoryIndex,

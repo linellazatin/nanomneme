@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { open } from '@openlines/nmnm-core';
-import { createMemoryLogger } from '@openlines/nmnm-core/logging';
+import { getCLILogger } from '../src/logslines.js';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -336,7 +336,7 @@ function commandHint(args) {
 }
 
 export async function executeCli(args = process.argv.slice(2), { stdout = process.stdout, logger } = {}) {
-  const diagnostics = logger ?? createMemoryLogger({ service: { namespace: 'openlines', name: 'nanomneme', component: 'nmnm-cli', version: VERSION } });
+  const diagnostics = logger ?? getCLILogger();
   const execute = async observation => {
     const output = main(args);
     if (output.failed) observation?.setStatus('failed');

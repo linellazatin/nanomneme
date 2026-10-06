@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { matchesKey, truncateToWidth } from '@earendil-works/pi-tui';
 
 import { buildMemoryIndex, pin, piAgentDir, pinsPath, readPins, readSettings, settingsPath, unpin, updatePins } from './context.js';
-import { getPiLogger, piSessionId } from './logger.js';
+import { getPiLogger, piSessionId } from './logslines.js';
 import { databasePath, runMemory, supportsGlobalStore } from './store.js';
 
 const DEFAULT_LIST_LIMIT = 20;

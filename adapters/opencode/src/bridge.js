@@ -8,7 +8,7 @@
 import { readFileSync } from 'node:fs';
 import { buildMemoryIndex, opencodeGlobalDir, renderContext } from './context.js';
 import { handleTool } from './operations.js';
-import { getMemoryLogger } from './logger.js';
+import { getMemoryLogger } from './logslines.js';
 import { browsePage, detail, mutate, statusText } from './browse.js';
 
 function respond(payload) {

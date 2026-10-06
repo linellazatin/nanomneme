@@ -8,6 +8,7 @@
   },
   "files": [
     "bin/nmnm.js",
+    "src/logslines.js",
     "README.md",
     "LICENSE"
   ],

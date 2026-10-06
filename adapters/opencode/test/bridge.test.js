@@ -13,7 +13,7 @@ function temporaryDirectory(name) {
 
 // The OpenCode plugin host is Bun (no `node:sqlite`), so every SQLite/core import must stay
 // inside the Node-side modules. The bridge client may import the sqlite-free
-// `@openlines/nmnm-core/logging` subpath (via src/logger.js and src/paths.js) for host-side
+// `@openlines/nmnm-core/logging` subpath (via src/logslines.js and src/paths.js) for host-side
 // spawn-failure diagnostics; jsonc-parser reaches Bun only transitively through that bundle.
 // These source guards fail if a Node-only import leaks back into the Bun-loaded entry or its
 // bridge client.

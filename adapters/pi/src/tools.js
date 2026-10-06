@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 
-import { getPiLogger, piSessionId } from './logger.js';
+import { getPiLogger, piSessionId } from './logslines.js';
 import { toolResponse } from './response.js';
 import { databasePath, runMemory } from './store.js';
 

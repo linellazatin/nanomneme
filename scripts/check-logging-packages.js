@@ -36,9 +36,9 @@ export function checkLoggingPackages({ prepareCodex = false } = {}) {
       import { getUILogger } from './node_modules/@openlines/nmnm-ui/src/logslines.js';
       import { launchWorkbench } from '@openlines/nmnm-ui';
       import { createMemoryLogger } from '@openlines/nmnm-core/logging';
-      import { getPiLogger } from './node_modules/@openlines/nmnm-pi/src/logger.js';
-      import { getMemoryLogger as claude } from './node_modules/@openlines/nmnm-claude/src/logger.js';
-      import { getMemoryLogger as opencode } from './node_modules/@openlines/nmnm-opencode/src/logger.js';
+      import { getPiLogger } from './node_modules/@openlines/nmnm-pi/src/logslines.js';
+      import { getMemoryLogger as claude } from './node_modules/@openlines/nmnm-claude/src/logslines.js';
+      import { getMemoryLogger as opencode } from './node_modules/@openlines/nmnm-opencode/src/logslines.js';
       for (const logger of [createMemoryLogger(), getPiLogger(), claude(), opencode()]) assert.equal(logger.run({operation:'retain'}, () => 7), 7);
       assert.equal(typeof launchWorkbench, 'function');
       const settings = join(process.env.HOME, '.local/share/nanomneme');
@@ -97,7 +97,7 @@ export function checkLoggingPackages({ prepareCodex = false } = {}) {
     execFileSync(process.execPath, ['--input-type=module', '-e', `import assert from 'node:assert/strict';
       import {readFileSync} from 'node:fs';
       import {join} from 'node:path';
-      import {getMemoryLogger} from './node_modules/@openlines/nmnm-codex/src/logger.js';
+      import {getMemoryLogger} from './node_modules/@openlines/nmnm-codex/src/logslines.js';
       const logger=getMemoryLogger({home:process.env.HOME, env:{CODEX_HOME:join(process.env.HOME,'codex')}});
       assert.equal(logger.run({operation:'retain'},()=>7),7);
       const failure=new Error('Packaged failure');

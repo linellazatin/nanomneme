@@ -40,6 +40,7 @@ export function checkLoggingPackages({ prepareCodex = false } = {}) {
       for (const logger of [createMemoryLogger(), getPiLogger(), claude(), opencode()]) assert.equal(logger.run({operation:'retain'}, () => 7), 7);
       assert.equal(typeof launchWorkbench, 'function');
       const cli = realpathSync('node_modules/.bin/nmnm');
+      for (const flag of ['--version', '-v']) assert.equal(execFileSync(process.execPath, [cli, flag], {encoding:'utf8'}), ${JSON.stringify(['cli', 'core', 'ui'].map(name => `${name} ${packages.find(pkg => pkg.name === '@openlines/nmnm-' + name).version}\n`).join(''))});
       assert.match(execFileSync(process.execPath, [cli, 'ui', '--help'], {encoding:'utf8'}), /Usage: nmnm ui/);
       const child = spawn(process.execPath, [cli, 'ui', '--port', '0', '-na'], {stdio:['ignore','pipe','pipe']});
       try {

@@ -237,7 +237,10 @@ function importJsonl(path) {
 }
 
 export function main(args = process.argv.slice(2)) {
-  if (args.length === 1 && (args[0] === '--version' || args[0] === '-v')) return { version: VERSION };
+  if (args.length === 1 && (args[0] === '--version' || args[0] === '-v')) {
+    const dependencyVersion = name => JSON.parse(readFileSync(new URL('../package.json', import.meta.resolve(name)), 'utf8')).version;
+    return { version: VERSION, versions: { cli: VERSION, core: dependencyVersion('@openlines/nmnm-core'), ui: dependencyVersion('@openlines/nmnm-ui') } };
+  }
   const { options, positionals } = parse(args);
   const command = positionals.shift();
   if (options.help) return { help: true };
@@ -339,7 +342,7 @@ export async function executeCli(args = process.argv.slice(2), { stdout = proces
     if (output.failed) observation?.setStatus('failed');
     else if (output.result === null) observation?.setStatus('not_found');
     else if (output.result?.total === 0) observation?.setStatus('empty');
-    const text = output.version ? `${output.version}\n` : output.raw ?? (output.help ? `${HELP}\n` : output.json ? `${JSON.stringify(output.result, null, 2)}\n` : readable(output.result));
+    const text = output.version ? Object.entries(output.versions).map(([name, version]) => `${name} ${version}\n`).join('') : output.raw ?? (output.help ? `${HELP}\n` : output.json ? `${JSON.stringify(output.result, null, 2)}\n` : readable(output.result));
     await new Promise((resolve, reject) => {
       const failed = error => reject(error);
       stdout.once('error', failed);

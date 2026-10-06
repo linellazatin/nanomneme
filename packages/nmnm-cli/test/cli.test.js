@@ -7,6 +7,8 @@ import { DatabaseSync } from 'node:sqlite';
 import test, { after } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import pkg from '../package.json' with { type: 'json' };
+import corePkg from '../../nmnm-core/package.json' with { type: 'json' };
+import uiPkg from '../../nmnm-ui/package.json' with { type: 'json' };
 import { open } from '../../nmnm-core/src/index.js';
 
 const isolatedHome = await mkdtemp(join(tmpdir(), 'nmnm-cli-test-home-'));
@@ -130,15 +132,16 @@ test('CLI verify reports unsafe permissions without modifying the database', { s
   assert.deepEqual(await readFile(source), before);
 });
 
-test('CLI reports its package version without opening a database', async () => {
+test('CLI reports installed cli, core, and ui versions without opening a database', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-version-'));
   const long = runIn(directory, '--version');
   const short = runIn(directory, '-v');
 
   assert.equal(long.status, 0, long.stderr);
   assert.equal(short.status, 0, short.stderr);
-  assert.equal(long.stdout, `${pkg.version}\n`);
-  assert.equal(short.stdout, `${pkg.version}\n`);
+  const expected = `cli ${pkg.version}\ncore ${corePkg.version}\nui ${uiPkg.version}\n`;
+  assert.equal(long.stdout, expected);
+  assert.equal(short.stdout, expected);
   await assert.rejects(access(join(directory, '.nanomneme', 'memory.db')));
 });
 

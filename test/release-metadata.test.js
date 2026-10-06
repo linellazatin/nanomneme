@@ -20,7 +20,10 @@ test('release metadata aligns the 0.8.0 UI release and every consumer', () => {
   assert.equal(lock.version, root.version);
   assert.equal(lock.packages['adapters/codex'].name, '@openlines/nmnm-codex');
   assert.equal(lock.packages['node_modules/@openlines/nmnm-codex'].resolved, 'adapters/codex');
-  assert.equal(core.version, '0.3.0');
+  assert.equal(core.version, '0.3.1');
+  assert.equal(core.exports['./logging'], './src/logslines.js');
+  assert(core.files.includes('src/logslines.js'));
+  assert(!core.files.includes('src/logging.js'));
   assert.equal(cli.version, '0.4.0');
   assert.equal(ui.name, '@openlines/nmnm-ui');
   assert.equal(ui.version, '0.1.0');
@@ -30,11 +33,11 @@ test('release metadata aligns the 0.8.0 UI release and every consumer', () => {
   assert.equal(ui.exports, './src/launcher.js');
   assert.equal(ui.engines.node, root.engines.node);
   assert.equal(lock.packages['node_modules/@openlines/nmnm-ui'].resolved, 'packages/nmnm-ui');
-  assert.equal(pi.version, '0.4.1');
+  assert.equal(pi.version, '0.4.2');
   assert.equal(claude.name, '@openlines/nmnm-claude');
-  assert.equal(claude.version, '0.2.1');
-  assert.equal(codex.version, '0.2.1');
-  assert.equal(opencode.version, '0.2.1');
+  assert.equal(claude.version, '0.2.2');
+  assert.equal(codex.version, '0.2.2');
+  assert.equal(opencode.version, '0.2.2');
   for (const [path, pkg] of [['', root], ['packages/nmnm-core', core], ['packages/nmnm-cli', cli], ['packages/nmnm-ui', ui],
     ['adapters/pi', pi], ['adapters/claude', claude], ['adapters/codex', codex], ['adapters/opencode', opencode]]) {
     assert.equal(lock.packages[path].version, pkg.version, `${path || 'root'} lockfile version`);

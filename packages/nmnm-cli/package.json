@@ -13,7 +13,7 @@
     "LICENSE"
   ],
   "dependencies": {
-    "@openlines/nmnm-core": "0.3.0",
+    "@openlines/nmnm-core": "0.3.1",
     "@openlines/nmnm-ui": "0.1.0"
   },
   "engines": {

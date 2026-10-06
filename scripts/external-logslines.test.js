@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-import { checkExternalLogslines, updateExternalLogslines } from './external-logslines.js';
+import { checkExternalLogslines, updateExternalLogslines, checkPinnedLogslines } from './external-logslines.js';
 
 const repository = 'https://github.com/linellazatin/logslines';
 const tag = 'v0.1.0';
@@ -68,6 +68,57 @@ function writeSnapshot(destination, sourceFiles = files) {
 function assertUnchanged(destination) {
   assert.equal(readFileSync(destination, 'utf8'), 'sentinel');
 }
+
+test('shared release pin catches source, provenance, and fixture tampering offline', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'nmnm-release-pin-'));
+  const destination = join(root, 'snapshot'); const fixturePath = join(root, 'shared/fixtures/logslines-release.json');
+  try {
+    await updateExternalLogslines({ tag, destination, fixturePath, fetchImpl: validFetch() });
+    const originalPin = readFileSync(fixturePath, 'utf8');
+    assert.equal(checkPinnedLogslines({ destination, fixturePath }).tag, tag);
+    writeFileSync(join(destination, 'src/logger.js'), 'changed');
+    assert.throws(() => checkPinnedLogslines({ destination, fixturePath }), /source differs/);
+    writeFileSync(join(destination, 'src/logger.js'), files['src/logger.js']);
+    const pin = JSON.parse(originalPin); pin.sha256.LICENSE = '0'.repeat(64);
+    writeFileSync(fixturePath, JSON.stringify(pin));
+    assert.throws(() => checkPinnedLogslines({ destination, fixturePath }), /provenance differs/);
+    pin.files.push('../outside'); writeFileSync(fixturePath, JSON.stringify(pin));
+    assert.throws(() => checkPinnedLogslines({ destination, fixturePath }), /fixture is invalid/);
+    writeFileSync(fixturePath, originalPin);
+    writeFileSync(join(destination, 'PROVENANCE.json'), '{}');
+    assert.throws(() => checkPinnedLogslines({ destination, fixturePath }), /provenance differs/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('fetch failures preserve both snapshot and existing release fixture', async () => {
+  const { root, destination } = temporaryDestination(); const fixturePath = join(root, 'release.json');
+  writeFileSync(fixturePath, 'old pin');
+  try {
+    for (const fetchImpl of [validFetch({ invalidSchema: true }), async () => response({ status: 404 }), async () => { throw new Error('offline'); }]) {
+      await assert.rejects(updateExternalLogslines({ tag, destination, fixturePath, fetchImpl }));
+      assertUnchanged(destination); assert.equal(readFileSync(fixturePath, 'utf8'), 'old pin');
+    }
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('focused snapshot update leaves the separate release fixture untouched', async () => {
+  const { root, destination } = temporaryDestination(); const fixturePath = join(root, 'release.json');
+  writeFileSync(fixturePath, 'reviewed pin');
+  try {
+    await updateExternalLogslines({ tag, destination, fetchImpl: validFetch() });
+    assert.equal(readFileSync(fixturePath, 'utf8'), 'reviewed pin');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('fixture replacement failure identifies the retained snapshot update', async () => {
+  const { root, destination } = temporaryDestination(); const fixturePath = join(root, 'fixture-directory');
+  mkdirSync(fixturePath); writeFileSync(join(fixturePath, 'sentinel'), 'preserve');
+  try {
+    await assert.rejects(updateExternalLogslines({ tag, destination, fixturePath, fetchImpl: validFetch() }), error => error.snapshotUpdated === true);
+    assert.equal(readFileSync(join(destination, 'LICENSE'), 'utf8'), files.LICENSE);
+    assert.equal(readFileSync(join(fixturePath, 'sentinel'), 'utf8'), 'preserve');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
 
 test('rejects missing, empty, and invalid schemas without replacing the snapshot', async () => {
   const { root, destination } = temporaryDestination();

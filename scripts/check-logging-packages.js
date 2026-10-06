@@ -7,9 +7,11 @@ import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export function assertLoggingContents(kind, files) {
+  assert.ok(!files.some(path => path.split('/').at(-1) === 'logslines-release.json'), `${kind} package must exclude the repository release fixture`);
   const required = kind === 'core' ? ['src/logslines.js', 'src/logging-runtime.generated.js', 'src/index.js']
     : kind === 'ui' ? ['src/launcher.js', 'src/server.js', 'src/logslines.js', 'src/ui-logging-runtime.generated.js']
-    : ['node_modules/@openlines/nmnm-core/src/logslines.js', 'node_modules/@openlines/nmnm-core/src/logging-runtime.generated.js'];
+    : kind === 'codex' ? ['node_modules/@openlines/nmnm-core/src/logslines.js', 'node_modules/@openlines/nmnm-core/src/logging-runtime.generated.js']
+    : ['src/logslines.js'];
   for (const path of required) assert(files.includes(path), `missing ${path}`);
   if (kind === 'ui') assert(!files.includes('src/ui-logger.js') && !files.includes('build/ui-logger.js'), 'UI package includes build-only logger source');
   if (kind === 'codex') assert(files.some(path => path.includes('node_modules/jsonc-parser/') && path.endsWith('package.json')), 'missing bundled jsonc-parser');
@@ -24,8 +26,7 @@ export function checkLoggingPackages({ prepareCodex = false } = {}) {
     const packages = JSON.parse(npm(['pack', '--json', '--ignore-scripts', '--pack-destination', temporary,
       ...['core', 'ui', 'cli', 'pi', 'claude', 'opencode'].flatMap(name => ['--workspace', `@openlines/nmnm-${name}`])], root));
     const core = packages.find(pkg => pkg.name === '@openlines/nmnm-core');
-    assertLoggingContents('core', core.files.map(file => file.path));
-    assertLoggingContents('ui', packages.find(pkg => pkg.name === '@openlines/nmnm-ui').files.map(file => file.path));
+    for (const pkg of packages) assertLoggingContents(pkg.name.replace('@openlines/nmnm-', ''), pkg.files.map(file => file.path));
     const coreTar = join(temporary, core.filename);
     const consumer = join(temporary, 'consumer'); mkdirSync(consumer);
     writeFileSync(join(consumer, 'package.json'), '{"private":true,"type":"module"}\n');

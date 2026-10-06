@@ -2,6 +2,19 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { assertLoggingContents } from './check-logging-packages.js';
 
+test('package checks exclude the shared release fixture from every distribution', () => {
+  for (const kind of ['core', 'ui', 'cli', 'pi', 'claude', 'opencode', 'codex']) {
+    assert.throws(() => assertLoggingContents(kind, ['shared/fixtures/logslines-release.json']), /release fixture/);
+  }
+});
+
+test('thin consumer packages require their binding, with core supplied as a dependency', () => {
+  for (const kind of ['cli', 'pi', 'claude', 'opencode']) {
+    assert.doesNotThrow(() => assertLoggingContents(kind, ['src/logslines.js']));
+    assert.throws(() => assertLoggingContents(kind, []), /src\/logslines.js/);
+  }
+});
+
 test('package checks reject missing runtime and Codex bundled parser', () => {
   assert.throws(() => assertLoggingContents('core', ['src/logslines.js']), /logging-runtime/);
   assert.doesNotThrow(() => assertLoggingContents('core', ['src/logslines.js', 'src/logging-runtime.generated.js', 'src/index.js']));

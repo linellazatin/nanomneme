@@ -7,6 +7,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { buildLogger } from './build-logger.js';
 import { runMaintenance } from './maintenance.js';
+import { updateExternalLogslines } from './external-logslines.js';
 
 test('generator detects missing/stale/current outputs and writes only stale targets', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'nmnm-build-test-'));
@@ -102,4 +103,64 @@ test('generator CLI distinguishes stale, current, and failed without writing on 
     assert.equal(run([]).status, 1);
     assert.equal(readFileSync(output, 'utf8'), before);
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('upstream coordinator updates snapshot and shared pin, then builds/tests/validates once', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'nmnm-release-update-'));
+  const tag = 'v1.2.3'; const calls = []; const messages = [];
+  const files = { LICENSE: 'MIT License\n', 'src/logger.js': 'export const logger = true;\n', 'src/sinks/stderr.js': 'export const sink = true;\n', 'spec/v1/schema.json': '{"$id":"logslines/v1","type":"object"}\n' };
+  const fetchImpl = async url => url.includes('/releases/tags/')
+    ? new Response(JSON.stringify({ tag_name: tag, html_url: `https://github.com/linellazatin/logslines/releases/tag/${tag}` }), { headers: { 'content-type': 'application/json' } })
+    : new Response(files[Object.keys(files).find(path => url.endsWith('/' + path))], { headers: { 'content-type': 'text/plain' } });
+  try {
+    const dependencies = {
+      root, report: message => messages.push(message),
+      updateExternalLogslines: options => updateExternalLogslines({ ...options, fetchImpl }),
+      buildLogger: async ({ check }) => { calls.push(check ? 'check' : 'build'); return [{ name: 'shared', status: calls.length === 1 ? 'stale' : 'current' }]; },
+      runRepositoryTests: () => calls.push('test'), checkLoggingPackages: () => calls.push('packages'),
+    };
+    await runMaintenance(['logslines:update', tag], dependencies);
+    const fixture = readFileSync(join(root, 'shared/fixtures/logslines-release.json'), 'utf8');
+    assert.equal(fixture, readFileSync(join(root, 'external/logslines/PROVENANCE.json'), 'utf8'));
+    assert.equal(JSON.parse(fixture).tag, tag);
+    assert.deepEqual(calls, ['check', 'build', 'check', 'test', 'packages']);
+    calls.length = 0;
+    dependencies.buildLogger = async () => { calls.push('check'); return [{ status: 'current' }]; };
+    await runMaintenance(['logslines:update', tag], dependencies);
+    assert.equal(readFileSync(join(root, 'shared/fixtures/logslines-release.json'), 'utf8'), fixture);
+    assert.deepEqual(calls, ['check', 'test', 'packages']);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('upstream coordinator rejects invalid arguments before mutation and stops on fetch failure', async () => {
+  let updates = 0;
+  const dependencies = { updateExternalLogslines: async () => { updates++; throw new Error('offline'); }, report: () => {} };
+  for (const args of [[], ['latest'], ['v1.2.3', '--fast'], ['v1.2.3', 'v2.0.0']]) {
+    await assert.rejects(runMaintenance(['logslines:update', ...args], dependencies), /exact release tag/);
+  }
+  assert.equal(updates, 0);
+  await assert.rejects(runMaintenance(['logslines:update', 'v1.2.3'], dependencies), /offline/);
+  assert.equal(updates, 1);
+});
+
+test('upstream validation failures retain updated files and identify review paths', async () => {
+  for (const stage of ['build', 'test', 'packages']) {
+    const messages = []; const calls = [];
+    await assert.rejects(runMaintenance(['logslines:update', 'v1.2.3'], {
+      updateExternalLogslines: async () => { calls.push('update'); return { tag: 'v1.2.3' }; },
+      checkPinnedLogslines: () => {},
+      buildLogger: async () => { if (stage === 'build') throw new Error('validation failed'); return [{ status: 'current' }]; },
+      runRepositoryTests: () => { calls.push('test'); if (stage === 'test') throw new Error('validation failed'); },
+      checkLoggingPackages: () => { calls.push('packages'); throw new Error('validation failed'); },
+      report: message => messages.push(message),
+    }), /validation failed/);
+    assert.ok(messages.some(message => message.includes('shared/fixtures/logslines-release.json') && message.includes('retained')));
+    if (stage !== 'packages') assert.equal(calls.includes('packages'), false);
+  }
+  const messages = [];
+  await assert.rejects(runMaintenance(['logslines:update', 'v1.2.3'], {
+    updateExternalLogslines: async () => { throw Object.assign(new Error('fixture replacement failed'), { snapshotUpdated: true }); },
+    report: message => messages.push(message),
+  }), /fixture replacement failed/);
+  assert.ok(messages.some(message => message.includes('retained')));
 });

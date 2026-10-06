@@ -1,10 +1,85 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { createRequire } from 'node:module';
+import { isDeepStrictEqual } from 'node:util';
 import { tmpdir } from 'node:os';
-import { basename, join } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+const defaultRoot = fileURLToPath(new URL('..', import.meta.url));
+const managedDependencies = ['@openlines/nmnm-core', 'jsonc-parser'];
+const digest = path => createHash('sha256').update(readFileSync(path)).digest('hex');
+
+// A null tree means missing content or a link, not a physical dependency copy.
+export function readPackageTree(root, { exclude = () => false } = {}) {
+  const files = {};
+  const visit = relative => {
+    if (exclude(relative)) return;
+    const path = join(root, relative); const stat = lstatSync(path);
+    if (stat.isSymbolicLink()) throw Object.assign(new Error(`Expected physical files: ${path}`), { code: 'NMNM_LINK' });
+    if (stat.isDirectory()) for (const name of readdirSync(path).sort()) visit(relative ? `${relative}/${name}` : name);
+    else if (stat.isFile()) files[relative] = digest(path);
+    else throw new Error(`Unsupported package file: ${path}`);
+  };
+  try { visit(''); return files; }
+  catch (error) { if (['ENOENT', 'ENOTDIR', 'NMNM_LINK'].includes(error.code)) return null; throw error; }
+}
+
+export function prepareCodexDependencies({ root = defaultRoot, preparedModules, packCoreFiles } = {}) {
+  const adapter = join(root, 'adapters/codex');
+  const pkg = JSON.parse(readFileSync(join(adapter, 'package.json'), 'utf8'));
+  const manifest = JSON.parse(readFileSync(join(adapter, '.codex-plugin/plugin.json'), 'utf8'));
+  const core = join(root, 'packages/nmnm-core');
+  const corePkg = JSON.parse(readFileSync(join(core, 'package.json'), 'utf8'));
+  assert.equal(manifest.version, pkg.version, 'Codex plugin manifest version differs from package version');
+  assert.equal(pkg.dependencies['@openlines/nmnm-core'], corePkg.version, 'Codex core dependency differs from checkout version');
+  let specs;
+  if (preparedModules) {
+    specs = managedDependencies.map(path => ({ path, source: join(preparedModules, path) }));
+  } else {
+    const paths = packCoreFiles ? packCoreFiles() : JSON.parse(execFileSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], { cwd: core, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }))[0].files.map(file => file.path);
+    assert(paths.includes('package.json'), 'Core package contents are unavailable');
+    for (const path of paths) assert(!isAbsolute(path) && resolve(core, path).startsWith(core + sep), 'Invalid core package path');
+    const parser = dirname(createRequire(join(root, 'package.json')).resolve('jsonc-parser/package.json'));
+    assert.equal(JSON.parse(readFileSync(join(parser, 'package.json'), 'utf8')).version, corePkg.dependencies['jsonc-parser'], 'Installed jsonc-parser differs from core dependency; reinstall repository dependencies');
+    specs = [{ path: managedDependencies[0], source: core, paths }, { path: managedDependencies[1], source: parser }];
+  }
+  for (const spec of specs) {
+    const expectedVersion = spec.path === managedDependencies[0] ? corePkg.version : corePkg.dependencies['jsonc-parser'];
+    assert.equal(JSON.parse(readFileSync(join(spec.source, 'package.json'), 'utf8')).version, expectedVersion, `Prepared dependency version differs: ${spec.path}`);
+    spec.expected = spec.paths ? Object.fromEntries(spec.paths.map(path => [path, digest(join(spec.source, path))])) : readPackageTree(spec.source);
+    assert(spec.expected, `Prepared dependency must contain physical files: ${spec.path}`);
+  }
+  const modules = join(adapter, 'node_modules');
+  for (const parent of [modules, join(modules, '@openlines')]) {
+    try { assert(!lstatSync(parent).isSymbolicLink(), `Refusing linked dependency parent: ${parent}`); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+  }
+  const stale = specs.filter(spec => !isDeepStrictEqual(spec.expected, readPackageTree(join(modules, spec.path))));
+  if (!stale.length) return 'current';
+  mkdirSync(modules, { recursive: true });
+  const temporary = mkdtempSync(join(modules, '.nmnm-prepare-'));
+  try {
+    for (const spec of stale) {
+      const staged = join(temporary, spec.path);
+      for (const path of Object.keys(spec.expected)) {
+        const target = join(staged, path); mkdirSync(dirname(target), { recursive: true }); cpSync(join(spec.source, path), target);
+      }
+      assert.deepEqual(readPackageTree(staged), spec.expected, `Staged dependency differs: ${spec.path}`);
+    }
+    for (const spec of stale) {
+      const destination = join(modules, spec.path);
+      mkdirSync(dirname(destination), { recursive: true });
+      rmSync(destination, { recursive: true, force: true });
+      renameSync(join(temporary, spec.path), destination);
+      assert.deepEqual(readPackageTree(destination), spec.expected, `Prepared dependency differs: ${spec.path}`);
+    }
+    return 'updated';
+  } finally { rmSync(temporary, { recursive: true, force: true }); }
+}
 
 export function assertLoggingContents(kind, files) {
   assert.ok(!files.some(path => path.split('/').at(-1) === 'logslines-release.json'), `${kind} package must exclude the repository release fixture`);
@@ -109,13 +184,7 @@ export function checkLoggingPackages({ prepareCodex = false } = {}) {
       const records=readFileSync(join(process.env.HOME,'.local/share/nanomneme/logs/nmnm-codex.jsonl'),'utf8').trim().split('\\n').map(JSON.parse);
       assert.deepEqual(records.map(record=>[record.operation,record.status]),[['retain','ok'],['remove','failed']]);`], { cwd: pluginConsumer, env: { ...process.env, HOME: temporary }, stdio: 'pipe' });
     if (prepareCodex) {
-      const source = join(root, 'adapters/codex');
-      const manifest = JSON.parse(readFileSync(join(source, '.codex-plugin/plugin.json'), 'utf8'));
-      const pkg = JSON.parse(readFileSync(join(source, 'package.json'), 'utf8'));
-      assert.equal(manifest.version, pkg.version, 'Codex plugin manifest version differs from package version');
-      cpSync(join(codex, 'node_modules'), join(source, 'node_modules'), {
-        recursive: true, dereference: true, filter: path => basename(path) !== '.package-lock.json',
-      });
+      prepareCodexDependencies({ root, preparedModules: join(codex, 'node_modules') });
     }
     return packages.map(pkg => pkg.name).concat(plugin.name);
   } finally { rmSync(temporary, { recursive: true, force: true }); }

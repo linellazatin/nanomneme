@@ -8,7 +8,10 @@
   },
   "files": [
     "bin/",
-    "src/",
+    "src/launcher.js",
+    "src/server.js",
+    "src/logslines.js",
+    "src/ui-logging-runtime.generated.js",
     "public/",
     "README.md",
     "LICENSE"

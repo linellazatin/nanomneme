@@ -8,8 +8,10 @@ import { fileURLToPath } from 'node:url';
 
 export function assertLoggingContents(kind, files) {
   const required = kind === 'core' ? ['src/logging.js', 'src/logging-runtime.generated.js', 'src/index.js']
+    : kind === 'ui' ? ['src/launcher.js', 'src/server.js', 'src/logslines.js', 'src/ui-logging-runtime.generated.js']
     : ['node_modules/@openlines/nmnm-core/src/logging.js', 'node_modules/@openlines/nmnm-core/src/logging-runtime.generated.js'];
   for (const path of required) assert(files.includes(path), `missing ${path}`);
+  if (kind === 'ui') assert(!files.includes('src/ui-logger.js') && !files.includes('build/ui-logger.js'), 'UI package includes build-only logger source');
   if (kind === 'codex') assert(files.some(path => path.includes('node_modules/jsonc-parser/') && path.endsWith('package.json')), 'missing bundled jsonc-parser');
 }
 
@@ -23,6 +25,7 @@ export function checkLoggingPackages({ prepareCodex = false } = {}) {
       ...['core', 'ui', 'cli', 'pi', 'claude', 'opencode'].flatMap(name => ['--workspace', `@openlines/nmnm-${name}`])], root));
     const core = packages.find(pkg => pkg.name === '@openlines/nmnm-core');
     assertLoggingContents('core', core.files.map(file => file.path));
+    assertLoggingContents('ui', packages.find(pkg => pkg.name === '@openlines/nmnm-ui').files.map(file => file.path));
     const coreTar = join(temporary, core.filename);
     const consumer = join(temporary, 'consumer'); mkdirSync(consumer);
     writeFileSync(join(consumer, 'package.json'), '{"private":true,"type":"module"}\n');

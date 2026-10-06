@@ -1183,7 +1183,7 @@ function errorDetail(error, fallback) {
   return detail;
 }
 
-// packages/nmnm-ui/build/ui-logger.js
+// packages/nmnm-ui/src/ui-logger.js
 function reportUIError(error, { service, home } = {}) {
   try {
     if (!resolveLoggingEnabled({ home })) return;

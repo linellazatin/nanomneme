@@ -13,6 +13,23 @@ const isolatedHome = await mkdtemp(join(tmpdir(), 'nmnm-cli-test-home-'));
 after(() => rm(isolatedHome, { recursive: true, force: true }));
 const cli = fileURLToPath(new URL('../bin/nmnm.js', import.meta.url));
 
+test('CLI forwards ui help/version aliases and rejects unsupported UI flags', () => {
+  for (const flag of ['--help', '-h']) {
+    const help = run('ui', flag);
+    assert.equal(help.status, 0, help.stderr);
+    assert.match(help.stdout, /Usage: nmnm ui/);
+    assert.match(help.stdout, /--no-auto/);
+  }
+  for (const flag of ['--version', '-v']) {
+    const version = run('ui', flag);
+    assert.equal(version.status, 0, version.stderr);
+    assert.equal(version.stdout.trim(), '0.1.0');
+  }
+  for (const args of [['ui', '--db', 'memory.db'], ['ui', '-p', '65536'], ['ui', '--unknown'], ['--web'], ['web']]) {
+    const output = run(...args); assert.equal(output.status, 1);
+  }
+});
+
 test('CLI exports to a long valid filename without leaving temporary files', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-long-export-'));
   const source = join(directory, 'memory.db');

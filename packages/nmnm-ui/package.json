@@ -1,0 +1,33 @@
+{
+  "name": "@openlines/nmnm-ui",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Local-first foreground memory review workbench for nanomneme (experimental)",
+  "bin": {
+    "nmnm-ui": "bin/nmnm-ui.js"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "public/",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "dependencies": {
+    "@openlines/nmnm-core": "0.3.0"
+  },
+  "license": "MIT",
+  "exports": "./src/launcher.js",
+  "publishConfig": {
+    "access": "public"
+  },
+  "author": "Linel Lazatin",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/linellazatin/nanomneme.git",
+    "directory": "packages/nmnm-ui"
+  }
+}

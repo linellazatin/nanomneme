@@ -9,8 +9,10 @@ import { basename, dirname, join, resolve } from 'node:path';
 
 const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 const HELP = `Usage: nmnm <command> [arguments] [options]
+       nmnm ui [--port <0..65535> | -p <0..65535>] [--no-auto | -na] [--help | -h] [--version | -v]
 
 Commands:
+  ui                   Open the local memory workbench in your default browser.
   retain [content]     Create a memory, or patch one with --id.
   recall <id>          Return one active memory.
   retrieve [query words...]     Search or list active memories.
@@ -354,8 +356,13 @@ export async function executeCli(args = process.argv.slice(2), { stdout = proces
 
 if (process.argv[1] && existsSync(process.argv[1]) && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   try {
-    const output = await executeCli();
-    if (output.failed) process.exitCode = 1;
+    if (process.argv[2] === 'ui') {
+      const { launchWorkbench } = await import('@openlines/nmnm-ui');
+      await launchWorkbench(process.argv.slice(3), { command: 'nmnm ui' });
+    } else {
+      const output = await executeCli();
+      if (output.failed) process.exitCode = 1;
+    }
   } catch (error) {
     process.stderr.write(`nmnm: ${error.message}\n`);
     process.exitCode = 1;

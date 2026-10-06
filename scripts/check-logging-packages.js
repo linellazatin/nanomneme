@@ -20,7 +20,7 @@ export function checkLoggingPackages({ prepareCodex = false } = {}) {
   const install = ['install', '--ignore-scripts', '--no-audit', '--no-fund', '--no-package-lock'];
   try {
     const packages = JSON.parse(npm(['pack', '--json', '--ignore-scripts', '--pack-destination', temporary,
-      ...['core', 'cli', 'pi', 'claude', 'opencode'].flatMap(name => ['--workspace', `@openlines/nmnm-${name}`])], root));
+      ...['core', 'ui', 'cli', 'pi', 'claude', 'opencode'].flatMap(name => ['--workspace', `@openlines/nmnm-${name}`])], root));
     const core = packages.find(pkg => pkg.name === '@openlines/nmnm-core');
     assertLoggingContents('core', core.files.map(file => file.path));
     const coreTar = join(temporary, core.filename);
@@ -29,11 +29,27 @@ export function checkLoggingPackages({ prepareCodex = false } = {}) {
     npm([...install, ...packages.map(pkg => join(temporary, pkg.filename))], consumer);
     writeFileSync(join(consumer, 'verify.mjs'), `
       import assert from 'node:assert/strict';
+      import { spawn, execFileSync } from 'node:child_process';
+      import { once } from 'node:events';
+      import { realpathSync } from 'node:fs';
+      import { launchWorkbench } from '@openlines/nmnm-ui';
       import { createMemoryLogger } from '@openlines/nmnm-core/logging';
       import { getPiLogger } from './node_modules/@openlines/nmnm-pi/src/logger.js';
       import { getMemoryLogger as claude } from './node_modules/@openlines/nmnm-claude/src/logger.js';
       import { getMemoryLogger as opencode } from './node_modules/@openlines/nmnm-opencode/src/logger.js';
       for (const logger of [createMemoryLogger(), getPiLogger(), claude(), opencode()]) assert.equal(logger.run({operation:'retain'}, () => 7), 7);
+      assert.equal(typeof launchWorkbench, 'function');
+      const cli = realpathSync('node_modules/.bin/nmnm');
+      assert.match(execFileSync(process.execPath, [cli, 'ui', '--help'], {encoding:'utf8'}), /Usage: nmnm ui/);
+      const child = spawn(process.execPath, [cli, 'ui', '--port', '0', '-na'], {stdio:['ignore','pipe','pipe']});
+      try {
+        const [output] = await once(child.stdout, 'data');
+        const url = output.toString().split('Open ')[1].split('\\n')[0];
+        const origin = url.split('#')[0];
+        assert.equal((await fetch(origin)).status, 200);
+        assert.equal((await fetch(origin + 'app.js')).status, 200);
+        const exit = once(child, 'exit'); child.kill('SIGTERM'); assert.equal((await exit)[0], 0);
+      } finally { if (child.exitCode === null) { const exit = once(child, 'exit'); child.kill('SIGKILL'); await exit; } }
     `);
     execFileSync(process.execPath, ['verify.mjs'], { cwd: consumer, env: { ...process.env, HOME: temporary }, stdio: 'pipe' });
 

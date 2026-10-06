@@ -6,35 +6,44 @@ function json(path) {
   return JSON.parse(readFileSync(path, 'utf8'));
 }
 
-test('release metadata aligns the 0.7.0 core hardening release and every consumer', () => {
+test('release metadata aligns the 0.8.0 UI release and every consumer', () => {
   const root = json(new URL('../package.json', import.meta.url));
   const lock = json(new URL('../package-lock.json', import.meta.url));
   const pi = json(new URL('../adapters/pi/package.json', import.meta.url));
   const core = json(new URL('../packages/nmnm-core/package.json', import.meta.url));
   const cli = json(new URL('../packages/nmnm-cli/package.json', import.meta.url));
+  const ui = json(new URL('../packages/nmnm-ui/package.json', import.meta.url));
   const claude = json(new URL('../adapters/claude/package.json', import.meta.url));
   const codex = json(new URL('../adapters/codex/package.json', import.meta.url));
   const opencode = json(new URL('../adapters/opencode/package.json', import.meta.url));
-  assert.equal(root.version, '0.7.0');
+  assert.equal(root.version, '0.8.0');
   assert.equal(lock.version, root.version);
   assert.equal(lock.packages['adapters/codex'].name, '@openlines/nmnm-codex');
   assert.equal(lock.packages['node_modules/@openlines/nmnm-codex'].resolved, 'adapters/codex');
   assert.equal(core.version, '0.3.0');
-  assert.equal(cli.version, '0.3.0');
+  assert.equal(cli.version, '0.4.0');
+  assert.equal(ui.name, '@openlines/nmnm-ui');
+  assert.equal(ui.version, '0.1.0');
+  assert.notEqual(ui.private, true);
+  assert.equal(cli.dependencies['@openlines/nmnm-ui'], ui.version);
+  assert.equal(cli.engines.node, ui.engines.node);
+  assert.equal(ui.exports, './src/launcher.js');
+  assert.equal(ui.engines.node, root.engines.node);
+  assert.equal(lock.packages['node_modules/@openlines/nmnm-ui'].resolved, 'packages/nmnm-ui');
   assert.equal(pi.version, '0.4.1');
   assert.equal(claude.name, '@openlines/nmnm-claude');
   assert.equal(claude.version, '0.2.1');
   assert.equal(codex.version, '0.2.1');
   assert.equal(opencode.version, '0.2.1');
-  for (const [path, pkg] of [['', root], ['packages/nmnm-core', core], ['packages/nmnm-cli', cli],
+  for (const [path, pkg] of [['', root], ['packages/nmnm-core', core], ['packages/nmnm-cli', cli], ['packages/nmnm-ui', ui],
     ['adapters/pi', pi], ['adapters/claude', claude], ['adapters/codex', codex], ['adapters/opencode', opencode]]) {
     assert.equal(lock.packages[path].version, pkg.version, `${path || 'root'} lockfile version`);
     assert.deepEqual(lock.packages[path].engines, pkg.engines, `${path || 'root'} lockfile engines`);
   }
-  for (const pkg of [cli, pi, claude, codex, opencode]) {
+  for (const pkg of [cli, ui, pi, claude, codex, opencode]) {
     assert.equal(pkg.dependencies['@openlines/nmnm-core'], core.version, `${pkg.name} must pin the current core`);
   }
-  for (const path of ['packages/nmnm-cli', 'adapters/pi', 'adapters/claude', 'adapters/codex', 'adapters/opencode']) {
+  for (const path of ['packages/nmnm-cli', 'packages/nmnm-ui', 'adapters/pi', 'adapters/claude', 'adapters/codex', 'adapters/opencode']) {
     assert.equal(lock.packages[path].dependencies['@openlines/nmnm-core'], core.version, `${path} lockfile core pin`);
   }
   assert.equal(json(new URL('../adapters/claude/.claude-plugin/plugin.json', import.meta.url)).version, claude.version);
@@ -63,7 +72,7 @@ test('Codex prototype remains marketplace-local and is not released to npm', () 
 
   assert.equal(codex.private, true);
   assert.equal(codex.publishConfig, undefined);
-  assert.match(ci, /npm pack --dry-run[^\n]*--workspace @openlines\/nmnm-codex/);
+  assert.match(ci, /node scripts\/check-logging-packages\.js/);
   assert.doesNotMatch(release, /@openlines\/nmnm-codex/);
   assert.doesNotMatch(readme, /npmjs\.com\/package\/%40openlines%2Fnmnm-codex/);
 });

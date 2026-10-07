@@ -27,7 +27,7 @@ const USAGE = [
   '  list [project|global] [limit] [offset] [--source all|opencode]',
   '  search <query> [project|global] [limit] [offset] [--source all|opencode]',
   '  show [project|global] <id>               full record detail',
-  '  pin [project|global] <id>                pin a memory (defaults to project)',
+  '  pin [project|global] <id>                pin a memory (resolve an unambiguous store)',
   '  unpin [project|global] <id>              unpin a memory',
   '  remove [project|global] <id>             reversible soft removal',
 ].join('\n');

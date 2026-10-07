@@ -87,6 +87,31 @@ test('Codex prototype remains marketplace-local and is not released to npm', () 
   assert.doesNotMatch(readme, /npmjs\.com\/package\/%40openlines%2Fnmnm-codex/);
 });
 
+test('OpenCode declares its tested host floor while the lock retains a compatible resolved version', () => {
+  const opencode = json(new URL('../adapters/opencode/package.json', import.meta.url));
+  const lock = json(new URL('../package-lock.json', import.meta.url));
+  const dependency = opencode.dependencies['@opencode-ai/plugin'];
+  assert.equal(dependency, '>=1.18.15');
+  assert.equal(lock.packages['adapters/opencode'].dependencies['@opencode-ai/plugin'], dependency);
+  const [major, minor, patch] = lock.packages['node_modules/@opencode-ai/plugin'].version.split('.').map(Number);
+  assert.ok(major > 1 || (major === 1 && (minor > 18 || (minor === 18 && patch >= 15))));
+});
+
+test('tag publishing requires the same blocking rendered UI job as branch CI', () => {
+  const ci = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  const release = readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
+  const ciUi = ci.split('\n  ui:')[1].trim();
+  const releaseUi = release.split('\n  ui:')[1]?.split('\n  publish:')[0].trim();
+  assert.equal(releaseUi, ciUi);
+  const publish = release.split('\n  publish:')[1];
+  assert.match(publish, /needs: \[validate, ui\]/);
+  assert.doesNotMatch(publish, /if:.*always\(\)/);
+  assert.doesNotMatch(releaseUi, /continue-on-error/);
+  assert.match(releaseUi, /run: python packages\/nmnm-ui\/test\/browser\.py/);
+  assert.match(releaseUi, /timeout-minutes: 15/);
+  assert.match(releaseUi, /retention-days: 7/);
+});
+
 test('CI and release use read-only validation while retaining informational audit and publish order', () => {
   for (const name of ['ci', 'release']) {
     const workflow = readFileSync(new URL(`../.github/workflows/${name}.yml`, import.meta.url), 'utf8');
@@ -107,7 +132,7 @@ test('release validates changelog before publishing and forwards the extracted n
   const release = readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
   const [validation, publish] = release.split('\n  publish:');
   assert.match(validation, /notes: \$\{\{ steps\.changelog\.outputs\.notes \}\}/);
-  assert.match(publish, /needs: validate/);
+  assert.match(publish, /needs: \[validate, ui\]/);
   assert.match(publish, /body: \$\{\{ needs\.validate\.outputs\.notes \}\}/);
   assert.doesNotMatch(publish, /Extract changelog/);
   const script = validation.match(/id: changelog\n        run: \|\n([\s\S]*?)(?=      #)/)[1]

@@ -237,7 +237,7 @@ function runCliRaw({ argv = [], cwd, home, globalDir, platform } = {}, observati
 
   // remove
   existingStoreMemory({ ctx, store, operation: 'remove', input: { id: parsed.id, mode: 'soft' }, readOnly: false });
-  return { text: `Nanomneme removed [${store}] ${parsed.id}. Soft removal is reversible; purge stays CLI-only. Any matching pin remains configured until unpin.`, ok: true };
+  return { text: `Nanomneme removed [${store}] ${parsed.id}. Soft removal is reversible; purge requires an explicit CLI or UI workbench action. Any matching pin remains configured until unpin.`, ok: true };
 }
 export function runCli(options = {}) {
   const parsed = parseArgs(options.argv ?? []);

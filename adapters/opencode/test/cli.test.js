@@ -162,7 +162,7 @@ test('pin and unpin edit the adapter pin file deterministically', () => {
   }
 });
 
-test('remove soft-removes an active memory and leaves purge to the CLI operator', () => {
+test('remove soft-removes an active memory and identifies explicit CLI or UI purge controls', () => {
   const f = fixture();
   try {
     const memory = runMemory({ cwd: f.project, store: 'project', operation: 'retain', input: { content: 'Remove me' } });
@@ -170,6 +170,7 @@ test('remove soft-removes an active memory and leaves purge to the CLI operator'
     const removed = runCli({ argv: ['remove', 'project', memory.id], ...f.ctx });
     assert.equal(removed.ok, true);
     assert.match(removed.text, new RegExp(memory.id));
+    assert.match(removed.text, /purge requires an explicit CLI or UI workbench action/);
 
     const recalled = runMemory({ cwd: f.project, store: 'project', operation: 'recall', input: { id: memory.id }, create: false, readOnly: true });
     assert.equal(recalled, null);

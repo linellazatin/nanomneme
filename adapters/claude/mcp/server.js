@@ -52,7 +52,7 @@ register('retrieve_memory', 'Search or list active nanomneme memories.', {
   offset: z.number().optional(),
 });
 
-register('remove_memory', 'Soft-remove a nanomneme memory by ID (reversible; purge is CLI-only).', {
+register('remove_memory', 'Soft-remove a nanomneme memory by ID (reversible; purge requires an explicit CLI or UI workbench action).', {
   id: z.string(),
   store: storeParam,
 });

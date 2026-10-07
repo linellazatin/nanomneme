@@ -1,9 +1,12 @@
 const $ = id => document.getElementById(id);
 let token = location.hash.slice(1);
-if (token) { sessionStorage.setItem('nmnm-ui-token', token); history.replaceState(null, '', location.pathname); }
+if (/^[a-f0-9]{64}$/.test(token)) { sessionStorage.setItem('nmnm-ui-token', token); history.replaceState(null, '', location.pathname); }
 else token = sessionStorage.getItem('nmnm-ui-token');
 let stores = [], selected = new Set(), page = 0, total = 0, current = null, dirty = false, busy = false, browserDirectory = null;
 const fields = ['content', 'kind', 'namespace', 'tags', 'importance', 'confidence', 'expires_at'];
+const filterFields = ['source', 'state', 'query', 'kind', 'namespace', 'tag'];
+const readFilters = () => Object.fromEntries(filterFields.map(id => [id, $(id).value]));
+let filters = readFilters();
 function node(tag, text, className) { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; if (className) el.className = className; return el; }
 function message(text = '', error = false) { $('message').textContent = text; $('message').className = error ? 'error' : ''; }
 async function api(route, body) { const response = await fetch('/api/' + route, { method: body === undefined ? 'GET' : 'POST', headers: { 'x-nmnm-token': token ?? '', 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) }); const data = await response.json(); if (!response.ok) { const error = new Error(data.error); error.reported = true; throw error; } return data; }
@@ -17,13 +20,26 @@ function reportClientError(error) {
 window.addEventListener('error', event => reportClientError(event.error ?? new Error(event.message || 'Browser resource failed to load')), true);
 window.addEventListener('unhandledrejection', event => reportClientError(event.reason));
 function guard() { return !dirty || confirm('Discard unsaved edits?'); }
-function clearDetail() { current = null; dirty = false; $('detail').replaceChildren(node('p', 'Select a memory to inspect its content and origin.', 'placeholder')); document.querySelector('.workbench').classList.remove('detail-open'); }
-async function run(task) {
+function clearDetail() { current = null; dirty = false; $('detail').replaceChildren(node('p', 'Select a memory to inspect its content and origin.', 'placeholder')); document.querySelector('.workbench').classList.remove('detail-open'); document.querySelectorAll('.row').forEach(el => el.setAttribute('aria-pressed', 'false')); }
+const keyedControl = key => key ? document.querySelector(`[data-focus="${CSS.escape(key)}"]`) : null;
+const canFocus = el => el?.isConnected && !el.disabled && el.getClientRects().length > 0 && !el.closest('[inert]');
+async function run(task, focusAfter) {
   if (busy) return;
+  const focused = document.activeElement, focusId = focused.id, focusKey = focused.dataset.focus;
+  const managedFocus = !!focused.closest('main, dialog');
+  let succeeded = false;
   busy = true; document.querySelector('main').inert = true; document.querySelector('main').setAttribute('aria-busy', 'true');
   $('store-picker').inert = true;
-  try { await task(); } catch (error) { message(error.message, true); reportClientError(error); }
-  finally { busy = false; document.querySelector('main').inert = false; document.querySelector('main').setAttribute('aria-busy', 'false'); $('store-picker').inert = false; if ($('store-picker').open && !$('store-picker').contains(document.activeElement)) $('directory').focus(); }
+  try { await task(); succeeded = true; } catch (error) { message(error.message, true); reportClientError(error); }
+  finally {
+    busy = false; document.querySelector('main').inert = false; document.querySelector('main').setAttribute('aria-busy', 'false'); $('store-picker').inert = false;
+    if (document.activeElement === document.body || document.activeElement === focused) {
+      const target = succeeded && focusAfter ? focusAfter() : focusId ? $(focusId) : focusKey ? keyedControl(focusKey) : focused;
+      if (canFocus(target) && managedFocus) target.focus();
+      else if ($('store-picker').open) $('directory').focus();
+      else if (managedFocus) (canFocus($('detail-title')) ? $('detail-title') : document.querySelector('.row') ?? $('refresh')).focus();
+    }
+  }
 }
 function renderStores() {
   $('stores-count').textContent = `(${stores.length})`;
@@ -32,7 +48,7 @@ function renderStores() {
     const row = node('div', undefined, 'store'); const label = node('label'); const check = node('input'); check.type = 'checkbox'; check.checked = selected.has(store.id); check.setAttribute('aria-label', 'Select ' + store.path);
     check.onchange = () => run(async () => { if (!guard()) { check.checked = !check.checked; return; } if (check.checked) selected.add(store.id); else selected.delete(store.id); page = 0; clearDetail(); await load(); });
     label.append(check, node('span', store.path)); const controls = node('div', undefined, 'store-controls'); controls.append(node('small', store.editing ? 'Editing enabled' : 'Read-only'));
-    const button = node('button', store.editing ? 'Disable editing' : 'Enable editing'); button.onclick = () => run(async () => { if (!guard()) return; const updated = await api('editing', { store: store.id, enabled: !store.editing }); Object.assign(store, updated); renderStores(); if (current?.store === store.id) await inspect(current.store, current.id); message(store.editing ? 'Editing enabled for this store for this session.' : 'Store is read-only.'); }); controls.append(button); row.append(label, controls); $('store-list').append(row);
+    const button = node('button', store.editing ? 'Disable editing' : 'Enable editing'); button.dataset.focus = 'editing:' + store.id; button.onclick = () => run(async () => { if (!guard()) return; const updated = await api('editing', { store: store.id, enabled: !store.editing }); Object.assign(store, updated); renderStores(); if (current?.store === store.id) await inspect(current.store, current.id); message(store.editing ? 'Editing enabled for this store for this session.' : 'Store is read-only.'); }); controls.append(button); row.append(label, controls); $('store-list').append(row);
     const remove = node('button', undefined, 'store-remove'); remove.type = 'button'; remove.setAttribute('aria-label', 'Remove store from list: ' + store.path); remove.title = 'Remove from list; database stays on disk';
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('aria-hidden', 'true'); svg.setAttribute('fill', 'none'); svg.setAttribute('stroke', 'currentColor'); svg.setAttribute('stroke-width', '1.5');
     const path = document.createElementNS(svg.namespaceURI, 'path'); path.setAttribute('d', 'M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 10v7M14 10v7'); svg.append(path); remove.append(svg);
@@ -57,8 +73,10 @@ async function browse(path) {
   } catch (error) { $('picker-message').textContent = error.message; reportClientError(error); }
 }
 async function load() {
-  const params = new URLSearchParams({ stores: [...selected].join(','), page, ...Object.fromEntries(['source', 'state', 'query', 'kind', 'namespace', 'tag'].map(id => [id, $(id).value])) });
+  const params = new URLSearchParams({ stores: [...selected].join(','), page, ...filters });
   const data = await api('memories?' + params); total = data.total;
+  const lastPage = Math.max(0, Math.ceil(total / 50) - 1);
+  if (page > lastPage) { page = lastPage; return load(); }
   const oldSource = $('source').value; $('source').replaceChildren();
   for (const [value, label] of [['', 'All sources'], ['unknown', 'Unknown / unrecorded'], ...data.sources.map(value => ['recorded:' + value, value])]) { const option = node('option', label); option.value = value; $('source').append(option); }
   if (oldSource && ![...$('source').options].some(option => option.value === oldSource)) { const option = node('option', oldSource); option.value = oldSource; $('source').append(option); }
@@ -67,9 +85,9 @@ async function load() {
   $('rows').replaceChildren();
   $('rows').scrollTop = 0;
   for (const row of data.items) {
-    const button = node('button', undefined, 'row'); button.setAttribute('aria-pressed', String(current?.id === row.id && current?.store === row.store));
+    const button = node('button', undefined, 'row'); button.dataset.focus = `memory:${row.store}:${row.id}`; button.setAttribute('aria-pressed', String(current?.id === row.id && current?.store === row.store));
     button.append(node('span', row.content.length > 220 ? row.content.slice(0, 220) + '…' : row.content, 'preview'), node('span', `${row.kind} · ${typeof row.metadata.source === 'string' && row.metadata.source.trim() ? row.metadata.source : 'unrecorded'} · ${row.updated_at}`, 'meta'), node('span', row.store_path, 'meta'));
-    button.onclick = () => run(async () => { if (!guard()) return; await inspect(row.store, row.id); document.querySelectorAll('.row').forEach(el => el.setAttribute('aria-pressed', String(el === button))); }); $('rows').append(button);
+    button.onclick = () => run(async () => { if (!guard()) return; await inspect(row.store, row.id); document.querySelectorAll('.row').forEach(el => el.setAttribute('aria-pressed', String(el === button))); }, () => matchMedia('(max-width:700px)').matches ? $('detail-title') : button); $('rows').append(button);
   }
   if (!data.items.length) $('rows').append(node('p', selected.size ? 'No memories match this selection.' : 'Add an existing database above, then select it.', 'placeholder'));
   $('prev').disabled = page === 0; $('next').disabled = (page + 1) * 50 >= total; $('page-label').textContent = total ? `Page ${page + 1} of ${Math.ceil(total / 50)}` : '';
@@ -77,7 +95,7 @@ async function load() {
 async function inspect(store, id) {
   const memory = await api(`memory?${new URLSearchParams({ store, id })}`); current = memory; dirty = false;
   const enabled = stores.find(item => item.id === store)?.editing && !memory.removed_at;
-  const detail = $('detail'); detail.replaceChildren(); const back = node('button', 'Back to memories', 'back'); back.onclick = () => { if (guard()) clearDetail(); }; detail.append(back, node('h3', 'Memory details'));
+  const detail = $('detail'); detail.replaceChildren(); const back = node('button', 'Back to memories', 'back'); back.onclick = () => { if (guard()) { clearDetail(); (keyedControl(`memory:${store}:${id}`) ?? $('refresh')).focus(); } }; const heading = node('h3', 'Memory details'); heading.id = 'detail-title'; heading.tabIndex = -1; detail.append(back, heading);
   detail.append(node('p', `${memory.store_path}\nSource: ${memory.metadata.source ?? 'unrecorded'} · Scope: ${memory.scope}`, 'detail-origin'));
   const form = node('form', undefined, 'editor'); const controls = {}; const grid = node('div', undefined, 'fields');
   for (const field of fields) {
@@ -90,7 +108,7 @@ async function inspect(store, id) {
     control.value = field === 'tags' ? memory.tags.join(', ') : memory[field] ?? ''; control.disabled = !enabled; control.id = 'edit-' + field; control.oninput = () => { dirty = true; }; controls[field] = control; label.append(control);
     if (field === 'content') form.append(label); else { if (!grid.parentNode) form.append(grid); grid.append(label); }
   }
-  const save = node('button', 'Save changes', 'primary'); save.disabled = !enabled; form.append(save);
+  const save = node('button', 'Save changes', 'primary'); save.id = 'edit-save'; save.disabled = !enabled; form.append(save);
   form.onsubmit = event => { event.preventDefault(); run(async () => { const patch = {}; for (const field of fields) { let value = controls[field].value; if (field === 'tags') value = value.split(',').map(tag => tag.trim()).filter(Boolean); if (['importance', 'confidence'].includes(field)) { if (!value.trim()) throw new Error(field + ' requires a number'); value = Number(value); } if (field === 'expires_at') value = value.trim() || null; if (JSON.stringify(value) !== JSON.stringify(memory[field])) patch[field] = value; } await mutate('edit', patch); }); };
   detail.append(form);
   const note = memory.removed_at ? 'Restore this memory before editing. Restoration preserves its expiry.' : enabled ? 'Stale edits are checked before saving; simultaneous harness writes can still race.' : 'Enable editing for this store to change this memory.'; detail.append(node('p', note, 'note'));
@@ -111,9 +129,18 @@ $('stores-toggle').onclick = () => { const collapsed = !$('stores-content').hidd
 $('add-store').onclick = () => { if (busy) return; $('store-picker').showModal(); run(() => browse(browserDirectory)); };
 $('picker-close').onclick = () => $('store-picker').close();
 $('browse-directory').onsubmit = event => { event.preventDefault(); run(() => browse($('directory').value)); };
-$('filters').onsubmit = event => { event.preventDefault(); run(async () => { if (!guard()) return; page = 0; clearDetail(); await load(); }); };
+$('filters').onsubmit = event => { event.preventDefault(); run(async () => { if (!guard()) return; filters = readFilters(); page = 0; clearDetail(); await load(); }); };
 $('refresh').onclick = () => run(async () => { if (!guard()) return; clearDetail(); await load(); message('Refreshed from selected stores.'); });
 for (const [id, delta] of [['prev', -1], ['next', 1]]) $(id).onclick = () => run(async () => { if (!guard()) return; page += delta; clearDetail(); await load(); });
+// Scrolling between pointerdown and pointerup can cancel the intended click.
+let pointerFocusing = false;
+document.addEventListener('pointerdown', () => { pointerFocusing = true; }, true);
+for (const event of ['pointerup', 'pointercancel']) document.addEventListener(event, () => { pointerFocusing = false; }, true);
+document.addEventListener('focusin', event => {
+  if (pointerFocusing || !event.target.closest('main')) return;
+  const box = event.target.getBoundingClientRect();
+  if (box.top < document.querySelector('header').getBoundingClientRect().bottom || box.bottom > document.querySelector('footer').getBoundingClientRect().top) event.target.scrollIntoView({ block: 'nearest' });
+});
 window.addEventListener('beforeunload', event => { if (dirty) { event.preventDefault(); event.returnValue = ''; } });
 const chromeObserver = new ResizeObserver(() => { document.documentElement.style.setProperty('--header-height', document.querySelector('header').getBoundingClientRect().height + 'px'); document.documentElement.style.setProperty('--footer-height', document.querySelector('footer').getBoundingClientRect().height + 'px'); });
 chromeObserver.observe(document.querySelector('header')); chromeObserver.observe(document.querySelector('footer'));

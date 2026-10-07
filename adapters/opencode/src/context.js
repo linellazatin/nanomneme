@@ -235,7 +235,7 @@ export function buildMemoryIndex({ cwd, home, globalDir, platform, budget } = {}
 
 export function renderContext(index) {
   const parts = [];
-  if (index.total) parts.push(index.content.trimEnd());
   if (index.autoretention) parts.push(index.autoretention);
+  if (index.total) parts.push(index.content.trimEnd());
   return parts.join('\n\n');
 }

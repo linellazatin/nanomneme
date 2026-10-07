@@ -12,6 +12,37 @@ function temporaryDirectory(name) {
   return mkdtempSync(join(tmpdir(), name));
 }
 
+test('renderContext puts complete guidance before index rows and omits empty indexes', () => {
+  const index = { total: 1, content: 'Nanomneme memory index:\nrow\n', autoretention: 'Complete guidance' };
+  assert.equal(context.renderContext(index), 'Complete guidance\n\nNanomneme memory index:\nrow');
+  assert.equal(context.renderContext({ ...index, total: 0 }), 'Complete guidance');
+  assert.equal(context.renderContext({ ...index, autoretention: undefined }), 'Nanomneme memory index:\nrow');
+  assert.equal(context.renderContext({ total: 0 }), '');
+});
+
+test('rendered OpenCode context preserves complete guidance at exact budget boundaries', () => {
+  const cwd = temporaryDirectory('nmnm-opencode-render-budget-');
+  const home = temporaryDirectory('nmnm-opencode-render-budget-home-');
+  const globalDir = join(home, 'opencode-data');
+  const env = { cwd, home, globalDir, platform: 'darwin' };
+  try {
+    runMemory({ cwd, store: 'project', operation: 'retain', input: { content: 'Budgeted index row' } });
+    writeFileSync(settingsPath({ ...env, store: 'project' }), '{"autoretention":{"enabled":true,"always_ask":["Keep this complete rule."]}}');
+    const full = buildMemoryIndex(env);
+    const guidance = full.autoretention;
+    for (const budget of [guidance.length, guidance.length + 2, guidance.length + 2 + full.content.length]) {
+      const rendered = context.renderContext(buildMemoryIndex({ ...env, budget }));
+      assert.ok(rendered.startsWith(guidance));
+      assert.ok(rendered.length <= budget);
+    }
+    assert.equal(context.renderContext(buildMemoryIndex({ ...env, budget: guidance.length })), guidance);
+    assert.throws(() => buildMemoryIndex({ ...env, budget: guidance.length - 1 }), /exceeds the injection budget/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test('keeps JSONC settings and JSON pins in their requested project and global locations', () => {
   const project = temporaryDirectory('nmnm-opencode-context-project-');
   const home = temporaryDirectory('nmnm-opencode-context-home-');

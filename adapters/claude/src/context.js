@@ -188,16 +188,26 @@ function readStore({ cwd, home, platform, store, operation, input }) {
   return runMemory({ cwd, home, platform, store, operation, input, create: false, readOnly: true });
 }
 
+function reinjectionPolicy(projectSettings, globalSettings) {
+  return {
+    enabled: projectSettings.reinjection?.enabled ?? globalSettings.reinjection?.enabled ?? false,
+    every_n_prompts: projectSettings.reinjection?.every_n_prompts ?? globalSettings.reinjection?.every_n_prompts ?? DEFAULT_REINJECTION_PROMPTS,
+  };
+}
+
+export function readReinjectionSettings({ cwd, home, globalDir } = {}) {
+  const projectSettings = readSettings(settingsPath({ cwd, home, globalDir, store: 'project' }));
+  const globalSettings = readSettings(settingsPath({ cwd, home, globalDir, store: 'global' }));
+  return reinjectionPolicy(projectSettings, globalSettings);
+}
+
 export function buildMemoryIndex({ cwd, home, globalDir, platform, budget } = {}) {
   const projectSettings = readSettings(settingsPath({ cwd, home, globalDir, store: 'project' }));
   const globalSettings = readSettings(settingsPath({ cwd, home, globalDir, store: 'global' }));
   const projectPins = readPins(pinsPath({ cwd, home, store: 'project' }));
   const globalPins = readPins(pinsPath({ cwd, home, store: 'global' }));
   const limit = budget ?? projectSettings.injection_budget ?? globalSettings.injection_budget ?? DEFAULT_INJECTION_BUDGET;
-  const reinjection = {
-    enabled: projectSettings.reinjection?.enabled ?? globalSettings.reinjection?.enabled ?? false,
-    every_n_prompts: projectSettings.reinjection?.every_n_prompts ?? globalSettings.reinjection?.every_n_prompts ?? DEFAULT_REINJECTION_PROMPTS,
-  };
+  const reinjection = reinjectionPolicy(projectSettings, globalSettings);
   if (!Number.isSafeInteger(limit) || limit < 0) throw new TypeError('Nanomneme memory injection budget must be a non-negative integer');
 
   const records = [];

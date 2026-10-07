@@ -55,11 +55,13 @@ test('recall tool reads a missing project store as null without creating it', ru
 
 test('system transform appends the bounded index to the last system entry', run(async ({ hooks, ctx }) => {
   runMemory({ ...ctx, store: 'project', operation: 'retain', input: { content: 'Injected memory' } });
+  writeFileSync(settingsPath({ ...ctx, store: 'project' }), '{"autoretention":{"enabled":true,"always_ask":["Confirm durable capture."]}}');
   const output = { system: ['Base prompt'] };
   await transform(hooks, output);
   assert.equal(output.system.length, 1);
   assert.match(output.system[0], /^Base prompt\n\n# Nanomneme memory/);
   assert.match(output.system[0], /Injected memory/);
+  assert.ok(output.system[0].indexOf('## Nanomneme autoretention') < output.system[0].indexOf('Nanomneme memory index:'));
 }));
 
 test('system transform pushes a new entry when the system array is empty', run(async ({ hooks, ctx }) => {

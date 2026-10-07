@@ -63,7 +63,7 @@ test('UI mutations and general errors emit once, while reads and no-op saves sta
     const validate = ajv.compile(JSON.parse(readFileSync(new URL('../../../external/logslines/spec/v1/schema.json', import.meta.url))));
     for (const row of output) {
       assert.equal(validate(row), true, JSON.stringify(validate.errors));
-      assert.equal(row.service.component, 'nmnm-ui'); assert.equal(row.service.version, '0.1.0');
+      assert.equal(row.service.component, 'nmnm-ui'); assert.equal(row.service.version, '0.1.1');
       assert.equal(row.context.session_id, null); assert.deepEqual(row.attributes, {});
     }
     const serialized = JSON.stringify(output);

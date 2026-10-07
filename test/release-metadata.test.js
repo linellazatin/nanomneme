@@ -9,7 +9,7 @@ function json(path) {
   return JSON.parse(readFileSync(path, 'utf8'));
 }
 
-test('release metadata aligns the 0.8.0 UI release and every consumer', () => {
+test('release metadata aligns the 0.8.1 UI patch and every consumer', () => {
   const root = json(new URL('../package.json', import.meta.url));
   const lock = json(new URL('../package-lock.json', import.meta.url));
   const pi = json(new URL('../adapters/pi/package.json', import.meta.url));
@@ -19,7 +19,7 @@ test('release metadata aligns the 0.8.0 UI release and every consumer', () => {
   const claude = json(new URL('../adapters/claude/package.json', import.meta.url));
   const codex = json(new URL('../adapters/codex/package.json', import.meta.url));
   const opencode = json(new URL('../adapters/opencode/package.json', import.meta.url));
-  assert.equal(root.version, '0.8.0');
+  assert.equal(root.version, '0.8.1');
   assert.equal(lock.version, root.version);
   assert.equal(lock.packages['adapters/codex'].name, '@openlines/nmnm-codex');
   assert.equal(lock.packages['node_modules/@openlines/nmnm-codex'].resolved, 'adapters/codex');
@@ -27,9 +27,9 @@ test('release metadata aligns the 0.8.0 UI release and every consumer', () => {
   assert.equal(core.exports['./logging'], './src/logslines.js');
   assert(core.files.includes('src/logslines.js'));
   assert(!core.files.includes('src/logging.js'));
-  assert.equal(cli.version, '0.4.0');
+  assert.equal(cli.version, '0.4.1');
   assert.equal(ui.name, '@openlines/nmnm-ui');
-  assert.equal(ui.version, '0.1.0');
+  assert.equal(ui.version, '0.1.1');
   assert.notEqual(ui.private, true);
   assert.equal(cli.dependencies['@openlines/nmnm-ui'], ui.version);
   assert.equal(cli.engines.node, ui.engines.node);

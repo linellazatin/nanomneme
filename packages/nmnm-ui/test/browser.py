@@ -23,6 +23,7 @@ db.retain({content:'<script>window.injected=true</script> Captured preference',k
 db.retain({content:'Recorded unknown',metadata:{source:'unknown'}});
 db.retain({content:'Expired decision',expires_at:'2000-01-01T00:00:00.000Z'});
 const removed = db.retain({content:'Removed note'}); db.remove({id:removed.id}); db.close();
+const scrolling = open(path); for (let index = 0; index < 6; index++) scrolling.retain({content:'Scroll fixture ' + index,metadata:{source:'scroll-fixture'}}); scrolling.close();
 const app = await startServer({cwd:process.env.NMNM_UI_TEST_DIR});
 console.log(JSON.stringify({url:app.url,path}));
 process.on('SIGTERM',async()=>{await app.close()});
@@ -76,6 +77,11 @@ with tempfile.TemporaryDirectory(prefix="nmnm-ui-browser-") as directory:
             page.get_by_role("button", name="Select database memory.db", exact=True).click()
             expect(page.get_by_role("dialog")).not_to_be_visible()
             page.locator(".row").first.wait_for()
+            expect(page.locator(".row")).to_have_count(8)
+            assert page.locator("#rows").evaluate("el => el.scrollHeight > el.clientHeight")
+            assert page.locator("#rows").evaluate("el => Math.abs(el.clientHeight - el.querySelector('.row').offsetHeight * 5) <= 1")
+            page.locator("#rows").evaluate("el => el.scrollTop = el.scrollHeight")
+            assert page.locator("#rows").evaluate("el => el.scrollTop > 0")
             page.locator("#source").select_option("recorded:unknown")
             page.get_by_role("button", name="Apply filters").click()
             expect(page.locator(".row")).to_have_count(1)
@@ -96,6 +102,10 @@ with tempfile.TemporaryDirectory(prefix="nmnm-ui-browser-") as directory:
             page.get_by_role("button", name="Enable editing", exact=True).click()
             expect(page.locator("#edit-content")).to_be_enabled()
             page.locator("#edit-content").fill("Unsaved draft")
+            page.once("dialog", lambda dialog: dialog.dismiss())
+            page.get_by_role("button", name="Remove store from list:", exact=False).click()
+            expect(page.locator("#store-list .store")).to_have_count(1)
+            expect(page.locator("#edit-content")).to_have_value("Unsaved draft")
             page.once("dialog", lambda dialog: dialog.dismiss())
             page.get_by_role("button", name="Refresh", exact=True).click()
             expect(page.locator("#edit-content")).to_have_value("Unsaved draft")
@@ -158,6 +168,18 @@ with tempfile.TemporaryDirectory(prefix="nmnm-ui-browser-") as directory:
             page.get_by_role("button", name="Save changes", exact=True).click()
             page.get_by_text("Changes saved.", exact=True).wait_for()
             assert not errors, errors
+            page.get_by_role("button", name="Remove store from list:", exact=False).click()
+            expect(page.locator("#store-list .store")).to_have_count(0)
+            expect(page.locator("#detail")).to_have_text("Select a memory to inspect its content and origin.")
+            expect(page.locator("#count")).to_have_text("Select a store to begin.")
+            assert Path(fixture["path"]).exists()
+            page.get_by_role("button", name="Add store", exact=True).click()
+            page.get_by_role("button", name="Select database memory.db", exact=True).click()
+            expect(page.locator("#store-list .store")).to_have_count(1)
+            expect(page.get_by_role("button", name="Enable editing", exact=True)).to_be_visible()
+            page.locator("#state").select_option("active")
+            page.get_by_role("button", name="Apply filters").click()
+            expect(page.get_by_role("button", name="Expired decision", exact=False)).to_be_visible()
             browser.close()
             print("Browser checks passed: directory picker/cancellation, fixed chrome, theme icons, sources, literal rendering, read-only, drafts, cleanup, expiry, and mobile navigation.")
     finally:

@@ -30,8 +30,12 @@ function renderStores() {
   for (const store of stores) {
     const row = node('div', undefined, 'store'); const label = node('label'); const check = node('input'); check.type = 'checkbox'; check.checked = selected.has(store.id); check.setAttribute('aria-label', 'Select ' + store.path);
     check.onchange = () => run(async () => { if (!guard()) { check.checked = !check.checked; return; } if (check.checked) selected.add(store.id); else selected.delete(store.id); page = 0; clearDetail(); await load(); });
-    label.append(check, node('span', store.path)); const controls = node('div'); controls.append(node('small', store.editing ? 'Editing enabled · ' : 'Read-only · '));
+    label.append(check, node('span', store.path)); const controls = node('div', undefined, 'store-controls'); controls.append(node('small', store.editing ? 'Editing enabled' : 'Read-only'));
     const button = node('button', store.editing ? 'Disable editing' : 'Enable editing'); button.onclick = () => run(async () => { if (!guard()) return; const updated = await api('editing', { store: store.id, enabled: !store.editing }); Object.assign(store, updated); renderStores(); if (current?.store === store.id) await inspect(current.store, current.id); message(store.editing ? 'Editing enabled for this store for this session.' : 'Store is read-only.'); }); controls.append(button); row.append(label, controls); $('store-list').append(row);
+    const remove = node('button', undefined, 'store-remove'); remove.type = 'button'; remove.setAttribute('aria-label', 'Remove store from list: ' + store.path); remove.title = 'Remove from list; database stays on disk';
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('aria-hidden', 'true'); svg.setAttribute('fill', 'none'); svg.setAttribute('stroke', 'currentColor'); svg.setAttribute('stroke-width', '1.5');
+    const path = document.createElementNS(svg.namespaceURI, 'path'); path.setAttribute('d', 'M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 10v7M14 10v7'); svg.append(path); remove.append(svg);
+    remove.onclick = () => run(async () => { if (!guard()) return; await api('unregister', { store: store.id }); stores = stores.filter(item => item.id !== store.id); selected.delete(store.id); page = 0; clearDetail(); renderStores(); await load(); $('add-store').focus(); message('Store removed from list. Database remains on disk.'); }); controls.append(remove);
   }
 }
 async function add(path) { if (!guard()) return false; const store = await api('stores', { path }); if (!stores.some(item => item.id === store.id)) stores.push(store); selected.add(store.id); renderStores(); page = 0; clearDetail(); await load(); message(store.editing ? 'Existing store selected; editing remains enabled.' : 'Store opened read-only.'); return true; }
@@ -60,6 +64,7 @@ async function load() {
   $('source').value = oldSource;
   $('count').textContent = selected.size ? `${total} ${total === 1 ? 'memory' : 'memories'} · ${selected.size} ${selected.size === 1 ? 'store' : 'stores'}` : 'Select a store to begin.';
   $('rows').replaceChildren();
+  $('rows').scrollTop = 0;
   for (const row of data.items) {
     const button = node('button', undefined, 'row'); button.setAttribute('aria-pressed', String(current?.id === row.id && current?.store === row.store));
     button.append(node('span', row.content.length > 220 ? row.content.slice(0, 220) + '…' : row.content, 'preview'), node('span', `${row.kind} · ${typeof row.metadata.source === 'string' && row.metadata.source.trim() ? row.metadata.source : 'unrecorded'} · ${row.updated_at}`, 'meta'), node('span', row.store_path, 'meta'));

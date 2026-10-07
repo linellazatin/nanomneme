@@ -81,6 +81,11 @@ export async function startServer({ port = 0, cwd = process.cwd(), home, diagnos
         const reader = openReviewStore(path);
         const store = { id: randomUUID(), path, label: path, reader, writer: null }; stores.set(store.id, store); return send(200, info(store));
       }
+      if (req.method === 'POST' && route === 'unregister') {
+        const input = await body(req); const store = lookup(input.store);
+        store.writer?.close(); store.reader.close(); stores.delete(store.id);
+        return send(200, { ok: true });
+      }
       if (req.method === 'POST' && route === 'editing') {
         const input = await body(req); const store = lookup(input.store);
         if (typeof input.enabled !== 'boolean') fail(400, 'enabled must be boolean');

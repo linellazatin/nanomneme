@@ -60,6 +60,21 @@ test('read-only targeting, lifecycle, provenance, stale edits, and HTTP boundari
     await api('editing', { store, enabled: false });
     assert.equal((await api('mutate', action)).status, 403);
     assert.equal((await fetch(server.origin + '/src/server.js')).status, 404);
+    await api('editing', { store, enabled: true });
+    const beforeUnregister = (await api(`memories?stores=${store}&state=expired`)).data.items;
+    assert.equal((await fetch(server.origin + '/api/unregister', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ store }) })).status, 401);
+    assert.equal((await api('unregister', { store }, { origin: 'https://example.com' })).status, 403);
+    assert.equal((await api('unregister', { store })).status, 200);
+    assert.deepEqual((await api('stores')).data.stores, []);
+    assert.equal((await api('editing', { store, enabled: true })).status, 404);
+    assert.equal((await api(`memories?stores=${store}`)).status, 404);
+    assert.equal((await api('unregister', { store })).status, 404);
+    assert.equal(existsSync(path), true);
+    const reopened = (await api('stores', { path })).data;
+    assert.notEqual(reopened.id, store);
+    assert.equal(reopened.editing, false);
+    const afterUnregister = (await api(`memories?stores=${reopened.id}&state=expired`)).data.items;
+    assert.deepEqual(afterUnregister.map(({ store, ...row }) => row), beforeUnregister.map(({ store, ...row }) => row));
   } finally { await server.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 

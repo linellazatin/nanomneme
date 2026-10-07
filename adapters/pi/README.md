@@ -15,7 +15,7 @@ Pi package for the [nanomneme](https://nanomneme.openlines.dev) SQLite memory ad
 - **Native memory tools:** model-invoked retain, recall, retrieve, and remove operations over `nmnm-core`; project operations require Pi project trust, while global operations remain available in untrusted projects. Model-visible JSON is bounded to 50 KiB, with explicit summaries for oversized results.
 - **Opt-in Logslines diagnostics:** enable the default in `~/.local/share/nanomneme/config.jsonc`, or override `logging.enabled` in user-level Pi `nmnm.jsonc` and run `/reload` to apply changes. The shared lazy logger appends privacy-bounded `logslines/v1` outcomes for model-facing 4R tools, browser mutations, and explicit `/memory` pin, unpin, and remove commands to `~/.local/share/nanomneme/logs/nmnm-pi.jsonl`. Navigation, read-only commands, and canceled removal are not logged. The core dependency includes the shared generated runtime, so installation does not fetch Logslines source.
 - **Project and global memory:** explicit store selection with canonical records and no custom database-path parsing.
-- **Bounded automatic context:** transient autoretention guidance and the first-prompt memory index share one configurable character budget; pinned entries come first, with recent active fallback, store and recorded-source labels, unresolved-pin reporting, and refresh after successful compaction or memory mutations.
+- **Bounded automatic context:** transient autoretention guidance comes before the first-prompt memory index, sharing one configurable character budget; pinned index entries precede recent active fallback, with store and recorded-source labels, unresolved-pin reporting, and refresh after successful compaction or memory mutations.
 - **Opt-in autoretention:** project/global JSONC rules guide the active model's `retain_memory` calls without a nested model, worker, or direct adapter write.
 - **Adapter-owned configuration:** optional JSONC settings and separate JSON pin files, with project and global locations; pin mutations are serialized and atomically replaced.
 - **Direct user controls:** `/memory refresh`, `status`, `list`, `remove`, `pin`, and `unpin` without model involvement; `status` reports injection state, autoretention, the effective index budget, current full-payload character count, and lifecycle metadata without exposing memory content.
@@ -36,7 +36,7 @@ Pi package for the [nanomneme](https://nanomneme.openlines.dev) SQLite memory ad
 
 ## Quickstart
 
-Version 0.4.1 targets Pi 0.87.0 or newer, verified through Pi 1.0.0, and Node.js 22.19 or newer. Install it globally with Pi:
+Version 0.4.2 targets Pi 0.87.0 or newer, verified through Pi 1.0.4, and Node.js 22.19 or newer. Install it globally with Pi:
 
 ```sh
 pi install npm:@openlines/nmnm-pi
@@ -54,8 +54,15 @@ To add this checkout as a project-local Pi package:
 pi install -l "$(pwd)/adapters/pi"
 ```
 
-Pi settings and pins are adapter-owned files outside SQLite. First load creates neither: `nmnm.jsonc` is optional and user-authored, and `nmnm-pi.json` appears only after a pin change. New `retain_memory` entries record `metadata.source` as `"pi"`; ID-based patches preserve an existing source. In an untrusted Pi project, automatic context reads only global settings, pins, and memory. Model-facing project operations (e.g. model tools) are rejected, global operations continue, and explicit user `/memory` project commands remain available. Oversized successful tool results return valid bounded summary JSON without changing the canonical stored record. Optional `autoretention` only guides the active model's `retain_memory`; disabled-by-default `reinjection` can rebuild the same context every five user prompts. Retain scope selects the matching write store: omit it for project or use `scope: "global"` for global. The browser and `/memory list` can show all records or Pi-source records. The model-facing `remove_memory` tool and `/memory remove` are soft-only; irreversible purge remains an explicit CLI operation. Run `/memory` or `/memory browse` for the model-free custom browser: left/right changes Status, All, Project, and Global tabs. Record details remain in a native action dialog; search and source controls remain in each store tab. `/memory status` remains available for an on-demand card. Explicit list, refresh, pin, unpin, and soft-remove subcommands remain available.
+- Settings and pins are adapter-owned files outside SQLite. First load creates neither: `nmnm.jsonc` is optional and user-authored; `nmnm-pi.json` appears after a pin change.
+- New retains record source `"pi"`; ID patches preserve source when metadata is omitted. Omit retain scope for project or use `scope: "global"`; scope is trimmed and validated before routing and trust checks. Metadata and retrieval score filters have explicit tool schemas. Oversized successful tool results return bounded JSON without changing stored content.
+- Untrusted projects use only global settings, pins, and memory for automatic context. Model-facing project operations are rejected; global tools and explicit user `/memory` project commands remain available.
+- Optional autoretention guides the active model's `retain_memory`; disabled-by-default reinjection rebuilds context every five user prompts.
+- Run `/memory` or `/memory browse` for the model-free browser. Left/right switches Status, All, Project, and Global tabs; store tabs have search/source controls, and details open in a native action dialog. `/memory status` shows an on-demand card.
+- List, refresh, pin, unpin, and soft removal also have explicit subcommands. Browser and list support all records or Pi-source records. Adapter removal is soft-only; irreversible purge requires CLI or UI workbench action.
 
-This Pi adapter includes tool-boundary tests for Unicode search and malformed-text rejection, numeric-range validation, private first-use storage, and monotonic patch/restore timestamps. The adapter delegates these guarantees to core; CLI-only maintenance and transfer operations remain outside its API.
+This Pi adapter includes tool-boundary tests for Unicode search and malformed-text rejection, numeric-range validation, private first-use storage, and monotonic patch/restore timestamps. The adapter delegates these guarantees to core; CLI maintenance and transfer operations remain outside its API.
 
 See the [Pi Adapter Manual](docs/PI_ADAPTER_MANUAL.md) for npm, Git, and local installation, tools, JSONC settings, pins, list and removal controls, native-read behavior, reinjection, and transient index lifecycle.
+
+`src/logslines.js` binds this adapter to core’s shared logging runtime; it does not contain a separate observer or generated bundle. See the [Logger manual](../../docs/LOGGER.md#source-and-artifact-map) for file roles and build rules.

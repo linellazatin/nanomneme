@@ -32,3 +32,32 @@ jobs:
       - run: npm run validate
       - run: git diff --check
       - run: npm pack --dry-run --workspace @openlines/nmnm-core --workspace @openlines/nmnm-ui --workspace @openlines/nmnm-cli --workspace @openlines/nmnm-pi --workspace @openlines/nmnm-opencode
+
+  ui:
+    name: Rendered UI checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - run: npm ci
+      - name: Install browser test dependencies
+        run: |
+          python -m pip install playwright==1.62.0
+          python -m playwright install --with-deps chromium
+      - name: Run rendered UI checks
+        run: python packages/nmnm-ui/test/browser.py
+      - name: Upload UI screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nmnm-ui-screenshots
+          path: /tmp/nmnm-ui-*.png
+          if-no-files-found: warn
+          retention-days: 7

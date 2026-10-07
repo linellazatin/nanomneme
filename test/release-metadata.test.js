@@ -109,7 +109,13 @@ test('tag publishing requires the same blocking rendered UI job as branch CI', (
   assert.match(publish, /needs: \[validate, ui\]/);
   assert.doesNotMatch(publish, /if:.*always\(\)/);
   assert.doesNotMatch(releaseUi, /continue-on-error/);
-  assert.match(releaseUi, /run: python packages\/nmnm-ui\/test\/browser\.py/);
+  assert.match(releaseUi, /image: mcr\.microsoft\.com\/playwright\/python:v1\.62\.0-noble/);
+  assert.match(releaseUi, /options: --init --ipc=host/);
+  assert.match(releaseUi, /PLAYWRIGHT_BROWSERS_PATH: \/ms-playwright/);
+  assert.match(releaseUi, /python -m pip install playwright==1\.62\.0/);
+  assert.match(releaseUi, /python -m playwright install --only-shell chromium/);
+  assert.doesNotMatch(releaseUi, /--with-deps|apt-get|matrix:/);
+  assert.match(releaseUi, /run: bash scripts\/run-ui-browser-checks\.sh/);
   assert.match(releaseUi, /timeout-minutes: 15/);
   assert.match(releaseUi, /retention-days: 7/);
 });

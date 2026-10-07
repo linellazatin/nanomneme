@@ -27,29 +27,33 @@ The plugin lives at `adapters/claude` inside the nanomneme monorepo. Claude Code
 
    Or run `/plugin`, pick the `openlines` marketplace, and install from the menu.
 
-3. Install the plugin's Node dependencies once. Claude Code does not run `npm install` for plugins, so the MCP server needs `@modelcontextprotocol/sdk`, `zod`, and `@openlines/nmnm-core` resolvable. Run `npm install` at the **monorepo root** (the parent of `adapters/claude` in the cloned marketplace repo, one level up from the plugin path `/plugin` shows), which links the core package through npm workspaces:
-
-   ```sh
-   npm install
-   ```
-
-   Node resolves the plugin's imports by walking up to the monorepo `node_modules`, so a root install covers `adapters/claude`.
+3. Current Claude Code automatically installs Node dependencies for copied marketplace plugins from the plugin-local `package.json` and `package-lock.json`, with frozen resolution and lifecycle scripts disabled. This plugin's registry lock resolves core `0.3.0`; its manifest permits `^0.3.0`. The copy includes no workspace links and needs no monorepo install. For a marketplace added from a local path, the plugin loads in place instead: run `npm ci` at the monorepo root yourself. See [Claude's dependency installation rules](https://code.claude.com/docs/en/plugins/loading#node-js-package-dependencies).
 
 4. Restart or start a new session. Confirm the four tools appear as `mcp__plugin_nanomneme_memory__*` (see [Native MCP tools](#native-mcp-tools)) and that a fresh session injects the memory index.
 
-To update later: `/plugin marketplace update openlines`, then reinstall if a new version is published.
+To update later: `/plugin marketplace update openlines`, then update the plugin. Copied plugins with an explicit unchanged manifest version retain their cached files, so a dependency-lock update must accompany a plugin version increase. If dependency installation fails, inspect the note in `/plugin` or `claude plugin list`; the plugin may load while its Node components remain unavailable. A checkout root install does not repair a separate copied cache.
 
 ### Option B: Local development loading
 
 From a checkout, install workspace dependencies and load the plugin directory directly without a marketplace:
 
 ```sh
-npm install
+npm ci
 ```
 
 Then add the local marketplace and install, or point Claude Code at the plugin directory per your setup. This is the fastest path while iterating on the adapter itself.
 
 Public npm publication of the adapter is deferred.
+
+### Refresh the locked core
+
+The copied plugin deliberately uses published core `0.3.0`; root workspace development uses checkout core `0.3.1`. Publishing `0.3.1` does not upgrade existing locked plugin installations. After publication, copy the plugin's `package.json` and `package-lock.json` into a standalone temporary directory outside the monorepo and run this command there:
+
+```sh
+npm update @openlines/nmnm-core --package-lock-only --ignore-scripts
+```
+
+Review and copy only the refreshed lock back to `adapters/claude/package-lock.json`; generating it inside the monorepo can select workspace links. Check the resolved version, registry tarball URL, integrity and transitive changes; update the reviewed version assertion in `scripts/check-logging-packages.test.js`. Increase the Claude package and plugin manifest versions together, synchronize both lockfiles' package metadata, and run `npm run validate`. That validates a fresh registry installation and the current Claude suite against the refreshed core. Do not substitute a local tarball, workspace link, or an integrity hash from different package bytes. Native Claude cache installation and provider checks remain separate from this package validator.
 
 ## Native MCP tools
 
@@ -60,11 +64,11 @@ The stdio MCP server (`mcp/server.js`) registers four model-facing tools. Claude
 | `retain_memory` | `content`; optional `id`, canonical fields | Create, or patch and restore a known ID. | New records require `content`; scope selects the matching write store. |
 | `recall_memory` | `id`; optional `store` | Read one active, unexpired memory. | Canonical core JSON or `null`; missing stores stay absent. |
 | `retrieve_memory` | Optional `query`, filters, ordering, pagination, `store` | Search or list active memories. | One store only; missing stores return `{ total: 0, items: [] }`. |
-| `remove_memory` | `id`; optional `store` | Soft-remove an active memory. | Reversible via a retain patch; purge is CLI-only; missing stores return `null`. |
+| `remove_memory` | `id`; optional `store` | Soft-remove an active memory. | Reversible via a retain patch; purge requires CLI or UI workbench action; missing stores return `null`. |
 
-For `retain_memory`, omitted scope means the project store and `scope: "global"` means the global store. The other tools accept `store` (`"project"` or `"global"`) to select a physical database. Project data is `./.nanomneme/memory.db`; global data is `~/.local/share/nanomneme/memory.db` on Linux and macOS. Results are canonical core JSON. Only `retain_memory` creates a missing store; reads and removal leave missing stores absent. The server resolves the project directory from `NMNM_PROJECT_DIR`, set to `${CLAUDE_PROJECT_DIR}` in `.mcp.json`, falling back to the process working directory.
+For `retain_memory`, omitted scope means the project store and `scope: "global"` means the global store. Scope is trimmed and validated before selecting or creating a store; invalid values fail without creating a database. The other tools accept `store` (`"project"` or `"global"`) to select a physical database. Project data is `./.nanomneme/memory.db`; global data is `~/.local/share/nanomneme/memory.db` on Linux and macOS. Results are canonical core JSON. Only `retain_memory` creates a missing store; reads and removal leave missing stores absent. The server resolves the project directory from `NMNM_PROJECT_DIR`, set to `${CLAUDE_PROJECT_DIR}` in `.mcp.json`, falling back to the process working directory.
 
-Core `0.3.0` hardening passes through unchanged: Unicode/structured search, malformed-text and numeric-range validation, private first-use storage, and monotonic mutation timestamps. Handler tests cover validation rejections and project/global first-use creation; clock tests use frozen and backward mocks across reopened stores. Validation throws reach Claude Code as MCP tool errors with the core message verbatim and never crash the server. Retain still accepts null metadata (new records add the `claude-code` source; patches normalize it to `{}`); null rejection applies to core import/verification. Export/import/verification remain `nmnm` CLI operations, not adapter tools.
+Core hardening introduced in `0.3.0` and retained in `0.3.1` passes through unchanged: Unicode/structured search, malformed-text and numeric-range validation, private first-use storage, and monotonic mutation timestamps. Handler tests cover validation rejections and project/global first-use creation; clock tests use frozen and backward mocks across reopened stores. Validation throws reach Claude Code as MCP tool errors with the core message verbatim and never crash the server. Retain still accepts null metadata (new records add the `claude-code` source; patches normalize it to `{}`); null rejection applies to core import/verification. Export/import/verification remain `nmnm` CLI operations, not adapter tools.
 
 The `memory-guide` Skill (invoked as `/nanomneme:memory-guide`) teaches the model when to use these tools, how to choose project vs global scope, and which facts not to retain. It is named `memory-guide`, not `memory`, so it does not collide with the `/nanomneme:memory` management command below (a plugin skill and a command that share a name resolve to the same slash invocation, and the command would win).
 
@@ -72,13 +76,13 @@ The `memory-guide` Skill (invoked as `/nanomneme:memory-guide`) teaches the mode
 
 A `SessionStart` command hook (`hooks/session-start.js`) appends bounded Nanomneme context to the session as transient `additionalContext`. Enabled autoretention guidance comes first, followed by a compact index listing project pins, then global pins, then recent active records from each store. Rows contain `store`, a `[source]` label when recorded, ID, and a short content preview. The index is not a transfer of complete records; the model uses `recall_memory` or `retrieve_memory` for full content.
 
-New Claude Code retains record `metadata.source` as `"claude-code"`. **Note:** ID-based patches preserve the existing source automatically; older or externally created records have no source label unless they already carry one.
+New Claude Code retains record `metadata.source` as `"claude-code"`. **Note:** ID-based patches preserve existing source when metadata is omitted; older or externally created records have no source label unless they already carry one.
 
 Injection is a command hook (Node importing `nmnm-core`), not an `mcp_tool` hook, so it works during the launch window when MCP tools are not yet available. Index reads are read-only and never create or migrate a database. Missing databases are empty. Missing, removed, expired, or unreadable pins are skipped and counted as unresolved; the pin stays configured until explicitly unpinned. The hook is wrapped so a failure never blocks startup.
 
 ### Reinjection
 
-A `UserPromptSubmit` command hook (`hooks/prompt-submit.js`) can rebuild the same bounded context on a fixed cadence. It is **disabled by default**. When `reinjection.enabled` is true, it fires every `every_n_prompts` prompts (default 5). Prompt-count state is ephemeral (per session, under the system temp directory); it adds no timers, workers, or automatic writes.
+A `UserPromptSubmit` command hook (`hooks/prompt-submit.js`) can rebuild the same bounded context on a fixed cadence. It is **disabled by default**. The hook reads project/global settings first; disabled reinjection accesses neither pins/databases nor session-state files. Project settings override global settings. When enabled, it advances an ephemeral per-session prompt counter under the system temp directory and builds memory context only every `every_n_prompts` eligible prompts (default 5). Disabling leaves existing state untouched; re-enabling resumes its count. Unusable saved counters restart at zero. Context-build failures emit nothing but still advance the enabled counter so repaired memory can recover on a later cadence; malformed settings emit nothing and leave state untouched. Reinjection adds no timers, workers, or canonical memory writes.
 
 ## Memory management command
 
@@ -91,7 +95,7 @@ A deterministic, model-free management surface complements the model-facing MCP 
 | `search <query> [project\|global] [limit] [offset] [--source all\|claude-code]` | Same listing, filtered by an FTS query and optional source. |
 | `show [project\|global] <id>` | Full record detail for one memory. |
 | `pin` / `unpin` `[project\|global] <id>` | Edit the adapter `nmnm-claude.json` pin file. |
-| `remove [project\|global] <id>` | Reversible soft removal (purge stays CLI-only). |
+| `remove [project\|global] <id>` | Reversible soft removal (purge requires CLI or UI workbench action). |
 
 When the store is omitted, `show`/`pin`/`remove` resolve the ID from active memories; `unpin` resolves it from pin files, including unresolved targets. Matches in both stores require an explicit project or global selection. Reads never create a store; `pin`/`unpin`/`remove` are deterministic writes.
 
@@ -157,7 +161,7 @@ Pin mutations use a same-directory lock and atomic replacement. Competing writer
 
 ## Safety boundaries
 
-- Model-facing `remove_memory` is soft-only and reversible; irreversible purge stays a deliberate CLI-operator path (`nmnm remove --purge`).
+- Model-facing `remove_memory` is soft-only and reversible; irreversible purge requires an explicit CLI (`nmnm remove --purge`) or UI workbench action.
 - Reads and removal never create a missing store; only `retain_memory` does.
 - Injection is transient context, never a persistent session-message snapshot or an automatic memory write.
 - The adapter never writes SQLite directly or parses CLI output; all operations go through `nmnm-core`.
@@ -175,6 +179,8 @@ Runtime code and tests are authoritative when this manual disagrees with behavio
 
 ## Shared opt-in diagnostics
 
-Set `"logging": { "enabled": true }` in `~/.local/share/nanomneme/config.jsonc` to enable the shared default. JSONC comments and trailing commas are supported. Adapter user-level `nmnm.jsonc` can explicitly enable or disable logging; absence inherits. Either invalid applicable logging configuration disables that caller. Project settings cannot authorize logging. Records use the shared `logslines/v1` catalog and core-distributed runtime, omit structured memory payloads and stack traces, preserve thrown-error messages verbatim without redaction, and append to `~/.local/share/nanomneme/logs/<component>.jsonl`. Correlation is null: Claude Code exposes `session_id` only to hook stdin, never to MCP servers or the management CLI, and hook session fields are not forwarded. Error messages may expose sensitive input or paths; review logs before sharing. Logging failures preserve operations and output. Existing databases, pin files, and logs require no migration.
+Diagnostics default off. Enable shared `logging.enabled` in `~/.local/share/nanomneme/config.jsonc`. User-level adapter settings can override it. Raw error messages are not redacted. See the [Logger manual](../../../docs/LOGGER.md#configuration-and-record-contract) for configuration, record fields, permissions, and privacy boundaries.
 
 Claude uses its existing user settings resolver (`CLAUDE_PLUGIN_DATA` when supplied, otherwise `~/.claude/nmnm.jsonc`). Explicit MCP 4Rs and management mutations are observed; context hooks and read-only management are unlogged. Restart the MCP process to refresh cached settings. Correlation is null.
+
+`src/logslines.js` supplies the adapter-specific logging binding. The [Logger manual](../../../docs/LOGGER.md#source-and-artifact-map) owns the shared source, generated-artifact, and package-check reference.

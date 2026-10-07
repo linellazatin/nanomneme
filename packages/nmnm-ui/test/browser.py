@@ -188,6 +188,7 @@ with tempfile.TemporaryDirectory(prefix="nmnm-ui-browser-") as directory:
             expect(page.locator("#detail")).to_have_text("Select a memory to inspect its content and origin.")
             expect(page.locator("#stores-count")).to_have_text("(0)")
             expect(page.locator("#count")).to_have_text("Select a store to begin.")
+            expect(page.get_by_role("button", name="Add store", exact=True)).to_be_focused()
             assert Path(fixture["path"]).exists()
             page.get_by_role("button", name="Add store", exact=True).click()
             page.get_by_role("button", name="Select database memory.db", exact=True).click()

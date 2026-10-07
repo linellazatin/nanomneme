@@ -4,6 +4,8 @@ This manual is the task-oriented guide for nanomneme. It serves developers who e
 
 ## Audiences
 
+For browser-based review and cleanup outside a harness, see the [UI README](../packages/nmnm-ui/README.md). The CLI-bundled foreground UI (`nmnm ui`) uses existing core APIs, with explicit store/source selection, read-only defaults, literal search, and documented lifecycle limits. Use `nmnm ui --port <0..65535>` to select a port and `--no-auto`/`-na` to suppress default-browser opening; `ui --help` and `ui --version` use the UI launcher. Core/CLI FTS search, transfer, verification, and repair remain covered here.
+
 ### Developers
 
 Use the developer path to install the workspace packages, open and close stores safely, call the 4Rs, inspect the schema, and use portability and verification APIs. Examples use Node.js ESM and the built-in `node:sqlite` runtime required by the project.
@@ -36,7 +38,7 @@ Use the agent path for deterministic CLI calls, stable JSON responses, explicit 
 
 ### Requirements and installation
 
-Use Node.js 22.13 or later with FTS5 available in the built-in `node:sqlite` module. Node.js 22.19.0 is tested; the official macOS arm64 Node.js 22.13.0 build lacks FTS5 and cannot run core. Install the CLI for terminal or agent use:
+CLI/UI require Node.js 22.19.0 or later with FTS5 available in the built-in `node:sqlite` module; independently installed core supports 22.13 or later with FTS5. Node.js 22.19.0 is tested; the official macOS arm64 Node.js 22.13.0 build lacks FTS5 and cannot run core. Install the CLI for terminal or agent use:
 
 ```sh
 npm install --global @openlines/nmnm-cli
@@ -49,7 +51,7 @@ Install the core package in a Node.js ESM application:
 npm install @openlines/nmnm-core
 ```
 
-From a repository checkout, install both workspaces and invoke the CLI directly:
+From a repository checkout, install workspace dependencies and invoke the CLI directly:
 
 ```sh
 npm install
@@ -83,7 +85,7 @@ The retain response supplies `<memory-id>`. Removal is soft by default. A later 
 | `--db <path>` | Exact supplied path | Custom store for scripts, tests, or isolation. |
 | `retrieve --both` | Project, then global | Retrieval only; missing stores remain absent. |
 
-`--global` cannot be combined with `--db`. `--both` cannot be combined with either. For a custom `--db` retain, `scope` is an explicit record label; standard project and global retains derive the matching scope and reject mismatches.
+`--global` cannot be combined with `--db`. `--both` cannot be combined with either. Scope values are trimmed and validated before opening a database. For a custom `--db` retain, `scope` is an explicit record label; standard project and global retains derive the matching scope and reject mismatches, including padded values such as `--scope " global "` without `--global`.
 
 Ordinary single-store 4Rs open writable, create-capable stores, including recall, retrieve, and removal; a missing store may become an empty database even when no memory changes. Adapter reads generally leave missing stores absent. Use core read-only access for non-creating diagnostics; CLI `verify` and `export` also require existing stores.
 
@@ -91,6 +93,7 @@ Ordinary single-store 4Rs open writable, create-capable stores, including recall
 
 | Command | Input | Description | Notes |
 |---|---|---|---|
+| `ui` | Launcher flags | Open the foreground browser workbench. | Separate flag parser; see the [UI README](../packages/nmnm-ui/README.md#launch). |
 | `retain` | `[content]` | Create a UUID v4 record, or patch and restore an explicit ID. | New records need content. |
 | `recall` | `<id>` | Read one active, unexpired record. | Returns no result when absent, removed, or expired. |
 | `retrieve` | `[query words...]` | Return filtered, ordered, paginated records. | `--both` is retrieval-only. |
@@ -108,7 +111,7 @@ Ordinary single-store 4Rs open writable, create-capable stores, including recall
 | `--global` | None | Select the standard global database. | Cannot combine with `--db` or `--both`; `retain` uses global scope. |
 | `--json` | None | Emit structured JSON. | Invalid with `export`, which emits JSONL. |
 | `--help` | None | Show current CLI usage. | Authoritative flag reference. |
-| `--version`, `-v` | None | Print the installed version. | Opens no storage. |
+| `--version`, `-v` | None | Print installed CLI, core, and UI versions on separate labeled lines. | Opens no storage. |
 | `--` | None | End option parsing. | Use before retain content or a retrieve query beginning with `--`. |
 
 ### Retain flags
@@ -458,6 +461,7 @@ The `node:sqlite` experimental warning can appear on supported Node versions and
 - This manual owns task sequences, operational guidance, and audience-specific examples.
 - [Pi Adapter Manual](../adapters/pi/docs/PI_ADAPTER_MANUAL.md) owns Pi installation, tools, configuration, pins, and automatic index behavior.
 - Package READMEs own package installation and discovery.
+- [UI README](../packages/nmnm-ui/README.md) owns the local workbench, cleanup workflow, HTTP/session boundaries, limitations, and future UI features.
 - `nmnm --help` is authoritative for available CLI flags.
 - Runtime code and tests are authoritative when documentation and behavior disagree; fix the documentation in the same change.
 
@@ -465,6 +469,10 @@ Examples use `nmnm` for an installed CLI and explicit placeholders such as `<mem
 
 ## Shared opt-in diagnostics
 
-Set `"logging": { "enabled": true }` in `~/.local/share/nanomneme/config.jsonc` to enable the shared default. JSONC comments and trailing commas are supported. Adapter user-level `nmnm.jsonc` can explicitly enable or disable logging; absence inherits. Either invalid applicable logging configuration disables that caller. Project settings cannot authorize logging. Records use the shared `logslines/v1` catalog and core-distributed runtime, omit structured memory payloads and stack traces, preserve thrown-error messages verbatim without redaction, and append to `~/.local/share/nanomneme/logs/<component>.jsonl`. Error messages may expose sensitive input or paths; review logs before sharing. Logging failures preserve operations and output. Existing databases, pin files, and logs require no migration.
+Diagnostics default off. Enable shared `logging.enabled` in `~/.local/share/nanomneme/config.jsonc`. Raw error messages are not redacted. See the [Logger manual](LOGGER.md#configuration-and-record-contract) for configuration, record fields, permissions, and privacy boundaries.
 
-The CLI observes retain, recall, retrieve, remove, import, export, verify, and repair once per command. Combined retrieval and repair have one aggregate outcome; transfer output completion is included. Help/version/unknown commands and temporary validation stores are unlogged. It reads shared settings per invocation and has no adapter override. Correlation is null.
+The CLI observes retain, recall, retrieve, remove, import, export, verify, and repair once per command. Combined retrieval and repair have one aggregate outcome; transfer output completion is included. Help/version/unknown commands and temporary validation stores are unlogged. The terminal CLI reads shared settings per invocation, has no adapter override, and uses null correlation.
+
+UI diagnostics use the same shared opt-in setting and write `nmnm-ui.jsonl`. Edit/expiry/restore use `retain`; remove/purge use `remove`. General request, launcher, and captured browser errors use a UI-only `ui.error` event. Successful reads/navigation and canceled actions stay quiet. Mutation failures emit once; browser reports are authenticated and best effort. See the [UI logging reference](../packages/nmnm-ui/README.md#opt-in-logslines-diagnostics).
+
+Core persistence remains uninstrumented; explicit observers load through `@openlines/nmnm-core/logging`. CLI binding construction lives in `src/logslines.js`; command observation remains in its executable. The [Logger manual](LOGGER.md#source-and-artifact-map) owns the file-role and build reference.

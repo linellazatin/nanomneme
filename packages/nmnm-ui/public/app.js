@@ -26,6 +26,7 @@ async function run(task) {
   finally { busy = false; document.querySelector('main').inert = false; document.querySelector('main').setAttribute('aria-busy', 'false'); $('store-picker').inert = false; if ($('store-picker').open && !$('store-picker').contains(document.activeElement)) $('directory').focus(); }
 }
 function renderStores() {
+  $('stores-count').textContent = `(${stores.length})`;
   $('store-list').replaceChildren();
   for (const store of stores) {
     const row = node('div', undefined, 'store'); const label = node('label'); const check = node('input'); check.type = 'checkbox'; check.checked = selected.has(store.id); check.setAttribute('aria-label', 'Select ' + store.path);
@@ -106,6 +107,7 @@ async function mutate(action, patch) { const memory = current; await api('mutate
 function theme(value) { document.documentElement.dataset.theme = value; $('theme-sun').toggleAttribute('hidden', value !== 'dark'); $('theme-moon').toggleAttribute('hidden', value !== 'light'); $('theme').setAttribute('aria-label', 'Switch to ' + (value === 'dark' ? 'light' : 'dark') + ' theme'); $('logo').src = '/assets/' + (value === 'dark' ? 'nanomneme-logo.svg' : 'nanomneme-logo-dark-accent.svg'); try { localStorage.setItem('nmnm-ui-theme', value); } catch {} }
 let savedTheme = 'dark'; try { savedTheme = localStorage.getItem('nmnm-ui-theme') === 'light' ? 'light' : 'dark'; } catch {} theme(savedTheme);
 $('theme').onclick = () => theme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+$('stores-toggle').onclick = () => { const collapsed = !$('stores-content').hidden; $('stores-content').hidden = collapsed; $('stores-toggle').setAttribute('aria-expanded', String(!collapsed)); };
 $('add-store').onclick = () => { if (busy) return; $('store-picker').showModal(); run(() => browse(browserDirectory)); };
 $('picker-close').onclick = () => $('store-picker').close();
 $('browse-directory').onsubmit = event => { event.preventDefault(); run(() => browse($('directory').value)); };

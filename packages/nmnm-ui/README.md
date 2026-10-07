@@ -2,8 +2,8 @@
 
 Local browser workbench for reviewing and cleaning memories captured by coding-agent harnesses.
 
-- Package: `@openlines/nmnm-ui` `0.1.0`; introduced in repository `0.8.0`.
-- Status: experimental, prepared for npm publication; publication remains manual.
+- Package: `@openlines/nmnm-ui` `0.1.1`; introduced in repository `0.8.0`, patched in `0.8.1`.
+- Status: experimental; UI `0.1.0` is published on npm. This checkout prepares `0.1.1`; installed users receive these fixes only after publication.
 - Runtime: Node foreground process, loopback HTTP, existing `nmnm-core` API.
 - Frontend: plain HTML/CSS/JavaScript; local Inter fonts, Nanomneme logo, Openlines light/dark themes.
 - No persistent daemon, framework, build step, model calls, or external runtime assets.
@@ -42,11 +42,11 @@ Initial launch before registering a store; screenshots use disposable sample mem
 Requirements:
 
 - Node.js `22.19.0` or newer with built-in `node:sqlite` and FTS5.
-- CLI `>= 0.4.0` with bundled UI after publication, or repository checkout with workspace dependencies installed through `npm install`.
+- CLI `>= 0.4.1` with patched UI after publication, or repository checkout with workspace dependencies installed through `npm install`. Published CLI `0.4.0` bundles the earlier UI `0.1.0`.
 - Existing compatible Nanomneme database; adding a store never creates it.
 - Browser with JavaScript and tab-session storage enabled.
 
-After publication, installing `@openlines/nmnm-cli` also installs core and UI. From an installed CLI:
+Installing `@openlines/nmnm-cli` also installs core and UI. From an installed CLI:
 
 ```sh
 nmnm ui
@@ -87,18 +87,18 @@ node packages/nmnm-ui/bin/nmnm-ui.js --port 8080 --no-auto
 - The directory browser starts in the process launch directory, not the package directory.
 - To review another project from this checkout, browse to that project's database in the picker.
 - Open the printed `127.0.0.1` URL exactly; a `localhost` replacement fails Host validation.
-- A restart creates a new credential; use the newly printed URL.
+- A restart creates a new credential; use the newly printed URL. Normal navigation fragments, including the skip link, do not replace the saved credential.
 - Browser dispatch uses macOS `open`, Linux `xdg-open`, or Windows `start`. A missing, failed, or timed-out opener leaves the server running for manual access.
 
 ## CLI bundling and release preparation
 
-- CLI `0.4.0` declares core `0.3.1` and UI `0.1.0` as regular dependencies. Both packages use the same core version.
+- Checkout CLI `0.4.1` declares core `0.3.1` and UI `0.1.1` as regular dependencies. Both packages use the same core version.
 - UI imports dynamically only for `nmnm ui`. Installing it does not start a daemon, server, or browser; terminal memory commands do not load UI.
 - UI exports `launchWorkbench(args, { command })` from its package root; standalone and CLI launch share flags, browser dispatch, and shutdown.
-- npm package contents include `bin/`, four explicitly listed runtime files in `src/`, `public/`, README, and licenses. Tests, README screenshots, and build-only `src/ui-logger.js` are excluded; screenshots are available in the repository.
+- npm package contents include `bin/`, four explicitly listed runtime files in `src/`, `public/`, the web standards guide, README, and licenses. Tests, README screenshots, and build-only `src/ui-logger.js` are excluded; screenshots are available in the repository.
 - CLI/UI require Node `22.19.0` or newer; independently installed core retains its own runtime requirement.
-- Current checkout is prepared for publication; these versions have not been published as part of this work.
-- Manual publication order: core `0.3.1`, then UI `0.1.0`, then CLI `0.4.0`. Validate tarballs before publishing; do not republish an existing version.
+- Core `0.3.1`, UI `0.1.0`, and CLI `0.4.0` are published. UI `0.1.1` and CLI `0.4.1` are prepared for the repository `0.8.1` release; publication remains a separate maintainer action.
+- For subsequent releases, publish any new core version first, then UI, then CLI. Validate tarballs before publishing; do not republish an existing version.
 - Existing tagged-release workflow also publishes UI before CLI. Publication remains a separate maintainer action.
 
 ## Store selection
@@ -144,7 +144,8 @@ Combine recorded source, content search, kind, namespace, and tag filters.
 - Search examines content only, across the selected lifecycle state; it excludes tags/metadata/IDs from text matching.
 - Search is case-insensitive literal substring matching; no Boolean expressions, phrases, prefixes, relevance ranking, or FTS syntax.
 - Namespace and tag filters use exact recorded values; the tag control selects one tag.
-- Filters combine with AND. Apply filters submits changes and returns to the first page.
+- Filters combine with AND. Apply filters submits changes and returns to the first page. Unapplied inputs remain staged; Refresh, pagination, store changes, and mutation refreshes use the last applied filters.
+- When result counts shrink, the list returns to the last valid page instead of displaying an empty out-of-range page.
 - Ordering: descending `updated_at`, then store path and ID for ties. No user-selectable ordering.
 - Refresh rereads selected databases. There is no polling or live harness-event subscription.
 
@@ -175,7 +176,7 @@ Enable editing for a store, then inspect and update a memory's editable fields.
 - Browser controls and server-side authorization both enforce editing access.
 - Save sends only changed allowed fields; validation errors preserve the editor draft.
 - A pre-write `updated_at` comparison rejects detected stale records. Review/copy the draft before confirming a refresh or navigation that discards it.
-- Browser interactions are temporarily inert during pending workbench requests, preventing overlapping responses from replacing newer drafts.
+- Browser interactions are temporarily inert during pending workbench requests, preventing overlapping responses from replacing newer drafts. Focus returns to the initiating control or its logical replacement; mobile inspection focuses the detail heading, and Back returns to the selected row.
 - Changing records, views, selected stores, or pages prompts before discarding unsaved edits. Closing/reloading uses the browser's unload confirmation.
 - No autosave, undo history, side-by-side conflict merge, or version history.
 
@@ -295,15 +296,19 @@ npm run validate
 - Disposable-store tests cover read-only enforcement, lifecycle operations, provenance, stale edits, duplicate IDs across stores, pagination, schema rejection, split Unicode requests, HTTP boundaries, launcher flags, and shutdown.
 - Logging tests cover schema conformance, mutation/error outcomes, duplicate suppression, opt-in/config refresh, quiet reads, payload exclusion, file permissions, and sink failure isolation.
 - Launcher tests cover platform command dispatch, opener failures/timeouts/cancellation, default automatic dispatch, and both opt-out flags. Automated tests use fake openers; they do not verify desktop browser launch on every platform.
-- Rendered suite requires Python Playwright and Chromium; these are test tools, not UI runtime dependencies. CI runs it as a separate blocking Ubuntu job on pull requests and pushes to `main`. Tagged releases run the same job on the tagged checkout; publishing requires both repository validation and rendered UI success:
+- Rendered suites require Python Playwright and installed browser engines; root development dependencies supply axe-core. These are test tools, not UI runtime dependencies. CI and tagged releases run separate blocking Ubuntu matrix lanes for Chromium, Firefox, and WebKit; publishing requires repository validation and every browser lane:
 
 ```sh
 python3 packages/nmnm-ui/test/browser.py
+python3 packages/nmnm-ui/test/browser_regressions.py
 ```
+
+- These commands default to Chromium; set `NMNM_UI_BROWSER=firefox` or `NMNM_UI_BROWSER=webkit` for other engines. See [Workbench web standards](docs/WEB_STANDARDS.md) for installation, all-engine commands, accessibility rules, and manual release checks.
 
 - Browser checks cover directory navigation/selection/errors, store removal and collapse/count controls, independent list scrolling, source selection, literal rendering, read-only controls, drafts, pending-request protection, cleanup, expiry, keyboard focus, theme icons, fixed header/footer, mobile navigation, and browser error reporting.
 - The rendered suite creates and cleans its own temporary database/server. Screenshots are saved to `/tmp/nmnm-ui-*.png`.
-- CI uses Python 3.14 and Playwright 1.62.0, installs Chromium with Linux dependencies, and has a 15-minute timeout. Available screenshots upload even after failure and remain downloadable from the Actions run for 7 days. No credentials or deployed server are required. This job covers Chromium at desktop/mobile sizes, not Firefox, WebKit, or native desktop browser opening.
+- CI uses Python 3.14 and Playwright 1.62.0, installs each matrix engine with Linux dependencies, and has a 15-minute timeout per lane. Available screenshots and axe reports upload even after failure and remain downloadable for 7 days. No credentials or deployed server are required. WebKit explicitly focuses the skip link because default link tabbing is platform-dependent; native desktop browser opening and full accessibility conformance are not established.
+- Regression checks cover anchor-safe credential reloads, last-page shrink, staged filters, keyboard/mobile focus, semantic headings/picker groups, control/focus contrast, 320px reflow with text spacing, and axe scans across five workbench states in both themes. Incomplete axe findings are retained for manual review; WCAG 2.2 AA is the maintenance target, not a certification.
 - Use disposable stores for mutation testing; never personal databases.
 
 ## Implementation and related documentation

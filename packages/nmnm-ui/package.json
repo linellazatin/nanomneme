@@ -13,6 +13,7 @@
     "src/logslines.js",
     "src/ui-logging-runtime.generated.js",
     "public/",
+    "docs/WEB_STANDARDS.md",
     "README.md",
     "LICENSE"
   ],

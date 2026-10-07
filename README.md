@@ -13,6 +13,8 @@
 [![nmnm-core version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-core?label=core&logo=npm&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-core)
 [![nmnm-core downloads](https://img.shields.io/npm/dt/@openlines/nmnm-core?label=core&logo=npm&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-core)
 
+[![nmnm-ui version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-ui?label=workbench-ui&logo=npm&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-ui)
+
 ### adapters
 [![nmnm-pi version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-pi?label=pi&logo=pi&color=ffffe0)](https://www.npmjs.com/package/@openlines/nmnm-pi)
 [![nmnm-opencode version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-opencode?label=opencode&logo=opencode&color=gray)](https://www.npmjs.com/package/@openlines/nmnm-opencode)
@@ -26,6 +28,9 @@
 </div>
 
 >
+> ### v0.8.1 - workbench correctness and web standards
+> - Patched UI `0.1.1` preserves credentials after skip-link reloads, repairs shrinking pagination, stages filter changes, and restores keyboard/mobile focus.
+> - Semantic HTML, stronger input contrast, a WCAG 2.2 AA maintenance target, and blocking Chromium/Firefox/WebKit correctness/accessibility gates. CLI `0.4.1` pins the patched UI; publication remains separate.
 > ### v0.8.0 - experimental workbench ui, logging organization, and dependency fixes
 > - `nmnm ui` with CLI-bundled UI: on-demand browser workbench with explicit store/source selection, read-only defaults, editing, expiry management, removal, restoration, and purge. See the [UI README](packages/nmnm-ui/README.md).
 > - Consistent `src/logslines.js` bindings, unified logger generation, explicit UI packaging, adapter/core patch releases, and resolved dependency audit findings.
@@ -78,7 +83,7 @@ Nanomneme helps agents remember without pretending to be human memory.
 
 ### Local review UI
 
-- **On-demand workbench:** experimental `@openlines/nmnm-ui`, bundled with CLI `0.4.0`; Node foreground launcher, loopback browser access, no persistent daemon, and local Openlines light/dark assets.
+- **On-demand workbench:** experimental `@openlines/nmnm-ui`, with patched UI `0.1.1` bundled by checkout CLI `0.4.1` for the next publication; Node foreground launcher, loopback browser access, no persistent daemon, and local Openlines light/dark assets.
 - **Explicit review:** collapsible Stores with an added-store count, a local database picker, and trash controls that preserve files; recorded source filters, Active/Expired/Removed views, literal search, and five visible preview rows within 50-record pages.
 - **Deliberate cleanup:** read-only by default; enable editing per store for changed-field updates, expiry changes, soft removal, restoration, and separately confirmed permanent purge. Scope and provenance are read-only.
 - **Current limits:** full-store snapshots, a non-atomic stale-edit check, no soft removal of expired records, and session-only registrations. Creation, transfer, repair, bulk operations, and adapter settings are future features. See the [UI README](packages/nmnm-ui/README.md).

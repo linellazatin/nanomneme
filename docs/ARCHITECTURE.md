@@ -1,6 +1,6 @@
 # Nanomneme Architecture
 
-Nanomneme is a local, deterministic memory system. `nmnm-core` owns persistence and all SQLite access; the CLI and harness adapters call its public interface. Its separate `@openlines/nmnm-core/logging` export observes caller-owned explicit actions. Persistence methods and context reads do not automatically emit diagnostics.
+Nanomneme is a local, deterministic memory system. `nmnm-core` owns persistence and all SQLite access; the CLI, local review UI, and harness adapters call its public interface. Its separate `@openlines/nmnm-core/logging` export observes caller-owned explicit actions. Persistence methods and context reads do not automatically emit diagnostics; the UI binds the observer for mutations and a UI-only Logslines emitter for general errors.
 
 ## System architecture
 
@@ -8,6 +8,7 @@ Nanomneme is a local, deterministic memory system. `nmnm-core` owns persistence 
 flowchart TB
   subgraph entry[Operator and agent entry points]
     CLI["nmnm CLI"]
+    UI["Local browser workbench via foreground Node HTTP"]
     PI["Pi tools and /memory"]
     CLAUDE["Claude MCP tools and Node management CLI"]
     OPENCODE["OpenCode Bun plugins via Node bridge\nNode management CLI"]
@@ -22,10 +23,14 @@ flowchart TB
     LOGGER["@openlines/nmnm-core/logging\ncreateMemoryLogger and run\nshared catalog, config, observer, sink\nLogslines validation"]
   end
 
+  subgraph uilogging[UI package general-error logging]
+    UIERROR["UI ui-logging-runtime.generated.js\nshared config and sink, Logslines emitter\nui.error only"]
+  end
+
   subgraph persistence[Local durable state]
     PROJECT["Project memory.db\n&lt;cwd&gt;/.nanomneme/"]
     GLOBAL["Global memory.db\n~/.local/share/nanomneme/"]
-    CUSTOM["Custom database\nexplicit core path or CLI --db"]
+    CUSTOM["Custom database\nexplicit core path, CLI --db, or UI selection"]
     PINS["Pi, Claude, OpenCode pin files\nadapter-owned JSON"]
     JSONL["~/.local/share/nanomneme/logs/\n&lt;component&gt;.jsonl"]
   end
@@ -38,10 +43,17 @@ flowchart TB
   subgraph build[Checked-in logging build]
     SHARED["shared/logger/\none maintained Nanomneme implementation"]
     EXTERNAL["external/logslines/\npinned source, schema, provenance"]
-    BUNDLE["scripts/build-logger.js"]
+    UISOURCE["UI src/ui-logger.js\nbuild-only general-error source"]
+    BUNDLE["scripts/build-logger.js\ncore and UI targets"]
   end
 
-  CLI --> ACTION
+  UI -->|unobserved successful reads| API
+  UI -->|mutations| ACTION
+  UI -->|general errors, excluding observed mutation errors| UIERROR
+  UIERROR -->|one failed record when enabled| JSONL
+  LOGGING -.->|shared default only| UIERROR
+  CLI -->|terminal memory commands| ACTION
+  CLI -->|ui subcommand| UI
   PI --> ACTION
   CLAUDE --> ACTION
   OPENCODE --> ACTION
@@ -53,13 +65,15 @@ flowchart TB
   CONTEXT -->|unobserved reads| API
   CONTEXT -->|read pins| PINS
   SETTINGS -.-> CONTEXT
-  LOGGING -.->|default off, user override| LOGGER
+  LOGGING -.->|default off, adapter overrides only| LOGGER
   API --> PROJECT
   API --> GLOBAL
   API --> CUSTOM
   LOGGER -->|one bounded outcome when enabled| JSONL
   SHARED --> BUNDLE
   EXTERNAL --> BUNDLE
+  UISOURCE --> BUNDLE
+  BUNDLE -.->|UI ui-logging-runtime.generated.js| UIERROR
   BUNDLE -.->|core logging-runtime.generated.js| LOGGER
 ```
 
@@ -67,10 +81,25 @@ flowchart TB
 
 - **Core:** [`packages/nmnm-core`](../packages/nmnm-core/) validates inputs, opens or migrates versioned databases, and performs reads and writes in SQLite transactions. Its persistence entry has no CLI parsing, harness behavior, logging policy, HTTP, MCP, embedding, or LLM-provider dependency. The additive `./logging` entry ships shared diagnostics without importing SQLite.
 - **Clients:** the CLI and adapters select stores, map their host surfaces to core operations, and own their host-specific configuration. Project and global stores are separate SQLite files; the core also accepts an explicit path, which the CLI exposes as `--db`. A caller selects one store explicitly or composes project then global results where its interface supports both.
-- **Adapter state:** Pi, Claude, and OpenCode own their context settings and per-adapter pin JSON files. Pin/unpin actions use adapter file helpers without modifying SQLite. Pi serializes pin read-modify-replace updates with an exclusive same-directory lock; it never reclaims locks automatically, so a crash-left lock requires explicit operator removal after all writers stop. Codex has no pin or context settings; its user `nmnm.jsonc` is logging-only. Shared `~/.local/share/nanomneme/config.jsonc` sets the logging default; user-level adapter settings override it. Project settings cannot authorize logging.
+- **Local review UI:** [`packages/nmnm-ui`](../packages/nmnm-ui/README.md) serves packaged HTML/CSS/JavaScript from a foreground Node process on `127.0.0.1`. Explicit store registration opens existing databases read-only; per-store editing authorization enables writable core handles. Core `export()` supplies canonical snapshots for literal content search, source/lifecycle filtering, and globally ordered management pages. Mutations call `retain()` or `remove()` directly; no UI-owned SQL or adapter configuration. Mutations use the core logging observer; general errors use a UI-only bundled Logslines emitter. CLI bundles UI as a regular dependency and dynamically loads its shared foreground launcher for `nmnm ui`; normal terminal commands do not load UI.
+- **Adapter state:** Pi, Claude, and OpenCode own their context settings and per-adapter pin JSON files, rendering enabled autoretention guidance before bounded memory indexes. Claude prompt-submit resolves policy first; disabled reinjection accesses no memory or session state, while enabled reinjection persists an ephemeral counter and builds context only on cadence. Pin/unpin actions use adapter file helpers without modifying SQLite. Pi serializes pin read-modify-replace updates with an exclusive same-directory lock; it never reclaims locks automatically, so a crash-left lock requires explicit operator removal after all writers stop. Codex has no pin or context settings; its user `nmnm.jsonc` is logging-only. Shared `~/.local/share/nanomneme/config.jsonc` sets the logging default; user-level adapter settings override it. Project settings cannot authorize logging.
 - **Shared diagnostics:** `shared/logger/` owns the catalog, JSONC resolution, logical-action observer, and file sink. Core ships this implementation and the pinned Logslines emitter together as one deployed logging module in `logging-runtime.generated.js`, exposed through `@openlines/nmnm-core/logging`. Caller bindings supply identity, user settings location, and normalized host correlation. `run` executes its callback exactly once, observes its result or exception when enabled, and preserves synchronous values, original promises, and original errors. Raw `open()` calls do not log.
 - **Process routing:** Pi invokes core and logging directly. Claude's Node MCP server observes tools before MCP response formatting; its hooks and Node management CLI are separate processes. OpenCode's Bun plugins invoke a Node bridge for persistence and diagnostics; the management CLI runs directly under Node. Codex invokes its cached package-relative Node runner, whose core and parser dependencies must be physically included through local plugin preparation.
-- **External source lifecycle:** `external/logslines/` is a checked-in snapshot selected by upstream release tag, with per-file SHA-256 values in `PROVENANCE.json`. `npm run external:check -- <tag>` fetches the selected release and compares its exact source and metadata with the checked-in snapshot; `npm run external:update -- <tag>` refreshes both. After an update, maintainers regenerate core’s logging runtime with `node scripts/build-logger.js` and update the pinned hashes in `test/external-logslines.test.js`. The offline hash test runs through `npm test` in CI; CI, package installation, and package runtime do not fetch Logslines.
+- **Claude distribution:** copied marketplace plugins install registry dependencies from the adapter-local npm lockfile, currently core `0.3.0` under a `^0.3.0` manifest range. Local in-place loading uses root workspace dependencies and checkout core `0.3.1`. A later core publication requires an explicit reviewed plugin-lock refresh and plugin version increase; it does not alter frozen cached installations.
+- **External source lifecycle:** `external/logslines/` is a checked-in snapshot selected by upstream release tag, with per-file SHA-256 provenance. `shared/fixtures/logslines-release.json` independently pins the reviewed release and is excluded from runtime packages. `npm run logslines:update -- <tag>` validates and replaces the snapshot/provenance and fixture, refreshes stale core/UI runtimes, runs the suite, and checks standalone packages. Later failures retain updates for review. Focused `external:check` compares against upstream; `external:update` replaces only snapshot/provenance. Offline fixture checks run through `npm test`; CI, package installation, and package runtime do not fetch Logslines.
+
+## Local review UI
+
+### UI session and mutation boundaries
+
+- Store registrations and editing authorization live in server memory; selection and drafts live in the browser tab. Restarting the server clears registrations and write authorization.
+- A single Add store control opens an authenticated directory browser over the launcher's filesystem. Explicit directory reads list entries; selecting a file registers it in place without uploads or recursive discovery.
+- Store removal unregisters the server-side handle, closes its reader/writer, and revokes editing authorization without deleting the database. Re-adding opens read-only. The browser can collapse Stores while retaining its added-store count, and scroll five visible memory previews independently within 50-record pages.
+- Registration and editing authorization use read-only core verification to reject schema/SQLite integrity failures, including incomplete version-marker lookalikes. Filename extensions do not determine compatibility; other health-report issues remain available through CLI verification.
+- HTTP requests use a per-launch credential, exact local Host/Origin checks, bounded JSON bodies, and an asset allowlist. Theme and tab-session credentials are stored in the browser; memory content is not persisted there.
+- `(store, id)` identifies records. Combined reads sort by newest `updated_at`, then store path and ID; separate stores do not share an atomic snapshot.
+- Editing patches only changed allowed fields and preserves scope/provenance. Removed entries require explicit restoration; expired entries cannot be soft-removed. Purge remains explicit.
+- Pre-write timestamp comparison detects stale records but is not atomic with core mutation. Full exports impose proportional memory/read costs. See the UI README for limits and future features.
 
 ## SQLite data model
 
@@ -104,7 +133,7 @@ erDiagram
   }
 
   memories_fts {
-    TEXT content "FTS5 indexed non-removed content"
+    TEXT content "FTS5 non-removed content, including expired"
   }
 
   memories ||--o{ memory_tags : "has tags"
@@ -124,20 +153,12 @@ erDiagram
 
 ## Shared logging configuration and coverage
 
-Diagnostics default off. Shared `~/.local/share/nanomneme/config.jsonc` accepts `{ "logging": { "enabled": true } }` with comments and trailing commas. An absent adapter value inherits; explicit true or false in its user-level `nmnm.jsonc` overrides. Invalid shared or applicable adapter logging configuration disables that caller. Project settings cannot enable logging. Logging settings are resolved separately from context settings; unrelated root sections do not affect authorization.
+The [Logger manual](LOGGER.md#configuration-and-record-contract) owns configuration paths, correlation sources, record fields, permissions, and privacy rules. Diagnostics default off; raw error messages are not redacted. Core persistence methods do not emit records automatically.
 
-The CLI logs recognized retain/recall/retrieve/remove/import/export/verify/repair commands, including argument processing and output completion. Combined retrieval and repair each produce one aggregate outcome. Pi, Claude, OpenCode, and Codex log explicit 4Rs; Pi and OpenCode browser mutations and Pi/Claude/OpenCode management pin/unpin/remove use the same catalog. Internal store reads, automatic context hooks, navigation, read-only adapter management, help/version, and canceled actions do not emit their own records. Only attempted actions reaching the observer are covered: host/schema rejection and OpenCode request-parse failures before dispatch have no terminal memory record; OpenCode bridge spawn failures emit one host-side failed record because the bridge never ran. Model response formatting, refresh, and adapter protocol transport follow the observed memory result; management callbacks can assemble messages within the action, but their output delivery follows it. The CLI includes output writing inside observation.
+- CLI observes recognized 4R, import/export, verify, and repair commands, including argument processing and output completion. Combined retrieval and repair produce one aggregate outcome.
+- Adapters observe explicit 4Rs and supported management mutations. Context hooks, internal reads, navigation, read-only management, and canceled actions remain quiet. Host/schema rejection before dispatch is outside observation.
+- OpenCode Node bridges own normal outcomes. A bridge spawn failure emits one host-side failed record; later transport errors do not replace a completed memory outcome.
+- UI mutations use the shared `retain`/`remove` observer; general errors use a separate `ui.error` emitter. Each attempt rereads settings, and observed mutation errors are not duplicated.
+- Model response formatting, refresh, and adapter protocol transport follow observation. Diagnostic failures preserve the action's result or original error.
 
-| Caller | User-level logging override | Session correlation | Configuration refresh |
-|---|---|---|---|
-| CLI | None; shared config only | Null | Each invocation |
-| Pi | `<Pi agent directory>/nmnm.jsonc`, normally `~/.pi/agent/nmnm.jsonc` | Safe `ctx.sessionManager.getSessionId()` lookup, otherwise null | New logger instance on `/reload` or restart |
-| Claude | `${CLAUDE_PLUGIN_DATA}/nmnm.jsonc`; fallback `~/.claude/nmnm.jsonc` when unset | Null in the current MCP/management wiring | Restart MCP for tools; each management invocation |
-| OpenCode | `${XDG_CONFIG_HOME:-~/.config}/opencode/nmnm.jsonc` | Tool calls forward nonempty host `sessionID` through validated `diagnostic_context.session_id`; TUI and management CLI records are null | Each Node bridge or management invocation |
-| Codex | `$CODEX_HOME/nmnm.jsonc`, default `~/.codex/nmnm.jsonc` | Nonempty `CODEX_THREAD_ID`, then `CODEX_SESSION_ID`, otherwise null | Each runner invocation |
-
-The shared logger caches effective authorization on the first eligible invocation for that instance. Invalid applicable configuration disables that caller; an explicit adapter true cannot rescue an invalid shared file. Enabling logging creates neither a database nor a log file immediately. The first successful emission creates the component's log file; the sink applies `0700` to the log directory and `0600` to regular JSONL files. No historical logs, databases, or pin files require migration.
-
-Logs remain in `~/.local/share/nanomneme/logs/<component>.jsonl`, where component is `nmnm-cli`, `nmnm-pi`, `nmnm-claude`, `nmnm-opencode`, or `nmnm-codex`. The observer may inspect callback results and exceptions transiently for classification. The emitted closed `logslines/v1` envelope contains fixed catalog fields, component/version identity, normalized session correlation, duration, empty attributes, and error summaries carrying the thrown error's message and class; it does not serialize memory payload fields or stack traces. Thrown error messages are not redacted and may contain sensitive input, IDs, queries, or store paths. Every blocked outcome has null duration. Diagnostic failures suppress emission without changing the action, its result, or original error, and there is no stderr fallback. Model request fields cannot select diagnostic identity, configuration, or correlation. Direct core callers opt in explicitly with `createMemoryLogger().run({ operation, session_id: null }, observation => action())`.
-
-Run `node scripts/check-logging-packages.js` to verify installed tarballs outside the workspace, including Codex's bundled core and JSONC parser. This is an explicit package check with npm registry access for ordinary dependencies; runtime and CI contract tests do not fetch Logslines. Older callers keep their previous behavior and must be upgraded to gain shared configuration and coverage.
+Run `npm run validate` for read-only generation checks, tests, shipped-dependency audit, and installed-package validation. CI runs rendered Chromium checks in a separate blocking job. Use `npm run codex:update` for content-aware refresh of an existing enabled local Codex installation. Neither validation nor runtime fetches upstream Logslines.

@@ -92,12 +92,82 @@ export function assertLoggingContents(kind, files) {
   if (kind === 'codex') assert(files.some(path => path.includes('node_modules/jsonc-parser/') && path.endsWith('package.json')), 'missing bundled jsonc-parser');
 }
 
+export function assertClaudeLock(manifest, lock) {
+  assert(manifest.overrides === undefined, 'Claude automatic npm installation does not support overrides');
+  assert([2, 3].includes(lock.lockfileVersion), 'Claude requires npm lockfile version 2 or 3');
+  const root = lock.packages?.[''];
+  assert.equal(root?.name, manifest.name, 'Claude lockfile name differs from manifest');
+  assert.equal(root?.version, manifest.version, 'Claude lockfile version differs from manifest');
+  assert.deepEqual(root?.dependencies, manifest.dependencies, 'Claude lockfile dependencies differ from manifest');
+  for (const name of Object.keys(manifest.dependencies)) assert(lock.packages[`node_modules/${name}`], `Claude lockfile is missing ${name}`);
+  for (const [path, pkg] of Object.entries(lock.packages)) {
+    if (!path) continue;
+    assert(!pkg.link, `Claude lockfile contains a link: ${path}`);
+    assert(/^\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?$/.test(pkg.version ?? ''), `Claude lockfile lacks an exact version: ${path}`);
+    assert(typeof pkg.resolved === 'string' && pkg.resolved.startsWith('https://registry.npmjs.org/'), `Claude lockfile requires an HTTPS npm registry URL: ${path}`);
+    assert(/^sha512-[A-Za-z0-9+/]{86}==$/.test(pkg.integrity ?? ''), `Claude lockfile lacks SHA-512 integrity: ${path}`);
+  }
+}
+
+function checkClaudeCache(root, temporary, npm) {
+  const source = join(root, 'adapters/claude');
+  const lockBytes = readFileSync(join(source, 'package-lock.json'));
+  const manifest = JSON.parse(readFileSync(join(source, 'package.json'), 'utf8'));
+  const lock = JSON.parse(lockBytes);
+  assertClaudeLock(manifest, lock);
+  const plugin = join(temporary, 'claude-cache');
+  cpSync(source, plugin, { recursive: true, filter: path => basename(path) !== 'node_modules' });
+  const installation = join(temporary, 'claude-install');
+  mkdirSync(installation);
+  cpSync(join(source, 'package.json'), join(installation, 'package.json'));
+  writeFileSync(join(installation, 'package-lock.json'), lockBytes);
+  npm(['ci', '--ignore-scripts', '--no-audit', '--no-fund', '--cache', join(temporary, 'claude-npm-cache')], installation);
+  assert(readFileSync(join(installation, 'package-lock.json')).equals(lockBytes), 'Claude frozen install changed the lockfile');
+  npm(['audit', '--audit-level=high', '--omit=dev', '--cache', join(temporary, 'claude-npm-cache')], installation);
+  renameSync(join(installation, 'node_modules'), join(plugin, 'node_modules'));
+  const tests = readdirSync(join(plugin, 'test')).filter(path => path.endsWith('.test.js')).map(path => `test/${path}`);
+  execFileSync(process.execPath, ['--test', ...tests], { cwd: plugin, env: { ...process.env, HOME: temporary }, stdio: 'pipe' });
+  writeFileSync(join(plugin, 'verify.mjs'), `
+    import assert from 'node:assert/strict';
+    import { readFileSync } from 'node:fs';
+    import { execFileSync } from 'node:child_process';
+    import { join } from 'node:path';
+    import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+    import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+    const core = JSON.parse(readFileSync('node_modules/@openlines/nmnm-core/package.json', 'utf8'));
+    assert.equal(core.version, ${JSON.stringify(lock.packages['node_modules/@openlines/nmnm-core'].version)});
+    const client = new Client({ name: 'nmnm-cache-check', version: '1.0.0' });
+    const project = join(process.env.HOME, 'claude-project');
+    const transport = new StdioClientTransport({ command: process.execPath, args: ['mcp/server.js'], cwd: process.cwd(),
+      env: { HOME: process.env.HOME, NMNM_PROJECT_DIR: project, CLAUDE_PLUGIN_DATA: join(process.env.HOME, 'claude-data') }, stderr: 'pipe' });
+    transport.stderr.on('data', () => {});
+    try {
+      await client.connect(transport);
+      assert.deepEqual((await client.listTools()).tools.map(tool => tool.name), ['retain_memory', 'recall_memory', 'retrieve_memory', 'remove_memory']);
+      const call = async (name, args) => {
+        const result = await client.callTool({ name, arguments: args });
+        assert(!result.isError, JSON.stringify(result));
+        return JSON.parse(result.content[0].text);
+      };
+      const retained = await call('retain_memory', { content: 'Frozen cache sentinel' });
+      assert.equal((await call('recall_memory', { id: retained.id })).content, retained.content);
+      assert.equal((await call('retrieve_memory', { query: 'sentinel' })).items[0].id, retained.id);
+      const env = { ...process.env, NMNM_PROJECT_DIR: project, CLAUDE_PLUGIN_DATA: join(process.env.HOME, 'claude-data') };
+      assert.match(execFileSync(process.execPath, ['bin/memory.js', 'show', retained.id], { env, encoding: 'utf8' }), /Frozen cache sentinel/);
+      assert.equal((await call('remove_memory', { id: retained.id })).mode, 'soft');
+      assert.equal(await call('recall_memory', { id: retained.id }), null);
+    } finally { await client.close(); await transport.close(); }
+  `);
+  execFileSync(process.execPath, ['verify.mjs'], { cwd: plugin, env: { ...process.env, HOME: temporary }, stdio: 'pipe', timeout: 60000 });
+}
+
 export function checkLoggingPackages({ prepareCodex = false } = {}) {
   const root = fileURLToPath(new URL('..', import.meta.url));
   const temporary = mkdtempSync(join(tmpdir(), 'nmnm-logging-packages-'));
   const npm = (args, cwd) => execFileSync('npm', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, HOME: temporary } });
   const install = ['install', '--ignore-scripts', '--no-audit', '--no-fund', '--no-package-lock'];
   try {
+    checkClaudeCache(root, temporary, npm);
     const packages = JSON.parse(npm(['pack', '--json', '--ignore-scripts', '--pack-destination', temporary,
       ...['core', 'ui', 'cli', 'pi', 'claude', 'opencode'].flatMap(name => ['--workspace', `@openlines/nmnm-${name}`])], root));
     const core = packages.find(pkg => pkg.name === '@openlines/nmnm-core');

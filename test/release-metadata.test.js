@@ -50,12 +50,14 @@ test('release metadata aligns the 0.8.0 UI release and every consumer', () => {
     assert.equal(lock.packages[path].version, pkg.version, `${path || 'root'} lockfile version`);
     assert.deepEqual(lock.packages[path].engines, pkg.engines, `${path || 'root'} lockfile engines`);
   }
-  for (const pkg of [cli, ui, pi, claude, codex, opencode]) {
+  for (const pkg of [cli, ui, pi, codex, opencode]) {
     assert.equal(pkg.dependencies['@openlines/nmnm-core'], core.version, `${pkg.name} must pin the current core`);
   }
-  for (const path of ['packages/nmnm-cli', 'packages/nmnm-ui', 'adapters/pi', 'adapters/claude', 'adapters/codex', 'adapters/opencode']) {
+  for (const path of ['packages/nmnm-cli', 'packages/nmnm-ui', 'adapters/pi', 'adapters/codex', 'adapters/opencode']) {
     assert.equal(lock.packages[path].dependencies['@openlines/nmnm-core'], core.version, `${path} lockfile core pin`);
   }
+  assert.equal(claude.dependencies['@openlines/nmnm-core'], '^0.3.0');
+  assert.equal(lock.packages['adapters/claude'].dependencies['@openlines/nmnm-core'], claude.dependencies['@openlines/nmnm-core']);
   assert.equal(json(new URL('../adapters/claude/.claude-plugin/plugin.json', import.meta.url)).version, claude.version);
   assert.equal(json(new URL('../adapters/codex/.codex-plugin/plugin.json', import.meta.url)).version, codex.version);
   assert.equal(root.engines.node, '>=22.19.0');

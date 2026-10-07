@@ -25,7 +25,7 @@ test('CLI forwards ui help/version aliases and rejects unsupported UI flags', ()
   for (const flag of ['--version', '-v']) {
     const version = run('ui', flag);
     assert.equal(version.status, 0, version.stderr);
-    assert.equal(version.stdout.trim(), '0.1.0');
+    assert.equal(version.stdout.trim(), '0.1.1');
   }
   for (const args of [['ui', '--db', 'memory.db'], ['ui', '-p', '65536'], ['ui', '--unknown'], ['--web'], ['web']]) {
     const output = run(...args); assert.equal(output.status, 1);

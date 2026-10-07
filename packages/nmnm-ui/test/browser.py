@@ -7,6 +7,7 @@ import tempfile
 from playwright.sync_api import sync_playwright, expect
 
 ROOT = Path(__file__).resolve().parents[3]
+ENGINE = os.environ.get('NMNM_UI_BROWSER', 'chromium')
 FIXTURE = """
 import { startServer } from './packages/nmnm-ui/src/server.js';
 import { open } from './packages/nmnm-core/src/index.js';
@@ -35,7 +36,7 @@ with tempfile.TemporaryDirectory(prefix="nmnm-ui-browser-") as directory:
     try:
         fixture = json.loads(server.stdout.readline())
         with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(headless=True)
+            browser = getattr(playwright, ENGINE).launch(headless=True)
             page = browser.new_page(viewport={"width": 1440, "height": 1000})
             errors = []
             page.on("pageerror", lambda error: errors.append(str(error)))
@@ -50,7 +51,11 @@ with tempfile.TemporaryDirectory(prefix="nmnm-ui-browser-") as directory:
             assert records[0]["error"]["message"] == "Browser diagnostic smoke"
             version = json.loads((ROOT / "packages/nmnm-ui/package.json").read_text())["version"]
             expect(page.locator("header .brand span")).to_have_text(f"memory workbench {version}")
-            page.keyboard.press("Tab")
+            if ENGINE == 'webkit':
+                # WebKit's link tabbing depends on platform keyboard settings.
+                page.get_by_role("link", name="Skip to memories").focus()
+            else:
+                page.keyboard.press("Tab")
             expect(page.get_by_role("link", name="Skip to memories")).to_be_focused()
             page.get_by_role("button", name="Switch to light theme").focus()
             page.keyboard.press("Enter")
@@ -78,7 +83,7 @@ with tempfile.TemporaryDirectory(prefix="nmnm-ui-browser-") as directory:
             page.get_by_role("button", name="Open folder nested", exact=True).click()
             expect(page.locator("#picker-message")).to_have_text("This directory is empty.")
             page.get_by_role("button", name="Up", exact=True).click()
-            page.screenshot(path="/tmp/nmnm-ui-picker-desktop.png", full_page=True)
+            page.screenshot(path=f"/tmp/nmnm-ui-{ENGINE}-picker-desktop.png", full_page=True)
             page.get_by_role("button", name="Select database invalid.db", exact=True).click()
             expect(page.get_by_role("dialog")).to_be_visible()
             expect(page.locator("#picker-message")).not_to_contain_text("Choose a folder")
@@ -129,9 +134,9 @@ with tempfile.TemporaryDirectory(prefix="nmnm-ui-browser-") as directory:
             page.get_by_text("Changes saved.", exact=True).wait_for()
             page.get_by_role("button", name="Switch to light theme").click()
             expect(page.locator("html")).to_have_attribute("data-theme", "light")
-            page.screenshot(path="/tmp/nmnm-ui-desktop-light.png", full_page=True)
+            page.screenshot(path=f"/tmp/nmnm-ui-{ENGINE}-desktop-light.png", full_page=True)
             page.get_by_role("button", name="Switch to dark theme").click()
-            page.screenshot(path="/tmp/nmnm-ui-desktop-dark.png", full_page=True)
+            page.screenshot(path=f"/tmp/nmnm-ui-{ENGINE}-desktop-dark.png", full_page=True)
             page.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
             assert page.locator("header").bounding_box()["y"] == 0
             footer = page.locator("footer").bounding_box()
@@ -154,15 +159,15 @@ with tempfile.TemporaryDirectory(prefix="nmnm-ui-browser-") as directory:
             expect(page.get_by_role("dialog")).to_be_visible()
             expect(page.get_by_role("button", name="Select database memory.db", exact=True)).to_be_visible()
             assert page.evaluate("() => document.documentElement.scrollWidth <= innerWidth")
-            page.screenshot(path="/tmp/nmnm-ui-picker-mobile.png", full_page=True)
+            page.screenshot(path=f"/tmp/nmnm-ui-{ENGINE}-picker-mobile.png", full_page=True)
             page.keyboard.press("Escape")
             expect(page.get_by_role("dialog")).not_to_be_visible()
             page.locator(".row").click()
             expect(page.get_by_role("button", name="Back to memories")).to_be_visible()
             assert page.evaluate("() => document.documentElement.scrollWidth <= innerWidth")
-            page.screenshot(path="/tmp/nmnm-ui-mobile-dark.png", full_page=True)
+            page.screenshot(path=f"/tmp/nmnm-ui-{ENGINE}-mobile-dark.png", full_page=True)
             page.get_by_role("button", name="Switch to light theme").click()
-            page.screenshot(path="/tmp/nmnm-ui-mobile-light.png", full_page=True)
+            page.screenshot(path=f"/tmp/nmnm-ui-{ENGINE}-mobile-light.png", full_page=True)
             page.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
             assert page.locator("header").bounding_box()["y"] == 0
             footer = page.locator("footer").bounding_box()

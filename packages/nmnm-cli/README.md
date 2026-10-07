@@ -30,7 +30,7 @@ nmnm retain "Prefer concise operator documentation" --tags preference
 nmnm retrieve "operator documentation" --both
 ```
 
-CLI `0.4.0` installs core `0.3.1` and UI `0.1.0` as regular dependencies. These new CLI/UI versions are prepared for manual publication; they were not published as part of this change. The CLI defaults to `./.nanomneme/memory.db`. Use `--global` for the standard global database or `--db <path>` for a custom database; custom retains also require `--scope project|global`. Scope is trimmed and validated before opening a database; standard selectors reject scope mismatches. See the [Core and CLI Manual](../../docs/CORE_CLI_MANUAL.md) for commands and recovery workflows. `export --out <file>` replaces its destination atomically after the complete JSONL file is written. `verify` and `export` open their source databases read-only; `repair` remains writable.
+Checkout CLI `0.4.1` installs core `0.3.1` and patched UI `0.1.1` as regular dependencies. These patch versions are prepared for publication, not published by checkout updates; published CLI `0.4.0` still pins UI `0.1.0`. The CLI defaults to `./.nanomneme/memory.db`. Use `--global` for the standard global database or `--db <path>` for a custom database; custom retains also require `--scope project|global`. Scope is trimmed and validated before opening a database; standard selectors reject scope mismatches. See the [Core and CLI Manual](../../docs/CORE_CLI_MANUAL.md) for commands and recovery workflows. `export --out <file>` replaces its destination atomically after the complete JSONL file is written. `verify` and `export` open their source databases read-only; `repair` remains writable.
 
 On POSIX systems, new database files request `0600` and new store directories request `0700`. File exports request `0600` from temporary-file creation, preserving stricter owner permissions when replacing a destination; the caller's umask may restrict these further. Existing database permissions are unchanged, and `verify` reports group/other access as `file_permissions` with exit status `1`. Review intentional sharing before manually restricting permissions. These checks do not audit ACLs or apply on Windows.
 
@@ -39,9 +39,9 @@ On POSIX systems, new database files request `0600` and new store directories re
 `nmnm --version` and `nmnm -v` read the installed package versions without opening storage or starting UI:
 
 ```text
-cli 0.4.0
+cli 0.4.1
 core 0.3.1
-ui 0.1.0
+ui 0.1.1
 ```
 
 ## Browser workbench

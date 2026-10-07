@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.8.1 - Workbench correctness and web standards
+
+Workbench bug fixes, accessibility improvements, and cross-browser validation. No feature expansion; core and adapter versions remain unchanged. Publication remains a separate maintainer action.
+
+### Updated components
+
+| Component | Version |
+| --- | --- |
+| Repository | 0.8.1 |
+| `@openlines/nmnm-ui` | 0.1.1 |
+| `@openlines/nmnm-cli` | 0.4.1 |
+
+### Fixed
+
+- UI preserves launch credentials across skip-link and anchor reloads instead of treating navigation fragments as credentials.
+- Lists return to a valid page after removal, purge, or expiry changes shrink the result set.
+- Unapplied filters remain staged; refresh, pagination, store changes, and mutation refreshes use the last applied filters.
+- Keyboard focus returns after requests and rerenders. Mobile inspection focuses the detail heading; Back returns to the selected row.
+- Focused controls remain clear of fixed chrome without moving pointer targets during clicks.
+- Corrected stale publication wording; installed users receive fixes after UI `0.1.1` and CLI `0.4.1` are published.
+
+### Changed
+
+- Added a top-level heading and supported picker grouping; strengthened enabled input boundaries in both themes.
+- Documented a WCAG 2.2 AA maintenance target, required manual checks, and automated coverage limits. The web standards guide ships with UI.
+- CLI `0.4.1` pins patched UI `0.1.1`; core remains `0.3.1`.
+
+### Validation
+
+- Added disposable-store regressions for credential reloads, shrinking pagination, staged filters, keyboard/mobile focus, semantics, control contrast, and narrow layouts with text-spacing overrides.
+- CI and tagged releases require Chromium, Firefox, and WebKit workflow/regression checks. A single pinned Playwright container replaces per-engine APT/browser provisioning, avoiding the observed Azure mirror stall.
+  - Chromium uses the headless shell; Firefox/WebKit remain headless full builds.
+  - Setup and suite steps are bounded, all engines are attempted, and any suite failure blocks release.
+  - Development-only axe-core scans five workbench states in both themes; engine-qualified screenshots and accessibility reports are retained for 7 days.
+
 ## 0.8.0 - Experimental workbench UI, logging organization, and dependency fixes
 
 Experimental memory review UI, consistent Logslines bindings and build/package organization, automated maintenance and validation, core/adapter patch releases, and dependency audit fixes. Core memory functions and the public logging import remain compatible.

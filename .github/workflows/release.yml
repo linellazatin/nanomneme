@@ -45,8 +45,16 @@ jobs:
 
   ui:
     name: Rendered UI checks
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
+    container:
+      image: mcr.microsoft.com/playwright/python:v1.62.0-noble
+      options: --init --ipc=host
+    defaults:
+      run:
+        shell: bash
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -57,18 +65,27 @@ jobs:
         with:
           python-version: '3.14'
       - run: npm ci
-      - name: Install browser test dependencies
-        run: |
-          python -m pip install playwright==1.62.0
-          python -m playwright install --with-deps chromium
-      - name: Run rendered UI checks
-        run: python packages/nmnm-ui/test/browser.py
-      - name: Upload UI screenshots
+        timeout-minutes: 3
+      - name: Install matching Python Playwright package
+        timeout-minutes: 3
+        run: python -m pip install playwright==1.62.0
+      - name: Ensure Chromium headless shell
+        timeout-minutes: 2
+        # The pinned image already contains the browsers and Linux dependencies; no APT.
+        run: python -m playwright install --only-shell chromium
+      - name: Run all browser workflow and accessibility checks
+        timeout-minutes: 6
+        env:
+          HOME: /root
+        run: bash scripts/run-ui-browser-checks.sh
+      - name: Upload UI evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: nmnm-ui-screenshots
-          path: /tmp/nmnm-ui-*.png
+          name: nmnm-ui-browser-evidence
+          path: |
+            /tmp/nmnm-ui-*.png
+            /tmp/nmnm-ui-*-axe-*.json
           if-no-files-found: warn
           retention-days: 7
 

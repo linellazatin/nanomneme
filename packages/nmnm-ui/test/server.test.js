@@ -121,7 +121,7 @@ test('launcher flags and foreground signal shutdown', async () => {
   const env = { ...process.env, HOME: tmpdir() };
   const launcher = fileURLToPath(new URL('../bin/nmnm-ui.js', import.meta.url));
   assert.match(execFileSync(process.execPath, [launcher, '--help'], { encoding: 'utf8', env }), /--port/);
-  assert.equal(execFileSync(process.execPath, [launcher, '--version'], { encoding: 'utf8', env }).trim(), '0.1.0');
+  assert.equal(execFileSync(process.execPath, [launcher, '--version'], { encoding: 'utf8', env }).trim(), '0.1.1');
   assert.throws(() => execFileSync(process.execPath, [launcher, '--port', '65536'], { stdio: 'pipe', env }));
   const child = spawn(process.execPath, [launcher, '--no-auto'], { stdio: ['ignore', 'pipe', 'pipe'], env });
   try {

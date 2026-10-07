@@ -48,9 +48,10 @@ Run rendered UI checks when browser behavior or UI logging changes:
 
 ```sh
 python3 packages/nmnm-ui/test/browser.py
+python3 packages/nmnm-ui/test/browser_regressions.py
 ```
 
-These checks require Python Playwright and Chromium, create disposable stores/server state, and save screenshots under `/tmp`. CI runs them as a separate blocking Ubuntu job on pull requests and pushes to `main`; tagged releases run the same job on the tagged checkout and require it alongside repository validation before publishing. Both use Python 3.14, Playwright 1.62.0, a 15-minute timeout, and available screenshots retained as artifacts for 7 days. They are separate from `npm run validate`; browser testing tools are not UI runtime dependencies.
+These checks require Python Playwright, installed browser engines, and root development dependencies (including axe-core). They default to Chromium; set `NMNM_UI_BROWSER=firefox` or `NMNM_UI_BROWSER=webkit` for other engines. Tests create disposable stores/server state and save screenshots and axe reports under the platform temporary directory. Run both suites in all engines with `bash scripts/run-ui-browser-checks.sh`; it collects later engines' results even if an earlier suite fails and exits nonzero for any failure. CI/release use one pinned `mcr.microsoft.com/playwright/python:v1.62.0-noble` container with Node 22 and Python 3.14, a matching Playwright package, no runtime APT, a 15-minute job limit, bounded setup steps, and a six-minute suite step. `install --only-shell chromium` ensures the cached headless shell; Firefox/WebKit have no reduced shell equivalent. Engine-qualified evidence is retained for 7 days. They are separate from `npm run validate`; test tools are not UI runtime dependencies. See [Workbench web standards](packages/nmnm-ui/docs/WEB_STANDARDS.md) for the WCAG 2.2 AA maintenance target, coverage, WebKit keyboard assumptions, and required manual checks. Automated passes are not accessibility certification.
 
 Launch the foreground workbench without automatically opening the browser:
 

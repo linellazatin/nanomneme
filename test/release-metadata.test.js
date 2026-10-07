@@ -115,7 +115,7 @@ test('tag publishing requires the same blocking rendered UI job as branch CI', (
   assert.match(releaseUi, /python -m pip install playwright==1\.62\.0/);
   assert.match(releaseUi, /python -m playwright install --only-shell chromium/);
   assert.doesNotMatch(releaseUi, /--with-deps|apt-get|matrix:/);
-  assert.match(releaseUi, /run: bash scripts\/run-ui-browser-checks\.sh/);
+  assert.match(releaseUi, /name: Run all browser workflow and accessibility checks\n        timeout-minutes: 6\n        env:\n          HOME: \/root\n        run: bash scripts\/run-ui-browser-checks\.sh/);
   assert.match(releaseUi, /timeout-minutes: 15/);
   assert.match(releaseUi, /retention-days: 7/);
 });

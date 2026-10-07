@@ -75,6 +75,8 @@ jobs:
         run: python -m playwright install --only-shell chromium
       - name: Run all browser workflow and accessibility checks
         timeout-minutes: 6
+        env:
+          HOME: /root
         run: bash scripts/run-ui-browser-checks.sh
       - name: Upload UI evidence
         if: always()

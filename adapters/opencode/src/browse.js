@@ -1,4 +1,4 @@
-import { getMemoryLogger } from './logger.js';
+import { getMemoryLogger } from './logslines.js';
 import { existsSync } from 'node:fs';
 import { pin, pinsPath, readPins, unpin, updatePins } from './context.js';
 import { databasePath, runMemory } from './store.js';

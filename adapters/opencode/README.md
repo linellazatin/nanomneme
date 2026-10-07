@@ -10,8 +10,8 @@ OpenCode adapter for [nanomneme](https://github.com/linellazatin/nanomneme): a s
 
 ## What it provides
 
-- A native OpenCode **server plugin** (`index.js`) registering `retain_memory`, `recall_memory`, `retrieve_memory`, and `remove_memory` via the `@opencode-ai/plugin` tool API. OpenCode loads plugins under Bun, which has no `node:sqlite`, so each core call runs in a short-lived spawned `node` bridge (`src/bridge.js`) rather than in the Bun host. No MCP server, daemon, or network. New retains record `metadata.source` as `"opencode"`; ID-based patches preserve an existing source. Only `retain_memory` creates a missing store; reads and soft removal never create one. Removal is always soft; purge stays `nmnm`-CLI-only.
-- **Bounded transient injection** through `experimental.chat.system.transform`: the project and global pin set and recent active memories (and optional autoretention guidance) are appended to the system prompt on every model request whose context is non-empty. OpenCode rebuilds the system prompt per request, so no cadence/compaction/mutation gating is needed and the `reinjection` setting stays inert. No context is ever written to disk.
+- A native OpenCode **server plugin** (`index.js`) registering `retain_memory`, `recall_memory`, `retrieve_memory`, and `remove_memory` via the `@opencode-ai/plugin` tool API. OpenCode loads plugins under Bun, which has no `node:sqlite`, so each core call runs in a short-lived spawned `node` bridge (`src/bridge.js`) rather than in the Bun host. No MCP server, daemon, or network. New retains record `metadata.source` as `"opencode"`; ID-based patches preserve existing source when metadata is omitted. Only `retain_memory` creates a missing store; reads and soft removal never create one. Removal is always soft; purge requires `nmnm remove --purge` or the UI workbench.
+- **Bounded transient injection** through `experimental.chat.system.transform`: optional autoretention guidance precedes the project/global pin set and recent active memories in a block appended to every model request whose context is non-empty. OpenCode rebuilds the system prompt per request, so no cadence/compaction/mutation gating is needed and the `reinjection` setting stays inert. No context is ever written to disk.
 - A deterministic, model-free **management CLI** — `nmnm-opencode` (`status`, `list`, `search`, `show`, `pin`, `unpin`, `remove`).
 - An optional model-free **TUI memory browser** (`tui.js`, registered via `tui.jsonc`) opened on **ctrl+alt+m**: a compact label-aligned Status summary plus All / Project / Global tabs, source cycling, pin/unpin, and confirmed soft removal, all routed through the same Node bridge.
 
@@ -69,7 +69,7 @@ See the [OpenCode Adapter Manual](docs/OPENCODE_ADAPTER_MANUAL.md) for the confi
 
 ## Develop
 
-Core `0.3.0` hardening is covered through the real Node bridge for Unicode search/validation, invalid metadata/range operators, and private project/global first-use storage; direct handlers cover monotonic patch/restore timestamps under frozen/backward clocks. Tool-handler APIs are unchanged. Export/import/verification remain core CLI operations, not adapter tools.
+Core hardening introduced in `0.3.0` and retained in `0.3.1` is covered through the real Node bridge for Unicode search/validation, invalid metadata/range operators, and private project/global first-use storage; direct handlers cover monotonic patch/restore timestamps under frozen/backward clocks. Tool-handler APIs are unchanged. Export/import/verification remain core CLI operations, not adapter tools.
 
 ```sh
 node --test adapters/opencode/test/*.test.js
@@ -77,8 +77,10 @@ node --test adapters/opencode/test/*.test.js
 
 ## Shared opt-in diagnostics
 
-Set `"logging": { "enabled": true }` in `~/.local/share/nanomneme/config.jsonc` to enable the shared default. JSONC comments and trailing commas are supported. Adapter user-level `nmnm.jsonc` can explicitly enable or disable logging; absence inherits. Either invalid applicable logging configuration disables that caller. Project settings cannot authorize logging. Records use the shared `logslines/v1` catalog and core-distributed runtime, omit structured memory payloads and stack traces, preserve thrown-error messages verbatim without redaction, and append to `~/.local/share/nanomneme/logs/<component>.jsonl`. Error messages may expose sensitive input or paths; review logs before sharing. Logging failures preserve operations and output. Existing databases, pin files, and logs require no migration.
+Diagnostics default off. Enable shared `logging.enabled` in `~/.local/share/nanomneme/config.jsonc`. User-level adapter settings can override it. Raw error messages are not redacted. See the [Logger manual](../../docs/LOGGER.md#configuration-and-record-contract) for configuration, record fields, permissions, and privacy boundaries.
 
-OpenCode uses its existing user settings resolver under the OpenCode config directory. Node tool operations, CLI mutations, and confirmed TUI mutations are observed; index/navigation reads are unlogged. Each bridge process resolves settings anew. Spawn failures emit one host-side failed record because the bridge never ran; ambiguous post-spawn transport/parse failures remain unlogged to avoid contradicting a bridge outcome. Correlation is null unless trusted host context supplies a verified ID.
+OpenCode uses its existing user settings resolver under the OpenCode config directory. Node tool operations, CLI mutations, and confirmed TUI mutations are observed; index/navigation reads are unlogged. Each bridge process resolves settings anew. Spawn failures emit one host-side failed record because the bridge never ran; ambiguous post-spawn transport/parse failures remain unlogged to avoid contradicting a bridge outcome. Server tools forward the host tool-context `sessionID`; TUI and CLI management use null correlation.
 
 Pin mutations use a same-directory lock and atomic replacement. Competing writers receive a retry error; locks are never reclaimed automatically. After a crash, stop all adapter writers, remove the affected pin file’s `.lock` manually, then retry.
+
+`src/logslines.js` binds this adapter to core’s shared logging runtime; it does not contain a separate observer or generated bundle. See the [Logger manual](../../docs/LOGGER.md#source-and-artifact-map) for file roles and build rules.

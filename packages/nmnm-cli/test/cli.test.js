@@ -7,11 +7,30 @@ import { DatabaseSync } from 'node:sqlite';
 import test, { after } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import pkg from '../package.json' with { type: 'json' };
+import corePkg from '../../nmnm-core/package.json' with { type: 'json' };
+import uiPkg from '../../nmnm-ui/package.json' with { type: 'json' };
 import { open } from '../../nmnm-core/src/index.js';
 
 const isolatedHome = await mkdtemp(join(tmpdir(), 'nmnm-cli-test-home-'));
 after(() => rm(isolatedHome, { recursive: true, force: true }));
 const cli = fileURLToPath(new URL('../bin/nmnm.js', import.meta.url));
+
+test('CLI forwards ui help/version aliases and rejects unsupported UI flags', () => {
+  for (const flag of ['--help', '-h']) {
+    const help = run('ui', flag);
+    assert.equal(help.status, 0, help.stderr);
+    assert.match(help.stdout, /Usage: nmnm ui/);
+    assert.match(help.stdout, /--no-auto/);
+  }
+  for (const flag of ['--version', '-v']) {
+    const version = run('ui', flag);
+    assert.equal(version.status, 0, version.stderr);
+    assert.equal(version.stdout.trim(), '0.1.0');
+  }
+  for (const args of [['ui', '--db', 'memory.db'], ['ui', '-p', '65536'], ['ui', '--unknown'], ['--web'], ['web']]) {
+    const output = run(...args); assert.equal(output.status, 1);
+  }
+});
 
 test('CLI exports to a long valid filename without leaving temporary files', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-long-export-'));
@@ -113,15 +132,16 @@ test('CLI verify reports unsafe permissions without modifying the database', { s
   assert.deepEqual(await readFile(source), before);
 });
 
-test('CLI reports its package version without opening a database', async () => {
+test('CLI reports installed cli, core, and ui versions without opening a database', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-version-'));
   const long = runIn(directory, '--version');
   const short = runIn(directory, '-v');
 
   assert.equal(long.status, 0, long.stderr);
   assert.equal(short.status, 0, short.stderr);
-  assert.equal(long.stdout, `${pkg.version}\n`);
-  assert.equal(short.stdout, `${pkg.version}\n`);
+  const expected = `cli ${pkg.version}\ncore ${corePkg.version}\nui ${uiPkg.version}\n`;
+  assert.equal(long.stdout, expected);
+  assert.equal(short.stdout, expected);
   await assert.rejects(access(join(directory, '.nanomneme', 'memory.db')));
 });
 
@@ -472,6 +492,37 @@ test('CLI requires scope for custom database retains and aligns standard routes'
   assert.notEqual(projectConflict.status, 0);
   assert.match(projectConflict.stderr, /project database requires --scope project/);
   assert.equal(JSON.parse(custom.stdout).scope, 'global');
+});
+
+test('CLI validates normalized scopes before database selection or creation', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-cli-normalized-scope-'));
+  try {
+    for (const scope of ['', ' ', 'GLOBAL', 'invalid']) {
+      const result = runIn(directory, 'retain', 'Invalid scope', '--scope', scope);
+      assert.equal(result.status, 1, result.stderr);
+      assert.match(result.stderr, /scope/);
+      await assert.rejects(access(join(directory, '.nanomneme')));
+    }
+    const conflict = runIn(directory, 'retain', 'Project mismatch', '--scope', ' global ');
+    assert.equal(conflict.status, 1);
+    assert.match(conflict.stderr, /project database requires --scope project/);
+    await assert.rejects(access(join(directory, '.nanomneme')));
+    const globalConflict = runIn(directory, 'retain', 'Global mismatch', '--global', '--scope', ' project ');
+    assert.equal(globalConflict.status, 1);
+    assert.match(globalConflict.stderr, /--global requires --scope global/);
+    await assert.rejects(access(join(directory, '.local')));
+    for (const scope of ['project', 'global']) {
+      const args = scope === 'global' ? ['--global'] : [];
+      const result = runIn(directory, 'retain', 'Normalized scope', ...args, '--scope', ` ${scope} `, '--json');
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(JSON.parse(result.stdout).scope, scope);
+    }
+    const custom = runIn(directory, 'retain', 'Custom scope', '--db', join(directory, 'custom.db'), '--scope', ' global ', '--json');
+    assert.equal(custom.status, 0, custom.stderr);
+    assert.equal(JSON.parse(custom.stdout).scope, 'global');
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test('CLI keeps project defaults and rejects ambiguous database flags', async () => {

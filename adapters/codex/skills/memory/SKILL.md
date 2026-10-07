@@ -15,7 +15,7 @@ Send one JSON object on stdin. The runner responds with `{ "ok": true, "result":
 - `retain`: Save a durable record. New records are marked `metadata.source: "codex"`. Include `id` only to patch an existing record; patches preserve its metadata and provenance.
 - `recall`: Read one active record by `id`.
 - `retrieve`: Search or list active records. Use `query` for lexical search and core selectors such as `kind`, `tags`, `namespace`, or `limit`.
-- `remove`: Soft-remove by `id`. Purge is unavailable here and remains an explicit `nmnm` operator action.
+- `remove`: Soft-remove by `id`. Purge is unavailable here and requires an explicit CLI or UI workbench action.
 
 Use `store: "project"` by default. Use `store: "global"` only for information that applies across projects; it uses the standard Linux/macOS global store. Reads and missing-target removals do not create a database.
 

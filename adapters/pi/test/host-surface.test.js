@@ -13,7 +13,7 @@ const { version: piTuiVersion } = require('@earendil-works/pi-tui/package.json')
 // release. Bump this together with the Pi host version so the lockfile cannot
 // silently fall back to an older `@earendil-works/pi-tui` baseline. The
 // published compatibility floor stays at Pi 0.87.0; this guards the test host.
-const MIN_PI_TUI = [1, 0, 0];
+const MIN_PI_TUI = [1, 0, 4];
 
 function versionParts(version) {
   return version.split('.').map((part) => Number.parseInt(part, 10));
@@ -44,7 +44,7 @@ test('loader-provided host packages satisfy the adapter surface', () => {
   assert.match(truncateToWidth('abcdef', 3), /\.\.\./);
 
   // `src/tools.js` links only these typebox constructors.
-  for (const name of ['Object', 'String', 'Number', 'Array', 'Optional', 'Union', 'Literal', 'Null', 'Any']) {
+  for (const name of ['Object', 'String', 'Number', 'Array', 'Optional', 'Union', 'Literal', 'Null']) {
     assert.equal(typeof Type[name], 'function', `Type.${name} is missing`);
   }
 });

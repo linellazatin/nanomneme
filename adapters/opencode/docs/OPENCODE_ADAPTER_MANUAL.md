@@ -7,7 +7,7 @@ Runtime code and tests are authoritative if this manual disagrees with behavior.
 ## Requirements and architecture
 
 - Node.js 22.13+ with FTS5 in built-in `node:sqlite` (22.19.0 is tested), available on `PATH` (or set `NMNM_NODE` to its absolute path).
-- An OpenCode version exposing the `@opencode-ai/plugin` server API, native `tool` registration, and `experimental.chat.system.transform`. Developed and verified against `@opencode-ai/plugin` 1.18.15 / OpenCode 1.18.31. The system-transform hook is marked experimental upstream.
+- An OpenCode version exposing the `@opencode-ai/plugin` server API, native `tool` registration, and `experimental.chat.system.transform`. The host dependency declares `@opencode-ai/plugin >=1.18.15`; the repository lock retains tested 1.18.15. Developed and verified against OpenCode 1.18.31; isolated packed-adapter Bun/Node smoke checks also pass with host package 1.18.35. Fresh installs may resolve a newer host package; the system-transform hook is marked experimental upstream.
 
 OpenCode loads server plugins under **Bun**, and its Bun build provides no `node:sqlite` (only the incompatible `bun:sqlite`). Because `@openlines/nmnm-core` requires `node:sqlite`, the plugin does **not** import core persistence in the Bun host; it can use the sqlite-free logging subpath. Instead:
 
@@ -33,7 +33,7 @@ Add the package to OpenCode config. OpenCode installs npm plugins and their depe
 }
 ```
 
-Pin a version for reproducibility: `"@openlines/nmnm-opencode@0.2.1"`.
+Pin a version for reproducibility: `"@openlines/nmnm-opencode@0.2.2"`.
 
 To also enable the TUI memory browser, register the same package in the **TUI** config; OpenCode resolves its `./tui` export:
 
@@ -78,11 +78,11 @@ The plugin registers exactly four tools; each forwards through the Node bridge t
 
 Behavior:
 
-- New retains add `metadata.source: "opencode"`; ID-based patches preserve an existing source.
-- `retain_memory` routes to the global store when `scope: "global"`, otherwise the project store, and it is the **only** operation that creates a missing database.
+- New retains add `metadata.source: "opencode"`; ID-based patches preserve existing source when metadata is omitted.
+- `retain_memory` trims and validates scope before routing: `global` selects the global store; `project` or omitted scope selects the project store. Invalid scope fails without creating a database. Retain is the **only** operation that creates a missing database.
 - `store: "project" | "global"` selects the physical store for recall/retrieve/remove; a missing selected store returns `null` (or `{ total: 0, items: [] }`) without creating it.
 - `remove_memory` is always soft and reversible; purge is not exposed to the model.
-- Core `0.3.0` hardening passes through unchanged: Unicode/structured search, malformed-text and numeric-range validation, private first-use storage, and monotonic mutation timestamps. Bridge tests cover serialization and project/global creation; handler tests use frozen/backward clocks across reopened stores. Retain still accepts null metadata (new records add the OpenCode source; patches normalize it to `{}`); null rejection applies to core import/verification. Export/import/verification remain `nmnm` CLI operations.
+- Core hardening introduced in `0.3.0` and retained in `0.3.1` passes through unchanged: Unicode/structured search, malformed-text and numeric-range validation, private first-use storage, and monotonic mutation timestamps. Bridge tests cover serialization and project/global creation; handler tests use frozen/backward clocks across reopened stores. Retain still accepts null metadata (new records add the OpenCode source; patches normalize it to `{}`); null rejection applies to core import/verification. Export/import/verification remain `nmnm` CLI operations.
 
 ## System-prompt injection
 
@@ -101,12 +101,12 @@ nmnm-opencode status
 nmnm-opencode list [project|global] [limit] [offset] [--source all|opencode]
 nmnm-opencode search <query> [project|global] [limit] [offset] [--source all|opencode]
 nmnm-opencode show [project|global] <id>
-nmnm-opencode pin [project|global] <id>      # defaults to project
+nmnm-opencode pin [project|global] <id>      # resolves an unambiguous store
 nmnm-opencode unpin [project|global] <id>
 nmnm-opencode remove [project|global] <id>   # reversible soft removal
 ```
 
-`list`/`search` with no store compose a project-then-global page (combined pagination, store labels, `*` pin markers, compact previews) without comparing BM25 scores across databases. Unqualified `remove`/`show`/`pin` resolve a single match or refuse on ambiguity. Purge is not exposed; it stays `nmnm remove --purge`.
+`list`/`search` with no store compose a project-then-global page (combined pagination, store labels, `*` pin markers, compact previews) without comparing BM25 scores across databases. Unqualified `remove`/`show`/`pin` resolve a single match or refuse on ambiguity. Purge requires the core CLI (`nmnm remove --purge`) or the separate UI workbench.
 
 There is no model-free OpenCode slash command; the CLI and the TUI browser below are the management surfaces.
 
@@ -121,7 +121,7 @@ The optional TUI plugin (`tui.js`, registered via `tui.jsonc` as shown under Ins
 - The detail view uses explicit single-line `Tags`, `Namespace`, `Kind`, `Importance`, and `Updated` rows. The browser opens at the widest preset (`xlarge`) to reduce clipping; OpenCode exposes only `medium`/`large`/`xlarge` presets, not a percentage or pixel width. The non-list screens pass `renderFilter: false` to hide the dialog's search box (OpenCode's own internal dialogs use this flag; `skipFilter` alone still shows the input).
 - Combined All/Global listing uses the same project-then-global pagination as the CLI and never compares BM25 scores across databases.
 
-Because the TUI host runs under Bun (no `node:sqlite`), every read and mutation is dispatched to the same short-lived `node` bridge the server plugin uses; the browser module itself imports only `src/bridge-client.js` and OpenCode's `api.ui`/`api.keymap`. This is why `ctrl+alt+m` assumes a single active memory browser: bind it to only one of the Pi, Claude, or OpenCode adapters at a time.
+Because the TUI host runs under Bun (no `node:sqlite`), every read and mutation is dispatched to the same short-lived `node` bridge the server plugin uses; the browser module itself imports only `src/bridge-client.js` and OpenCode's `api.ui`/`api.keymap`. Avoid assigning the same hotkey to another OpenCode TUI plugin.
 
 ## Configuration
 
@@ -175,7 +175,7 @@ Pin mutations use a same-directory lock and atomic replacement. Competing writer
 
 ## Safety boundaries
 
-- Model-facing `remove_memory` and CLI `remove` are soft-only and reversible; purge stays a deliberate CLI-operator path.
+- Model-facing `remove_memory` and CLI `remove` are soft-only and reversible; purge requires an explicit CLI or UI workbench action.
 - Reads, removal, injection, and the index never create a missing store; only `retain_memory` does.
 - Injection is transient context, never a persistent snapshot or an automatic write. The Bun plugin holds no state; each core call is a fresh short-lived Node process.
 - The adapter never writes SQLite directly or parses CLI output; all operations go through `@openlines/nmnm-core` inside the Node bridge.
@@ -183,7 +183,7 @@ Pin mutations use a same-directory lock and atomic replacement. Competing writer
 
 ## Compatibility probes
 
-The runtime shape below was established by probing the installed OpenCode 1.18.31 before finalizing the design:
+The runtime shape below was established by historical design probes against OpenCode 1.18.31. These provider results are not fresh validation of this checkout; the current package/Bun bridge checks do not establish native registration, provider behavior, or interactive TUI behavior:
 
 | Probe | Result |
 | --- | --- |
@@ -228,6 +228,8 @@ node packages/nmnm-cli/bin/nmnm.js retrieve "<query>" --global
 
 ## Shared opt-in diagnostics
 
-Set `"logging": { "enabled": true }` in `~/.local/share/nanomneme/config.jsonc` to enable the shared default. JSONC comments and trailing commas are supported. Adapter user-level `nmnm.jsonc` can explicitly enable or disable logging; absence inherits. Either invalid applicable logging configuration disables that caller. Project settings cannot authorize logging. Records use the shared `logslines/v1` catalog and core-distributed runtime, omit structured memory payloads and stack traces, preserve thrown-error messages verbatim without redaction, and append to `~/.local/share/nanomneme/logs/<component>.jsonl`. Error messages may expose sensitive input or paths; review logs before sharing. Logging failures preserve operations and output. Existing databases, pin files, and logs require no migration.
+Diagnostics default off. Enable shared `logging.enabled` in `~/.local/share/nanomneme/config.jsonc`. User-level adapter settings can override it. Raw error messages are not redacted. See the [Logger manual](../../../docs/LOGGER.md#configuration-and-record-contract) for configuration, record fields, permissions, and privacy boundaries.
 
-OpenCode uses its existing user settings resolver under the OpenCode config directory. Node tool operations, CLI mutations, and confirmed TUI mutations are observed; index/navigation reads are unlogged. Each bridge process resolves settings anew. Bridge spawn failures emit one `failed` record from the Bun plugin host itself (the bridge provably never ran), carrying the spawn error verbatim; post-spawn transport/parse failures have no diagnostic record because the bridge may already have logged the true outcome. Correlation is null unless trusted host context supplies a verified ID.
+OpenCode uses its existing user settings resolver under the OpenCode config directory. Node tool operations, CLI mutations, and confirmed TUI mutations are observed; index/navigation reads are unlogged. Each bridge process resolves settings anew. Bridge spawn failures emit one `failed` record from the Bun plugin host itself (the bridge provably never ran), carrying the spawn error verbatim; post-spawn transport/parse failures have no diagnostic record because the bridge may already have logged the true outcome. Server tools forward the host tool-context `sessionID`; TUI and CLI management use null correlation.
+
+`src/logslines.js` supplies the adapter-specific logging binding. The [Logger manual](../../../docs/LOGGER.md#source-and-artifact-map) owns the shared source, generated-artifact, and package-check reference.

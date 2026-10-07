@@ -1,11 +1,20 @@
 import { existsSync } from 'node:fs';
 
-import { getPiLogger, piSessionId } from './logger.js';
+import { getPiLogger, piSessionId } from './logslines.js';
 import { toolResponse } from './response.js';
 import { databasePath, runMemory } from './store.js';
 
 function store(Type) {
   return Type.Optional(Type.Union([Type.Literal('project'), Type.Literal('global')]));
+}
+
+function scoreFilter(Type) {
+  const score = () => Type.Number({ minimum: 0, maximum: 1 });
+  return Type.Optional(Type.Union([
+    score(),
+    Type.Object({ gt: Type.Optional(score()), gte: Type.Optional(score()), lt: Type.Optional(score()), lte: Type.Optional(score()) }, { minProperties: 1, additionalProperties: false }),
+    Type.Null(),
+  ]));
 }
 
 function input(params, fields) {
@@ -25,7 +34,10 @@ function retainInput(params) {
 }
 
 function retainStore(params) {
-  return params.scope === 'global' ? 'global' : 'project';
+  if (params.scope === undefined) return 'project';
+  const scope = typeof params.scope === 'string' ? params.scope.trim() : undefined;
+  if (scope !== 'project' && scope !== 'global') throw new TypeError('scope must be project or global');
+  return scope;
 }
 
 function requireTrustedProject(ctx, store) {
@@ -45,10 +57,11 @@ function requireTrustedProject(ctx, store) {
 
 export function registerPiTools(pi, Type, options = {}) {
   const logger = options.logger ?? getPiLogger();
-  const observe = (ctx, operation, selectedStore, execute) => logger.run({ operation, session_id: piSessionId(ctx) }, observation => {
+  const observe = (ctx, operation, selectStore, execute) => logger.run({ operation, session_id: piSessionId(ctx) }, observation => {
+    const selectedStore = selectStore();
     try { requireTrustedProject(ctx, selectedStore); }
     catch (error) { observation.setStatus('blocked'); throw error; }
-    return execute();
+    return execute(selectedStore);
   });
   pi.registerTool({
     name: 'retain_memory',
@@ -58,11 +71,11 @@ export function registerPiTools(pi, Type, options = {}) {
       content: Type.Optional(Type.String()), id: Type.Optional(Type.String()),
       kind: Type.Optional(Type.String()), scope: Type.Optional(Type.String()), namespace: Type.Optional(Type.String()),
       tags: Type.Optional(Type.Array(Type.String())), importance: Type.Optional(Type.Number()), confidence: Type.Optional(Type.Number()),
-      expires_at: Type.Optional(Type.Union([Type.String(), Type.Null()])), metadata: Type.Optional(Type.Any()),
+      expires_at: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+      metadata: Type.Optional(Type.Union([Type.Object({}, { additionalProperties: true }), Type.Null()])),
     }),
     async execute(_id, params, _signal, _update, ctx) {
-      const selectedStore = retainStore(params);
-      const result = observe(ctx, 'retain', selectedStore, () => runMemory({ cwd: ctx.cwd, store: selectedStore, operation: 'retain', input: retainInput(params) }));
+      const result = observe(ctx, 'retain', () => retainStore(params), selectedStore => runMemory({ cwd: ctx.cwd, store: selectedStore, operation: 'retain', input: retainInput(params) }));
       options.onMutation?.('retain');
       return toolResponse(result);
     },
@@ -74,7 +87,7 @@ export function registerPiTools(pi, Type, options = {}) {
     parameters: Type.Object({ id: Type.String(), store: store(Type) }),
     async execute(_id, params, _signal, _update, ctx) {
       const selectedStore = params.store ?? 'project';
-      const result = observe(ctx, 'recall', selectedStore, () => (hasStore(ctx, selectedStore)
+      const result = observe(ctx, 'recall', () => selectedStore, () => (hasStore(ctx, selectedStore)
           ? runMemory({ cwd: ctx.cwd, store: selectedStore, operation: 'recall', input: { id: params.id }, create: false, readOnly: true })
           : null));
       return toolResponse(result);
@@ -87,12 +100,12 @@ export function registerPiTools(pi, Type, options = {}) {
     parameters: Type.Object({
       query: Type.Optional(Type.String()), store: store(Type), kind: Type.Optional(Type.String()), scope: Type.Optional(Type.String()),
       namespace: Type.Optional(Type.String()), tags: Type.Optional(Type.Array(Type.String())), expires: Type.Optional(Type.String()),
-      importance: Type.Optional(Type.Any()), confidence: Type.Optional(Type.Any()), order_by: Type.Optional(Type.String()),
+      importance: scoreFilter(Type), confidence: scoreFilter(Type), order_by: Type.Optional(Type.String()),
       limit: Type.Optional(Type.Number()), offset: Type.Optional(Type.Number()),
     }),
     async execute(_id, params, _signal, _update, ctx) {
       const selectedStore = params.store ?? 'project';
-      const result = observe(ctx, 'retrieve', selectedStore, () => (hasStore(ctx, selectedStore)
+      const result = observe(ctx, 'retrieve', () => selectedStore, () => (hasStore(ctx, selectedStore)
           ? runMemory({ cwd: ctx.cwd, store: selectedStore, operation: 'retrieve', input: input(params, ['query', 'kind', 'scope', 'namespace', 'tags', 'expires', 'importance', 'confidence', 'order_by', 'limit', 'offset']), create: false, readOnly: true })
           : { total: 0, items: [] }));
       return toolResponse(result);
@@ -105,7 +118,7 @@ export function registerPiTools(pi, Type, options = {}) {
     parameters: Type.Object({ id: Type.String(), store: store(Type) }),
     async execute(_id, params, _signal, _update, ctx) {
       const selectedStore = params.store ?? 'project';
-      const result = observe(ctx, 'remove', selectedStore, () => (hasStore(ctx, selectedStore)
+      const result = observe(ctx, 'remove', () => selectedStore, () => (hasStore(ctx, selectedStore)
           ? runMemory({ cwd: ctx.cwd, store: selectedStore, operation: 'remove', input: { id: params.id, mode: 'soft' }, create: false })
           : null));
       if (result) options.onMutation?.('remove');

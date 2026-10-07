@@ -23,14 +23,41 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      # Blocking: vulnerabilities reachable from shipped packages.
-      - run: npm audit --audit-level=high --omit=dev
-      # Non-blocking: full tree, including the dev-only Pi host subtree (pinned by Pi's own
-      # npm-shrinkwrap.json, so root overrides cannot move it). See CHANGELOG 0.5.1.
+      # Non-blocking: full tree, including development host dependencies.
+      # Shipped dependencies remain the blocking audit scope. See CHANGELOG 0.5.1.
       - name: Audit full dependency tree (informational)
         run: npm audit --audit-level=high
         continue-on-error: true
-      - run: npm test
-      - run: node scripts/check-logging-packages.js
+      # Blocking: generated runtimes, tests, shipped dependency audit, packages.
+      - run: npm run validate
       - run: git diff --check
-      - run: npm pack --dry-run --workspace @openlines/nmnm-core --workspace @openlines/nmnm-cli --workspace @openlines/nmnm-pi --workspace @openlines/nmnm-opencode --workspace @openlines/nmnm-codex
+      - run: npm pack --dry-run --workspace @openlines/nmnm-core --workspace @openlines/nmnm-ui --workspace @openlines/nmnm-cli --workspace @openlines/nmnm-pi --workspace @openlines/nmnm-opencode
+
+  ui:
+    name: Rendered UI checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - run: npm ci
+      - name: Install browser test dependencies
+        run: |
+          python -m pip install playwright==1.62.0
+          python -m playwright install --with-deps chromium
+      - name: Run rendered UI checks
+        run: python packages/nmnm-ui/test/browser.py
+      - name: Upload UI screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nmnm-ui-screenshots
+          path: /tmp/nmnm-ui-*.png
+          if-no-files-found: warn
+          retention-days: 7

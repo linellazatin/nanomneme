@@ -83,7 +83,7 @@ export const NanomnemePlugin = async (input = {}) => {
         },
       }),
       remove_memory: tool({
-        description: 'Soft-remove a nanomneme memory by id (reversible; purge is CLI-only).',
+        description: 'Soft-remove a nanomneme memory by id (reversible; purge requires an explicit CLI or UI workbench action).',
         args: { id: z.string(), store: storeArg },
         async execute(args, context) {
           return callTool('remove_memory', args, context);

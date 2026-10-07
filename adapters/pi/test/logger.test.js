@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { getPiLogger, piSessionId } from '../src/logger.js';
+import { getPiLogger, piSessionId } from '../src/logslines.js';
 
 test('Pi inherits shared JSONC, overrides explicitly, and reloads lazy settings', () => {
   const home = mkdtempSync(join(tmpdir(), 'nmnm-pi-logging-'));

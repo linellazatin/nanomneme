@@ -61,6 +61,29 @@ test('OpenCode patches and restores advance timestamps across reopened stores un
   }
 });
 
+test('opencode retain validates normalized scope before selecting or creating a store', () => {
+  const cwd = temporaryDirectory('nmnm-opencode-scope-');
+  const home = temporaryDirectory('nmnm-opencode-scope-home-');
+  const ctx = { cwd, home, platform: 'darwin' };
+  try {
+    for (const scope of ['', ' ', 'GLOBAL', 'invalid', null, 1]) {
+      assert.throws(() => call('retain_memory', { content: 'Invalid scope', scope }, ctx), /scope/);
+      assert.equal(existsSync(databasePath({ ...ctx, store: 'project' })), false);
+      assert.equal(existsSync(databasePath({ ...ctx, store: 'global' })), false);
+    }
+    const global = call('retain_memory', { content: 'Padded global', scope: ' global ' }, ctx);
+    assert.equal(global.scope, 'global');
+    assert.equal(call('recall_memory', { id: global.id, store: 'global' }, ctx).id, global.id);
+    assert.equal(existsSync(databasePath({ ...ctx, store: 'project' })), false);
+    const project = call('retain_memory', { content: 'Padded project', scope: ' project ' }, ctx);
+    assert.equal(project.scope, 'project');
+    assert.equal(call('recall_memory', { id: project.id, store: 'project' }, ctx).id, project.id);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test('opencode retain uses the global store when scope is global', () => {
   const cwd = temporaryDirectory('nmnm-opencode-ops-global-');
   const home = temporaryDirectory('nmnm-opencode-home-');

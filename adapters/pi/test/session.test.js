@@ -306,6 +306,7 @@ test('injects enabled autoretention rules without a persistent message', async (
     writeFileSync(settingsPath({ cwd: project, agentDir, store: 'project' }), JSON.stringify({
       autoretention: { enabled: true, always_persist: ['Record durable project decisions'] },
     }));
+    runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Context ordering memory' } });
     registerPiMemory({ on: (event, handler) => handlers.set(event, handler), registerCommand: () => {} }, { home, agentDir, platform: 'darwin' });
     const ctx = trustedContext(project, { notify: () => {} });
 
@@ -316,6 +317,8 @@ test('injects enabled autoretention rules without a persistent message', async (
     assert.match(result.systemPrompt, /## Nanomneme autoretention/);
     assert.match(result.systemPrompt, /Use retain_memory only when retaining a memory/);
     assert.match(result.systemPrompt, /Record durable project decisions/);
+    assert.ok(result.systemPrompt.indexOf('## Nanomneme autoretention') < result.systemPrompt.indexOf('Nanomneme memory index:'));
+    assert.ok(result.systemPrompt.length - 'Base prompt'.length <= 2002);
   } finally {
     rmSync(project, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });

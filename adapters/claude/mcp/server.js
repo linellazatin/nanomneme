@@ -7,7 +7,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import pkg from '../package.json' with { type: 'json' };
 import { handleTool } from '../src/operations.js';
-import { getMemoryLogger } from '../src/logger.js';
+import { getMemoryLogger } from '../src/logslines.js';
 
 const ctx = { cwd: process.env.NMNM_PROJECT_DIR || process.cwd() };
 const logger = getMemoryLogger(ctx);
@@ -52,7 +52,7 @@ register('retrieve_memory', 'Search or list active nanomneme memories.', {
   offset: z.number().optional(),
 });
 
-register('remove_memory', 'Soft-remove a nanomneme memory by ID (reversible; purge is CLI-only).', {
+register('remove_memory', 'Soft-remove a nanomneme memory by ID (reversible; purge requires an explicit CLI or UI workbench action).', {
   id: z.string(),
   store: storeParam,
 });

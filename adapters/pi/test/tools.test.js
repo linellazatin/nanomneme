@@ -4,6 +4,8 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Type } from 'typebox';
+import { Check } from 'typebox/value';
+import { convertTools } from '@earendil-works/pi-ai/api/google-shared';
 import { MAX_TOOL_RESULT_BYTES } from '../src/response.js';
 import { createPiLogger } from './logger-helper.js';
 import { registerPiMemory } from '../src/session.js';
@@ -39,6 +41,72 @@ test('registerPiTools exposes the nanomneme 4Rs', () => {
   const tools = registeredTools();
   assert.deepEqual([...tools.keys()], ['retain_memory', 'recall_memory', 'retrieve_memory', 'remove_memory']);
   assert.equal(Object.hasOwn(tools.get('retain_memory').parameters.properties, 'store'), false);
+});
+
+test('Pi tool schemas describe metadata and score filters through provider conversion', () => {
+  const tools = registeredTools();
+  const retain = tools.get('retain_memory').parameters;
+  const retrieve = tools.get('retrieve_memory').parameters;
+  for (const metadata of [null, {}, { nested: [null, true, { value: 1 }], source: 42 }]) {
+    assert.equal(Check(retain, { content: 'Metadata', metadata }), true);
+  }
+  for (const metadata of [[], 'text', 1, false]) assert.equal(Check(retain, { metadata }), false);
+  for (const field of ['importance', 'confidence']) {
+    for (const value of [null, 0, 1, { gt: 0, lte: 1 }, { gte: 0.5 }, { lt: 1 }]) {
+      assert.equal(Check(retrieve, { [field]: value }), true);
+    }
+    for (const value of [{}, { eq: 0.5 }, { gt: -1 }, { lte: 2 }, [], '0.5', -1, 2]) {
+      assert.equal(Check(retrieve, { [field]: value }), false);
+    }
+  }
+  const converted = convertTools([...tools.values()])[0].functionDeclarations;
+  for (const tool of converted) {
+    for (const schema of Object.values(tool.parametersJsonSchema.properties)) {
+      assert.ok(schema.type || schema.anyOf, `${tool.name} has an untyped parameter`);
+    }
+  }
+  const metadata = converted[0].parametersJsonSchema.properties.metadata;
+  assert.ok(metadata.anyOf.some(schema => schema.type === 'object' && schema.additionalProperties === true));
+});
+
+test('Pi retain normalizes scope before routing and trust checks, rejecting invalid scope before creation', async () => {
+  const cwd = temporaryDirectory('nmnm-pi-tools-scope-');
+  const previousHome = process.env.HOME;
+  process.env.HOME = cwd;
+  try {
+    const tools = registeredTools();
+    const retain = tools.get('retain_memory');
+    const global = await execute(retain, { content: 'Padded global', scope: ' global ' }, cwd, { trusted: false });
+    assert.equal(global.scope, 'global');
+    assert.equal((await execute(tools.get('recall_memory'), { id: global.id, store: 'global' }, cwd, { trusted: false })).id, global.id);
+    assert.equal(existsSync(databasePath({ cwd })), false);
+    await assert.rejects(execute(retain, { content: 'Untrusted project', scope: ' project ' }, cwd, { trusted: false }), /trusted project/);
+    for (const scope of ['', ' ', 'GLOBAL', 'invalid', null, 1]) {
+      await assert.rejects(execute(retain, { content: 'Invalid scope', scope }, cwd), /scope/);
+    }
+    assert.equal(existsSync(databasePath({ cwd })), false);
+    const project = await execute(retain, { content: 'Padded project', scope: ' project ' }, cwd);
+    assert.equal(project.scope, 'project');
+  } finally {
+    process.env.HOME = previousHome;
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('Pi invalid retain scope emits one error outcome without a mutation or store creation', async () => {
+  const cwd = temporaryDirectory('nmnm-pi-tools-invalid-scope-');
+  try {
+    const records = [];
+    const mutations = [];
+    const tools = registeredTools({ logger: createPiLogger({ enabled: true, sink: record => records.push(record) }), onMutation: reason => mutations.push(reason) });
+    await assert.rejects(execute(tools.get('retain_memory'), { content: 'Invalid scope', scope: 'invalid' }, cwd), /scope/);
+    assert.equal(records.length, 1);
+    assert.equal(records[0].status, 'failed');
+    assert.deepEqual(mutations, []);
+    assert.equal(existsSync(databasePath({ cwd })), false);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
 });
 
 test('Pi tools retain, recall, retrieve, and soft-remove through the core', async () => {

@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 
 const repository = 'https://github.com/linellazatin/logslines';
 const apiRepository = 'https://api.github.com/repos/linellazatin/logslines';
@@ -30,6 +31,28 @@ function hashesFor(files) {
     path,
     createHash('sha256').update(files[path], 'utf8').digest('hex'),
   ]));
+}
+
+function releaseMetadata(result) {
+  return { repository, tag: result.tag, release_url: result.releaseUrl, files: requiredPaths, sha256: hashesFor(result.files) };
+}
+
+export function checkPinnedLogslines({ destination = fileURLToPath(new URL('../external/logslines', import.meta.url)), fixturePath = fileURLToPath(new URL('../shared/fixtures/logslines-release.json', import.meta.url)) } = {}) {
+  const pin = JSON.parse(readFileSync(fixturePath, 'utf8'));
+  if (!pin || !isDeepStrictEqual(Object.keys(pin).sort(), ['repository', 'tag', 'release_url', 'files', 'sha256'].sort())
+    || !/^v\d+\.\d+\.\d+$/.test(pin.tag) || pin.repository !== repository
+    || pin.release_url !== `${repository}/releases/tag/${pin.tag}` || !isDeepStrictEqual(pin.files, requiredPaths)
+    || !pin.sha256 || !isDeepStrictEqual(Object.keys(pin.sha256).sort(), [...requiredPaths].sort())
+    || requiredPaths.some(path => typeof pin.sha256[path] !== 'string' || !/^[a-f0-9]{64}$/.test(pin.sha256[path]))) {
+    throw new Error('Logslines release fixture is invalid');
+  }
+  const provenance = JSON.parse(readFileSync(join(destination, 'PROVENANCE.json'), 'utf8'));
+  if (!isDeepStrictEqual(pin, provenance)) throw new Error('Logslines provenance differs from the release fixture');
+  for (const path of requiredPaths) {
+    const actual = createHash('sha256').update(readFileSync(join(destination, path))).digest('hex');
+    if (actual !== pin.sha256[path]) throw new Error(`Logslines source differs from the release fixture: ${path}`);
+  }
+  return pin;
 }
 
 async function fetchExternalLogslines({ tag, fetchImpl = fetch } = {}) {
@@ -104,12 +127,14 @@ export async function checkExternalLogslines({ tag, destination = fileURLToPath(
   return result;
 }
 
-export async function updateExternalLogslines({ tag, destination = fileURLToPath(new URL('../external/logslines', import.meta.url)), fetchImpl = fetch } = {}) {
+export async function updateExternalLogslines({ tag, destination = fileURLToPath(new URL('../external/logslines', import.meta.url)), fixturePath, fetchImpl = fetch } = {}) {
   const result = await fetchExternalLogslines({ tag, fetchImpl });
   const parent = dirname(destination);
   const name = basename(destination);
   const temporary = join(parent, `.${name}.tmp-${process.pid}-${Date.now()}`);
   const backup = join(parent, `.${name}.backup-${process.pid}-${Date.now()}`);
+  const fixtureTemporary = fixturePath ? `${fixturePath}.tmp-${process.pid}-${Date.now()}` : undefined;
+  let snapshotUpdated = false;
   try {
     mkdirSync(temporary, { recursive: true });
     for (const [path, source] of Object.entries(result.files)) {
@@ -117,25 +142,30 @@ export async function updateExternalLogslines({ tag, destination = fileURLToPath
       mkdirSync(dirname(target), { recursive: true });
       writeFileSync(target, source, 'utf8');
     }
-    writeFileSync(join(temporary, 'PROVENANCE.json'), `${JSON.stringify({
-      repository,
-      tag: result.tag,
-      release_url: result.releaseUrl,
-      files: requiredPaths,
-      sha256: hashesFor(result.files),
-    }, null, 2)}\n`, 'utf8');
+    const metadata = `${JSON.stringify(releaseMetadata(result), null, 2)}\n`;
+    writeFileSync(join(temporary, 'PROVENANCE.json'), metadata, 'utf8');
+    if (fixturePath) {
+      mkdirSync(dirname(fixturePath), { recursive: true });
+      writeFileSync(fixtureTemporary, metadata, 'utf8');
+    }
 
     if (existsSync(destination)) renameSync(destination, backup);
     try {
       renameSync(temporary, destination);
+      snapshotUpdated = true;
     } catch (error) {
       if (existsSync(backup)) renameSync(backup, destination);
       throw error;
     }
     if (existsSync(backup)) rmSync(backup, { recursive: true, force: true });
+    if (fixturePath) renameSync(fixtureTemporary, fixturePath);
     return result;
+  } catch (error) {
+    error.snapshotUpdated = snapshotUpdated;
+    throw error;
   } finally {
     if (existsSync(temporary)) rmSync(temporary, { recursive: true, force: true });
+    if (fixtureTemporary && existsSync(fixtureTemporary)) rmSync(fixtureTemporary, { force: true });
   }
 }
 

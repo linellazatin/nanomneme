@@ -1,6 +1,6 @@
 # Nanomneme for Codex
 
-`@openlines/nmnm-codex` is an MCP-free Codex plugin prototype for macOS and Linux. It bundles `@openlines/nmnm-core@0.3.0`, gives Codex one lazy-loaded `memory` skill backed by a package-relative Node runner, and adds a trusted read-only SessionStart memory index.
+`@openlines/nmnm-codex` is an MCP-free Codex plugin prototype for macOS and Linux. It bundles `@openlines/nmnm-core@0.3.1`, gives Codex one lazy-loaded `memory` skill backed by a package-relative Node runner, and adds a trusted read-only SessionStart memory index.
 
 The adapter stores canonical records in Nanomneme's standard project database, `./.nanomneme/memory.db`, and standard global database, `~/.local/share/nanomneme/memory.db`. It has no context settings, pins, automatic retention, management CLI, MCP server, or Windows support claim.
 
@@ -8,6 +8,10 @@ Before a local marketplace install or reinstall, run `node scripts/check-logging
 
 ## Shared opt-in diagnostics
 
-Set `"logging": { "enabled": true }` in `~/.local/share/nanomneme/config.jsonc` to enable the shared default. JSONC comments and trailing commas are supported. Adapter user-level `nmnm.jsonc` can explicitly enable or disable logging; absence inherits. Either invalid applicable logging configuration disables that caller. Project settings cannot authorize logging. Records use the shared `logslines/v1` catalog and core-distributed runtime, omit structured memory payloads and stack traces, preserve thrown-error messages verbatim without redaction, and append to `~/.local/share/nanomneme/logs/<component>.jsonl`. Error messages may expose sensitive input or paths; review logs before sharing. Logging failures preserve operations and output. Existing databases, pin files, and logs require no migration.
+Diagnostics default off. Enable shared `logging.enabled` in `~/.local/share/nanomneme/config.jsonc`. User-level adapter settings can override it. Raw error messages are not redacted. See the [Logger manual](../../docs/LOGGER.md#configuration-and-record-contract) for configuration, record fields, permissions, and privacy boundaries.
 
 Codex uses `$CODEX_HOME/nmnm.jsonc`, defaulting to `~/.codex/nmnm.jsonc`, for logging only. Explicit runner 4Rs are observed; SessionStart indexes remain unlogged. Correlation uses nonempty host-provided `CODEX_THREAD_ID`, falling back to `CODEX_SESSION_ID`, otherwise null. Request-supplied session fields are ignored. Each runner process resolves settings and correlation anew.
+
+For an existing enabled local marketplace installation, run `npm run codex:update` after checkout changes. It refreshes stale logger bundles, prepares physical core/parser dependencies, compares adapter/dependency/cache contents, and reinstalls only when needed. It respects `CODEX_HOME`, leaves disabled plugins untouched, and reports when a new session is required. It does not perform first-time setup, run the full suite, or validate live hooks. See [refresh instructions](docs/CODEX_ADAPTER_MANUAL.md#refresh-after-checkout-updates).
+
+`src/logslines.js` binds this adapter to core’s shared logging runtime; it does not contain a separate observer or generated bundle. See the [Logger manual](../../docs/LOGGER.md#source-and-artifact-map) for file roles and build rules.

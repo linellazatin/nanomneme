@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { open } from '@openlines/nmnm-core';
-import { createMemoryLogger } from '@openlines/nmnm-core/logging';
+import { getCLILogger } from '../src/logslines.js';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -9,8 +9,10 @@ import { basename, dirname, join, resolve } from 'node:path';
 
 const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 const HELP = `Usage: nmnm <command> [arguments] [options]
+       nmnm ui [--port <0..65535> | -p <0..65535>] [--no-auto | -na] [--help | -h] [--version | -v]
 
 Commands:
+  ui                   Open the local memory workbench in your default browser.
   retain [content]     Create a memory, or patch one with --id.
   recall <id>          Return one active memory.
   retrieve [query words...]     Search or list active memories.
@@ -79,6 +81,10 @@ function validateCommand(command, positionals, options) {
   if (options.both && (options.global || options.db)) throw new TypeError('--both cannot be combined with --global or --db');
   for (const name of Object.keys(options)) {
     if (!COMMAND_OPTIONS[command].includes(name)) throw new TypeError(`--${name} is not valid with ${command}`);
+  }
+  if (options.scope !== undefined) {
+    options.scope = options.scope.trim();
+    if (!['project', 'global'].includes(options.scope)) throw new TypeError('scope must be project or global');
   }
   if (command === 'retain' && positionals.length > 1) throw new TypeError('retain accepts one content argument');
   if (command === 'retain' && !positionals.length && options.id === undefined) throw new TypeError('retain requires content unless --id is supplied');
@@ -235,7 +241,10 @@ function importJsonl(path) {
 }
 
 export function main(args = process.argv.slice(2)) {
-  if (args.length === 1 && (args[0] === '--version' || args[0] === '-v')) return { version: VERSION };
+  if (args.length === 1 && (args[0] === '--version' || args[0] === '-v')) {
+    const dependencyVersion = name => JSON.parse(readFileSync(new URL('../package.json', import.meta.resolve(name)), 'utf8')).version;
+    return { version: VERSION, versions: { cli: VERSION, core: dependencyVersion('@openlines/nmnm-core'), ui: dependencyVersion('@openlines/nmnm-ui') } };
+  }
   const { options, positionals } = parse(args);
   const command = positionals.shift();
   if (options.help) return { help: true };
@@ -331,13 +340,13 @@ function commandHint(args) {
 }
 
 export async function executeCli(args = process.argv.slice(2), { stdout = process.stdout, logger } = {}) {
-  const diagnostics = logger ?? createMemoryLogger({ service: { namespace: 'openlines', name: 'nanomneme', component: 'nmnm-cli', version: VERSION } });
+  const diagnostics = logger ?? getCLILogger();
   const execute = async observation => {
     const output = main(args);
     if (output.failed) observation?.setStatus('failed');
     else if (output.result === null) observation?.setStatus('not_found');
     else if (output.result?.total === 0) observation?.setStatus('empty');
-    const text = output.version ? `${output.version}\n` : output.raw ?? (output.help ? `${HELP}\n` : output.json ? `${JSON.stringify(output.result, null, 2)}\n` : readable(output.result));
+    const text = output.version ? Object.entries(output.versions).map(([name, version]) => `${name} ${version}\n`).join('') : output.raw ?? (output.help ? `${HELP}\n` : output.json ? `${JSON.stringify(output.result, null, 2)}\n` : readable(output.result));
     await new Promise((resolve, reject) => {
       const failed = error => reject(error);
       stdout.once('error', failed);
@@ -354,8 +363,13 @@ export async function executeCli(args = process.argv.slice(2), { stdout = proces
 
 if (process.argv[1] && existsSync(process.argv[1]) && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   try {
-    const output = await executeCli();
-    if (output.failed) process.exitCode = 1;
+    if (process.argv[2] === 'ui') {
+      const { launchWorkbench } = await import('@openlines/nmnm-ui');
+      await launchWorkbench(process.argv.slice(3), { command: 'nmnm ui' });
+    } else {
+      const output = await executeCli();
+      if (output.failed) process.exitCode = 1;
+    }
   } catch (error) {
     process.stderr.write(`nmnm: ${error.message}\n`);
     process.exitCode = 1;

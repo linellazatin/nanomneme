@@ -1,4 +1,4 @@
-import { getMemoryLogger } from './logger.js';
+import { getMemoryLogger } from './logslines.js';
 import { existsSync } from 'node:fs';
 import { databasePath, runMemory } from './store.js';
 
@@ -28,6 +28,13 @@ function hasStore(ctx, store) {
   return existsSync(databasePath({ cwd: ctx.cwd, home: ctx.home, platform: ctx.platform, store }));
 }
 
+function retainStore(params) {
+  if (params.scope === undefined) return 'project';
+  const scope = typeof params.scope === 'string' ? params.scope.trim() : undefined;
+  if (scope !== 'project' && scope !== 'global') throw new TypeError('scope must be project or global');
+  return scope;
+}
+
 function retainInput(params) {
   const result = input(params, RETAIN_FIELDS);
   if (params.id == null && (params.metadata == null || (params.metadata && typeof params.metadata === 'object' && !Array.isArray(params.metadata)))) {
@@ -43,7 +50,7 @@ export function handleTool(name, params = {}, ctx = {}, options = {}) {
   const logger = options.logger ?? getMemoryLogger(ctx);
   const base = { cwd: ctx.cwd, home: ctx.home, platform: ctx.platform, store: params.store };
   const result = logger.run({ operation, session_id: options.session_id ?? null }, () => {
-    if (operation === 'retain') return runMemory({ cwd: ctx.cwd, home: ctx.home, platform: ctx.platform, store: params.scope === 'global' ? 'global' : 'project', operation, input: retainInput(params) });
+    if (operation === 'retain') return runMemory({ cwd: ctx.cwd, home: ctx.home, platform: ctx.platform, store: retainStore(params), operation, input: retainInput(params) });
     if (!hasStore(ctx, params.store)) return operation === 'retrieve' ? { total: 0, items: [] } : null;
     if (operation === 'retrieve') return runMemory({ ...base, operation, input: input(params, RETRIEVE_FIELDS), create: false, readOnly: true });
     return runMemory({ ...base, operation, input: operation === 'remove' ? { id: params.id, mode: 'soft' } : { id: params.id }, create: false, readOnly: operation !== 'remove' });

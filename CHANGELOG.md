@@ -1,5 +1,72 @@
 # Changelog
 
+## 0.8.0 - Experimental workbench UI, logging organization, and dependency fixes
+
+Experimental memory review UI, consistent Logslines bindings and build/package organization, automated maintenance and validation, core/adapter patch releases, and dependency audit fixes. Core memory functions and the public logging import remain compatible.
+
+### Updated components
+
+| Component | Version |
+| --- | --- |
+| Repository | 0.8.0 |
+| `@openlines/nmnm-core` | 0.3.1 |
+| `@openlines/nmnm-ui` | 0.1.0 (new), experimental, prepared for publication |
+| `@openlines/nmnm-cli` | 0.4.0 |
+| `@openlines/nmnm-pi` | 0.4.2 |
+| `@openlines/nmnm-opencode`, `@openlines/nmnm-claude`, `@openlines/nmnm-codex` | 0.2.2 |
+
+### New
+
+- Experimental `nmnm-ui` foreground workbench with loopback HTTP, a per-launch credential, locally served assets, and Openlines light/dark styling. No daemon, framework, frontend build step, or additional runtime dependency.
+- Header shows the installed UI version; website-matched sun/moon icons, fixed header/footer, and one Add store button for authenticated local database selection.
+- Store trash icons unregister stores and close their workbench connections without deleting databases; re-added stores open read-only. The memory list scrolls independently after five preview rows, with existing 50-record pagination retained.
+- Stores can collapse or expand with a keyboard-accessible title control; its added-store count remains visible in both states and updates on addition/removal.
+- UI README includes five screenshots of initial launch, store selection, combined filters, editing, and lifecycle cleanup using disposable sample memories.
+- Explicit project/global/custom stores and source-harness filtering; Active, Expired, and Removed views; literal content search, structured filters, and 50-record pagination with store-qualified identities.
+- Read-only defaults and per-store editing authorization; changed-field edits, expiry changes, confirmed soft removal, restoration, and separately confirmed purge. Scope and provenance remain read-only.
+- Unsaved-draft protection, serialized browser operations, stale-record checks, disposable-store tests, and a rendered Playwright suite. Removal/purge clears selection and resets the detail pane.
+- CLI bundles core/UI as regular dependencies and loads UI dynamically through `nmnm ui`. `--port`/`-p` selects a port; `--no-auto`/`-na` suppresses default browser opening; `--help`/`-h` and `--version`/`-v` report UI help/version. Opener failures preserve the running server and printed URL. CLI/UI require Node 22.19+.
+- `nmnm --version`/`-v` prints installed CLI, core, and UI versions without starting UI or opening storage.
+- Opt-in UI Logslines diagnostics: edit/expiry/restore use the shared `retain` observer, remove/purge use `remove`, and general request/launcher/captured-browser errors emit `ui.error`. Successful reads/navigation, empty patches, and canceled actions stay quiet; mutation errors emit once.
+- UI settings are reread per mutation/error attempt. Browser error reports are authenticated, bounded, and best effort; raw error messages remain unredacted.
+- UI's build-only `src/ui-logger.js` sits beside `src/ui-logging-runtime.generated.js`; explicit runtime package contents exclude the build source. Installed-tarball checks cover UI emission and source exclusion. Release tooling publishes core, UI, then CLI.
+- Registration/editing authorization verifies existing Nanomneme schema and SQLite integrity read-only. Unrelated SQLite files and incomplete lookalikes fail without creation or migration.
+- Lists/details use full canonical exports; timestamp conflict checks are separate from mutation. Expired memories cannot be soft-removed. Creation, bulk operations, transfer, repair, adapter settings/pins, and shared general-error emission remain future features documented in UI's README.
+
+### Refactored
+
+- Claude copied marketplace installs now include a registry-only npm lockfile resolving published core `0.3.0` under `^0.3.0`, independently of checkout core `0.3.1`. Core publication does not refresh this lock automatically; a later reviewed lock update and plugin version increase are required.
+- Added read-only `npm run validate` for generated-output checks/full tests, shipped-dependency audit, and standalone package validation. CI/release use the same command, retain the informational full audit, and preserve release tag checks and publication order. Validation never repairs tracked artifacts or refreshes plugins.
+- Added `npm run codex:update` for existing enabled local installations: refresh stale bundles, prepare only physical core/parser dependencies, compare same-version content changes, conditionally reinstall, and verify the cache. Respects `CODEX_HOME` and reports reload requirements. Extracted preparation preserves unrelated dependencies and removes obsolete managed files; `--prepare-codex` remains compatible. Disabled plugins remain untouched.
+- Added `npm run logslines:update -- <exact-tag>` to coordinate validated upstream snapshot/provenance and shared release-pin updates, logger generation, repository tests, and standalone package checks. The reviewed pin now lives in `shared/fixtures/logslines-release.json`; offline checks detect source/provenance/fixture drift and package checks exclude the fixture from distributions. Focused external commands remain available.
+- Added `npm run logslines:build`: check both runtimes, regenerate only stale outputs, recheck, and validate standalone logging packages. `--fast` explicitly skips package validation; outcomes distinguish current, updated, validated, and failed. The import-safe generator builds both targets before writing, resolves a stable build root, and gives read-only checks distinct stale/failure exit codes.
+- Core, adapter, CLI, and UI bindings consistently use `src/logslines.js`. Core preserves `@openlines/nmnm-core/logging` and `createMemoryLogger`; its generated runtime and memory implementation are unchanged.
+- CLI binding construction is extracted from its executable and included in its package; command observation still includes output completion.
+- One `scripts/build-logger.js` command builds/checks both logging targets. Shared implementation and generated suffixes are retained.
+- Core `0.3.1` and adapter patch releases cover binding refactors, metadata, and documentation. All consumers pin core `0.3.1`; private Claude/Codex adapters retain local/plugin distribution.
+- OpenCode declares its tested host dependency floor as `@opencode-ai/plugin >=1.18.15`; the lock retains 1.18.15 while fresh installs may resolve newer versions.
+- Installed-tarball checks verify enabled success/failure logging across core, CLI, and every adapter. Documentation and the repository guide align file roles, build commands, diagnostics, packaging, and limitations.
+
+### Fixed
+
+- Agent-facing tool/management guidance identifies explicit CLI or UI workbench purge controls. Claude's memory skill distinguishes deterministic subprocess output from the model-mediated slash-command relay.
+- Pi, Claude, and OpenCode render enabled autoretention guidance before memory indexes, preserving total budgets and omitting empty indexes.
+- Claude disabled reinjection reads settings only and leaves session state untouched. Enabled hooks build memory context only on cadence, advance through context failures, and recover unusable prompt counters; settings failures remain silent without state changes.
+- CLI and Pi/Claude/OpenCode retain paths trim and validate scope before store selection; invalid scopes no longer create stores, and padded values cannot bypass CLI route checks or misroute adapter writes.
+- Pi metadata and retrieval score filters use explicit tool schemas instead of empty schemas, preserving JSON-object/null metadata and exact/range/null score filters. Regression tests cover provider conversion, routing, and trust checks.
+- Store removal restores keyboard focus to Add store after the workbench leaves its pending/inert state.
+- Updated MCP SDK from `1.30.0` to the patched `1.31.0` and raised Claude's dependency floor to `^1.31.0`, resolving audit advisory `GHSA-6qxp-vccf-f47h`. Claude uses the SDK's stdio server, outside the advisory's HTTP OAuth-client path; the shipped audit still enforces the patched dependency.
+- Resolved `proxy-addr` to `2.0.8` and `brace-expansion` to `5.0.12`. Pi `1.0.4` no longer ships the blocking shrinkwrap; full and production-only audits report zero vulnerabilities.
+- Corrected stale repository guidance about the Pi shrinkwrap blocker and logging build/artifact boundaries.
+- Corrected Claude/OpenCode management help to describe unqualified pinning as unambiguous store resolution, and separated OpenCode's historical provider probes from current checkout validation.
+
+### Validation
+
+- Standalone validation now checks Claude manifest/lock consistency and registry-only exact resolutions, performs a frozen installation with an isolated cache and disabled lifecycle scripts, audits that tree, runs the full Claude adapter suite against locked core `0.3.0`, and exercises stdio MCP 4Rs and management CLI behavior. Native Claude automatic cache installation remains a separate check.
+- CI and tagged releases run the same rendered desktop/mobile Chromium job with pinned Playwright, a 15-minute timeout, and screenshot artifacts retained for 7 days. Publishing requires both repository validation and rendered UI success on the tagged checkout. Release validation extracts required changelog notes before publishing and forwards them to GitHub Release creation.
+- Refreshed the repo-local Pi host/TUI baseline to `1.0.4`; tested minimum host compatibility remains `>=0.87.0`.
+- Full suite, installed-package checks, disposable-store adapter/CLI simulations, and desktop/mobile Chromium checks passed after the refactors. Native Pi RPC initialization and Claude MCP transport were exercised; OpenCode ran under Bun and Codex through its installed-cache runner. Provider calls, interactive harness TUIs, and native Claude/OpenCode/Codex hook registration remain unverified.
+
 ## 0.7.0 - Core and CLI hardening
 
 ### Updated components

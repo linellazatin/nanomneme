@@ -1,15 +1,15 @@
 {
   "name": "@openlines/nmnm-core",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Deterministic local SQLite memory core for nanomneme",
   "type": "module",
   "exports": {
     ".": "./src/index.js",
-    "./logging": "./src/logging.js"
+    "./logging": "./src/logslines.js"
   },
   "files": [
     "src/index.js",
-    "src/logging.js",
+    "src/logslines.js",
     "src/logging-runtime.generated.js",
     "README.md",
     "LICENSE"

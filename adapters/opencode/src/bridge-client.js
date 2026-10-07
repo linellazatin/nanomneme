@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { homedir, platform as hostPlatform } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { getMemoryLogger } from './logger.js';
+import { getMemoryLogger } from './logslines.js';
 
 const bridge = fileURLToPath(new URL('./bridge.js', import.meta.url));
 

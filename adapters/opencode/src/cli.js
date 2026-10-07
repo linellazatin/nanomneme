@@ -1,4 +1,4 @@
-import { getMemoryLogger } from './logger.js';
+import { getMemoryLogger } from './logslines.js';
 import { existsSync } from 'node:fs';
 import {
   buildMemoryIndex,
@@ -27,7 +27,7 @@ const USAGE = [
   '  list [project|global] [limit] [offset] [--source all|opencode]',
   '  search <query> [project|global] [limit] [offset] [--source all|opencode]',
   '  show [project|global] <id>               full record detail',
-  '  pin [project|global] <id>                pin a memory (defaults to project)',
+  '  pin [project|global] <id>                pin a memory (resolve an unambiguous store)',
   '  unpin [project|global] <id>              unpin a memory',
   '  remove [project|global] <id>             reversible soft removal',
 ].join('\n');
@@ -237,7 +237,7 @@ function runCliRaw({ argv = [], cwd, home, globalDir, platform } = {}, observati
 
   // remove
   existingStoreMemory({ ctx, store, operation: 'remove', input: { id: parsed.id, mode: 'soft' }, readOnly: false });
-  return { text: `Nanomneme removed [${store}] ${parsed.id}. Soft removal is reversible; purge stays CLI-only. Any matching pin remains configured until unpin.`, ok: true };
+  return { text: `Nanomneme removed [${store}] ${parsed.id}. Soft removal is reversible; purge requires an explicit CLI or UI workbench action. Any matching pin remains configured until unpin.`, ok: true };
 }
 export function runCli(options = {}) {
   const parsed = parseArgs(options.argv ?? []);

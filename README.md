@@ -16,8 +16,8 @@
 ### adapters
 [![nmnm-pi version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-pi?label=pi&logo=pi&color=ffffe0)](https://www.npmjs.com/package/@openlines/nmnm-pi)
 [![nmnm-opencode version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-opencode?label=opencode&logo=opencode&color=gray)](https://www.npmjs.com/package/@openlines/nmnm-opencode)
-[![nmnm-claude version](https://img.shields.io/badge/claude-v0.2.1-orange?logo=claude)](https://github.com/linellazatin/nanomneme/tree/main/adapters/claude)
-[![nmnm-codex version](https://img.shields.io/badge/codex-v0.2.1-black?logo=codex)](https://github.com/linellazatin/nanomneme/tree/main/adapters/codex)
+[![nmnm-claude version](https://img.shields.io/badge/claude-v0.2.2-orange?logo=claude)](https://github.com/linellazatin/nanomneme/tree/main/adapters/claude)
+[![nmnm-codex version](https://img.shields.io/badge/codex-v0.2.2-black?logo=codex)](https://github.com/linellazatin/nanomneme/tree/main/adapters/codex)
 
 >
 
@@ -26,12 +26,14 @@
 </div>
 
 >
+> ### v0.8.0 - experimental workbench ui, logging organization, and dependency fixes
+> - `nmnm ui` with CLI-bundled UI: on-demand browser workbench with explicit store/source selection, read-only defaults, editing, expiry management, removal, restoration, and purge. See the [UI README](packages/nmnm-ui/README.md).
+> - Consistent `src/logslines.js` bindings, unified logger generation, explicit UI packaging, adapter/core patch releases, and resolved dependency audit findings.
+> - Maintenance commands for logger builds, reviewed upstream updates, Codex cache refresh, and read-only validation shared with CI/release.
 > ### v0.7.0 - core and CLI hardening
-> - Private new storage, transactional patches, Unicode and Boolean search, ordered record timestamps, and explicit deletion guarantees. All adapters carry core `0.3.0`; Claude/OpenCode pin updates are locked and atomic.
+> - Private new storage, transactional patches, Unicode and Boolean search, ordered record timestamps, and explicit deletion guarantees. Adapters pinned core `0.3.0` in that release; Claude/OpenCode pin updates are locked and atomic.
 > ### v0.6.0 - logslines shared logger integration
 > - Initial implementation of shared logger for ALL adapters, including nmnm-cli.
-> ### v0.5.1 - pi adapter v0.3.1
-> - Refreshed Pi development host to `@earendil-works/pi-coding-agent` `v0.99.1` in the lockfile. The compatibility range stays `>=0.87.0` (no v0.99-only API); `MIN_PI_TUI` now floors at v0.99.1 so the lockfile cannot fall back silently.
 >
 > see [CHANGELOG](CHANGELOG.md) for more details.
 >
@@ -74,12 +76,22 @@ Nanomneme helps agents remember without pretending to be human memory.
 - **Human and agent output:** readable terminal messages or structured JSON, with JSONL reserved for exports.
 - **Safe targeting:** project defaults, standard global storage, explicit `--db` paths, `--both` retrieval, and validated command-specific options.
 
+### Local review UI
+
+- **On-demand workbench:** experimental `@openlines/nmnm-ui`, bundled with CLI `0.4.0`; Node foreground launcher, loopback browser access, no persistent daemon, and local Openlines light/dark assets.
+- **Explicit review:** collapsible Stores with an added-store count, a local database picker, and trash controls that preserve files; recorded source filters, Active/Expired/Removed views, literal search, and five visible preview rows within 50-record pages.
+- **Deliberate cleanup:** read-only by default; enable editing per store for changed-field updates, expiry changes, soft removal, restoration, and separately confirmed permanent purge. Scope and provenance are read-only.
+- **Current limits:** full-store snapshots, a non-atomic stale-edit check, no soft removal of expired records, and session-only registrations. Creation, transfer, repair, bulk operations, and adapter settings are future features. See the [UI README](packages/nmnm-ui/README.md).
+
+### Diagnostics
+
+Diagnostics default off. CLI, UI mutations, and adapters use the shared Logslines observer; UI general errors use a separate emitter. Enable shared `logging.enabled` or an applicable user-level adapter override. Raw error messages are not redacted. See the [Logger manual](docs/LOGGER.md).
+
 ### Adapters
 
 #### Pi coding agent
 
 - **Native memory tools:** model-invoked retain, recall, retrieve, and remove operations over `nmnm-core`; project operations require Pi project trust, while global operations remain available in untrusted projects. Model-visible JSON is bounded to 50 KiB, with explicit summaries for oversized results.
-- **Opt-in Logslines diagnostics:** the CLI and all adapters share the `@openlines/nmnm-core/logging` observer and catalog. Enable `logging.enabled` in `~/.local/share/nanomneme/config.jsonc`; each adapter can override it in its user-level `nmnm.jsonc`. Explicit memory and management outcomes append privacy-bounded `logslines/v1` JSON Lines. Navigation, read-only commands, and canceled removal are not logged. One generated runtime is shipped with core. See the [Pi Adapter Manual](adapters/pi/docs/PI_ADAPTER_MANUAL.md#logslines-diagnostics).
 - **Project and global memory:** explicit store selection with canonical records and no custom database-path parsing.
 - **Bounded automatic context:** transient autoretention guidance and the first-prompt memory index share one configurable character budget; pinned entries come first, with recent active fallback, store and recorded-source labels, unresolved-pin reporting, and refresh after successful compaction or memory mutations.
 - **Opt-in autoretention:** project/global JSONC rules guide the active model's `retain_memory` calls without a nested model, worker, or direct adapter write.
@@ -94,7 +106,7 @@ Nanomneme helps agents remember without pretending to be human memory.
 - **Native plugin memory tools:** an OpenCode server plugin on `@opencode-ai/plugin` registers retain, recall, retrieve, and remove backed by `nmnm-core` with no MCP server, daemon, network, or CLI parsing. Because OpenCode loads plugins under Bun (no `node:sqlite`), each core call runs in a short-lived spawned `node` bridge. `retain_memory` records `"opencode"` source provenance on new entries and is the only operation that creates a missing store; `remove_memory` is soft-only.
 - **Bounded transient injection:** `experimental.chat.system.transform` appends the project/global index and optional autoretention guidance to the merged system prompt on every request with non-empty context (OpenCode rebuilds the prompt per request, so no cadence gating is needed). No context is written to disk.
 - **Shared and adapter-owned config:** project `nmnm.jsonc` settings shared with Pi and Claude, adapter-owned `nmnm-opencode.json` pins, and global settings under `${XDG_CONFIG_HOME:-~/.config}/opencode`.
-- **Model-free management CLI:** `nmnm-opencode` (`status`, `list`, `search`, `show`, `pin`, `unpin`, `remove`) with project-first combined pagination and `--source all|opencode`; purge stays CLI-only.
+- **Model-free management CLI:** `nmnm-opencode` (`status`, `list`, `search`, `show`, `pin`, `unpin`, `remove`) with project-first combined pagination and `--source all|opencode`; purge is available through `nmnm remove --purge` or the UI workbench, outside adapter management.
 - **Model-free TUI memory browser:** an optional `tui.js` plugin (registered via `tui.jsonc`) opened on **ctrl+alt+m** with Status/All/Project/Global tabs, source cycling, and pin/unpin/soft-remove, routed through the same Node bridge.
 
 #### Claude Code
@@ -107,18 +119,18 @@ Nanomneme helps agents remember without pretending to be human memory.
 
 #### Codex prototype
 
-- **MCP-free package:** `@openlines/nmnm-codex` 0.2.1 bundles the exact core runtime and a constrained, shell-backed JSON runner for retain, recall, retrieve, and soft remove. New records carry `metadata.source: "codex"`; reads and no-op removal do not create a store.
+- **MCP-free package:** `@openlines/nmnm-codex` 0.2.2 bundles the exact core runtime and a constrained, shell-backed JSON runner for retain, recall, retrieve, and soft remove. New records carry `metadata.source: "codex"`; reads and no-op removal do not create a store.
 - **Bounded trusted context:** one SessionStart hook reads existing project then global stores without writing them, injects a fixed bounded index, and emits no context on failure. The prototype intentionally has no pins, context settings, prompt cadence, automatic retention, adapter management CLI, or Windows support claim.
 - **Lazy guidance:** one `memory` skill resolves the package-relative runner beside its `SKILL.md`; no MCP fallback is supplied.
 
 
 ## Architecture
 
-`Nanomneme` keeps SQLite persistence and memory lifecycle logic in `nmnm-core`; the CLI and harness adapters are thin core clients that never write SQLite directly or parse CLI output. The detailed component, diagnostics, persistence, and SQLite data-model reference is in [Architecture](docs/ARCHITECTURE.md).
+`Nanomneme` keeps SQLite persistence and memory lifecycle logic in `nmnm-core`; the CLI, UI, and harness adapters are thin core clients that never write SQLite directly or parse CLI output. The detailed component, diagnostics, persistence, and SQLite data-model reference is in [Architecture](docs/ARCHITECTURE.md).
 
 ## Memory Operations Sequence
 
-Every `nanomneme` interface selects one physical store before calling the core. The detailed, implemented memory operation paths in the CLI and every adapter as of the current project state, is in [Memory operations](docs/SEQUENCE_MEMORY_HANDLING.md).
+Every individual core call targets one physical store. The CLI, adapters, and UI can compose multi-store reads at their own boundaries; the UI sorts canonical snapshots without comparing FTS scores. Implemented paths are documented in [Memory operations](docs/SEQUENCE_MEMORY_HANDLING.md).
 
 ## Packages
 
@@ -126,6 +138,7 @@ Every `nanomneme` interface selects one physical store before calling the core. 
 |---|---|
 | `packages/nmnm-core` | Publishable `@openlines/nmnm-core` Node.js ESM storage API. |
 | `packages/nmnm-cli` | Publishable `@openlines/nmnm-cli` package providing the `nmnm` CLI. |
+| `packages/nmnm-ui` | CLI-bundled experimental `@openlines/nmnm-ui` foreground browser workbench for review and cleanup. |
 | `adapters/pi` | Publishable `@openlines/nmnm-pi` Pi package, including a model-free memory browser. |
 | `adapters/claude` | Private Git-first Claude Code plugin: native MCP memory tools plus session-start index injection. |
 | `adapters/codex` | Local-marketplace-only MCP-free Codex prototype with a bundled direct-core runner and bounded session-start index. |
@@ -137,17 +150,21 @@ Use Node.js 22.19+ with built-in `node:sqlite` and FTS5. The Pi adapter is publi
 
 ```sh
 npm install --global @openlines/nmnm-cli
+nmnm --version
 nmnm retain "Use SQLite for storage" --kind decision --tags architecture,storage
 nmnm retrieve "SQLite"
+nmnm ui
 ```
 
-This one command installs the CLI and its exact `@openlines/nmnm-core` dependency. Install `@openlines/nmnm-core` directly only when writing a Node.js integration. Install Pi with:
+The npm command installs the CLI with its exact core and UI dependencies; the workbench starts only through `nmnm ui`. Install core directly when writing a Node.js integration. Install Pi with:
 
 ```sh
 pi install npm:@openlines/nmnm-pi
 ```
 
 Claude Code remains a separately installed adapter.
+
+Copied Claude marketplace plugins install from the adapter-local registry lockfile, currently core `0.3.0` under the compatible `^0.3.0` manifest range. Local workspace development uses checkout core `0.3.1`. See the [Claude installation and dependency refresh guide](adapters/claude/docs/CLAUDE_ADAPTER_MANUAL.md#install).
 
 The Codex adapter is a local prototype, not an npm-published install. Create a packed local artifact with:
 
@@ -158,16 +175,32 @@ npm pack --workspace @openlines/nmnm-codex
 
 The tarball is for isolated artifact validation; use the repo-local `.agents/plugins/marketplace.json` entry for live development, then review and trust its SessionStart hook in Codex. See the [Codex adapter manual](adapters/codex/docs/CODEX_ADAPTER_MANUAL.md).
 
-The CLI defaults to `./.nanomneme/memory.db`. `--global` uses `~/.local/share/nanomneme/memory.db` on Linux and macOS. Standard `retain` routes derive the matching scope; custom `--db` retains require `--scope project|global`. `retrieve --both` composes project results before global results; `(store, id)` identifies a retrieval item.
+The CLI defaults to `./.nanomneme/memory.db`. `--global` uses `~/.local/share/nanomneme/memory.db` on Linux and macOS. Standard `retain` routes derive the matching scope; custom `--db` retains require `--scope project|global`. Scope values are trimmed and validated before opening a database; standard selectors reject scope mismatches. `retrieve --both` composes project results before global results; `(store, id)` identifies a retrieval item.
+
+### Local UI quick start
+
+From a repository checkout with workspace dependencies installed:
+
+```sh
+node packages/nmnm-ui/bin/nmnm-ui.js
+```
+
+- The default browser opens automatically; `--no-auto` or `-na` disables opening. The full printed URL remains available for manual access; Ctrl-C stops the foreground server.
+- Click Add store, browse to an existing database, then select stores and a recorded source harness.
+- Enable editing explicitly for each store before cleanup.
+- The picker starts in the launch directory. Browse another project's folders to select its store.
+- CLI `0.4.0` includes core and UI; run `nmnm ui` after publication. These new CLI/UI versions are prepared for manual publication. See [launch and workflow details](packages/nmnm-ui/README.md).
 
 ## Documentation
 
 | Document | Owns |
 |---|---|
+| [Logger manual](docs/LOGGER.md) | Logging file roles, bindings, both generated runtimes, build/distribution checks, and deferred shared-error API. |
 | [Architecture](docs/ARCHITECTURE.md) | Component boundaries, shared diagnostics build/runtime path, SQLite persistence lifecycle, and ER model. |
 | [Core and CLI Manual](docs/CORE_CLI_MANUAL.md) | Core API, CLI, data contract, agent use, portability, and recovery. |
 | [Core README](packages/nmnm-core/README.md) | Core package installation and API discovery. |
 | [CLI README](packages/nmnm-cli/README.md) | CLI package installation and command discovery. |
+| [UI README](packages/nmnm-ui/README.md) | Foreground launcher, review/cleanup workflows, store/source selection, field controls, limitations, and future features. |
 | [Pi quick start](adapters/pi/README.md) | Package-local Pi entry point. |
 | [Pi Adapter Manual](adapters/pi/docs/PI_ADAPTER_MANUAL.md) | Pi installation, tools, pins, configuration, and automatic index behavior. |
 | [Claude quick start](adapters/claude/README.md) | Package-local Claude Code plugin entry point. |
@@ -182,14 +215,25 @@ The CLI defaults to `./.nanomneme/memory.db`. `--global` uses `~/.local/share/na
 
 ## Development
 
+- `npm run validate`: read-only generated-output check and full suite via `npm test`, shipped-dependency audit, then standalone package validation. Used by CI/release; stops at the first failure. Requires npm registry access and never repairs tracked artifacts or refreshes Codex.
+- CI and tagged releases run the same separate blocking rendered UI job: Python 3.14, Playwright 1.62.0, headless Chromium, disposable stores, and a 15-minute timeout. Branch CI runs on pull requests and pushes to `main`; release checks run on the tagged checkout. Screenshots remain available as Actions artifacts for 7 days. Run `python3 packages/nmnm-ui/test/browser.py` locally; see [UI validation](packages/nmnm-ui/README.md#validation) for dependencies and coverage.
+- Tagged releases require matching root versions, nonempty changelog notes, repository validation, and rendered UI success before publishing. Validated notes supply the GitHub Release body; publication order is core, UI, CLI, Pi, then OpenCode. Claude/Codex remain private.
+- `npm run logslines:build`: check both logger bundles, regenerate stale outputs, recheck, and validate standalone packages. Reports `up-to-date` or `updated`, followed by `validated`; errors report `failed` and exit nonzero.
+- `npm run logslines:build -- --fast`: skip standalone package validation explicitly for the edit loop.
+- Logger build commands require Node 22.19+, npm, and installed repository dependencies. Package validation may need npm registry access; build commands do not fetch upstream Logslines or refresh Codex. See the [logger guide](docs/LOGGER.md).
+- `npm run codex:update`: refresh an existing enabled Codex plugin against this checkout, prepare physical core/parser dependencies, and reinstall only stale cached content. Requires a matching local marketplace and installed plugin; respects `CODEX_HOME` and reports when a new session is required. No first-time setup or full-suite run. See the [Codex manual](adapters/codex/docs/CODEX_ADAPTER_MANUAL.md#refresh-after-checkout-updates).
+- `node scripts/build-logger.js --check`: read-only check; exits `0` when current, `2` when stale/missing, or `1` on failure. `npm test` remains read-only.
+
 ```sh
 # full node tests
 npm test
 # npm package dry run for validation
-npm pack --dry-run --workspace @openlines/nmnm-core --workspace @openlines/nmnm-cli --workspace @openlines/nmnm-pi --workspace @openlines/nmnm-opencode
+npm pack --dry-run --workspace @openlines/nmnm-core --workspace @openlines/nmnm-ui --workspace @openlines/nmnm-cli --workspace @openlines/nmnm-pi --workspace @openlines/nmnm-opencode
 ```
 
-Logslines source is checked in under `external/logslines/`, selected by its upstream Git tag rather than an npm dependency. `npm run external:check -- v0.1.0` fetches that release and verifies the checked-in files and provenance match it; `npm run external:update -- v0.1.0` refreshes the snapshot and its SHA-256 manifest. After an update, run `node scripts/build-logger.js` to refresh core’s checked-in logging runtime, update the pinned hashes in `test/external-logslines.test.js`, then run `npm test`. The offline hash verification runs in CI through `npm test`; the two external commands do not run during CI, installation, or package runtime use. Run `npm test` before submitting changes. Do not commit `.nanomneme/`, personal global databases, or Pi settings and pin files containing local data. Use canonical JSONL for transfer and closed SQLite copies for exact backups. See the manuals for validation, recovery, and adapter-specific safety boundaries.
+Logslines source is checked in under `external/logslines/`, selected by upstream Git tag rather than an npm dependency. Use `npm run logslines:update -- v0.1.0` with the intended exact release tag to validate and update the snapshot, provenance, and reviewed pin in `shared/fixtures/logslines-release.json`, refresh stale core/UI runtimes, run the full suite, and validate standalone packages. GitHub/npm network access may be required. Later failures retain updated files for review and report affected paths. `external:check` still verifies a selected upstream release; focused `external:update` only replaces snapshot/provenance and leaves the fixture, bundles, and validation to the maintainer. Offline pin checks run through `npm test`; CI, installation, and package runtime do not fetch Logslines. See the [logger guide](docs/LOGGER.md).
+
+Run `npm test` before submitting changes. Do not commit `.nanomneme/`, personal global databases, or Pi settings and pin files containing local data. Use canonical JSONL for transfer and closed SQLite copies for exact backups. See the manuals for validation, recovery, and adapter-specific safety boundaries.
 
 ### Noted for future work
 

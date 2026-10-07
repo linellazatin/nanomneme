@@ -30,8 +30,10 @@ Workbench bug fixes, accessibility improvements, and cross-browser validation. N
 ### Validation
 
 - Added disposable-store regressions for credential reloads, shrinking pagination, staged filters, keyboard/mobile focus, semantics, control contrast, and narrow layouts with text-spacing overrides.
-- CI and tagged releases require Chromium, Firefox, and WebKit workflow/regression checks. Development-only axe-core scans five workbench states in both themes; screenshots and accessibility reports are retained for 7 days.
-- All 445 repository tests, standalone package checks, and 16 regressions per browser passed. The shipped-dependency audit reported zero vulnerabilities; axe reported no violations in tested states. Incomplete contrast findings remain subject to manual review; automated passes do not establish full WCAG conformance.
+- CI and tagged releases require Chromium, Firefox, and WebKit workflow/regression checks. A single pinned Playwright container replaces per-engine APT/browser provisioning, avoiding the observed Azure mirror stall.
+  - Chromium uses the headless shell; Firefox/WebKit remain headless full builds.
+  - Setup and suite steps are bounded, all engines are attempted, and any suite failure blocks release.
+  - Development-only axe-core scans five workbench states in both themes; engine-qualified screenshots and accessibility reports are retained for 7 days.
 
 ## 0.8.0 - Experimental workbench UI, logging organization, and dependency fixes
 

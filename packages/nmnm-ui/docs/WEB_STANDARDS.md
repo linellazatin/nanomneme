@@ -17,16 +17,15 @@ The existing workbench targets WCAG 2.2 Level AA and interoperable semantic HTML
 
 ## Automated gates
 
-`npm run validate` remains the read-only repository/package gate. The separate rendered CI/release matrix runs Chromium, Firefox, and WebKit with Python Playwright; every matrix lane must pass before release publishing. `axe-core` is a pinned root development dependency, never a UI runtime dependency. Run the suites from the repository root after installing the repository and Python browser-test dependencies:
+`npm run validate` remains the read-only repository/package gate. CI and tagged releases use one pinned `mcr.microsoft.com/playwright/python:v1.62.0-noble` container, with Node 22 and Python 3.14. Browser binaries and Linux libraries come from the image, avoiding runtime APT installation. The matching Python Playwright package is installed separately; `install --only-shell chromium` ensures the cached headless shell. The job has a 15-minute limit, bounded setup steps, and a six-minute browser-suite step. All three engines run sequentially, and any failing suite blocks publishing without skipping later engines' evidence. `axe-core` remains a pinned root development dependency, never a UI runtime dependency. For native local testing, install repository dependencies and run:
 ```sh
 python3 -m pip install playwright==1.62.0
-python3 -m playwright install chromium firefox webkit
-for browser in chromium firefox webkit; do
-  NMNM_UI_BROWSER="$browser" python3 packages/nmnm-ui/test/browser.py &&
-  NMNM_UI_BROWSER="$browser" python3 packages/nmnm-ui/test/browser_regressions.py || exit 1
-done
+python3 -m playwright install --only-shell chromium
+python3 -m playwright install firefox webkit
+bash scripts/run-ui-browser-checks.sh
 ```
-The existing workflow suite verifies normal review/cleanup behavior. The regression suite verifies credential/anchor reloads, page shrink after remove/purge/expiry, staged filters, keyboard focus restoration, mobile focus handoff, headings/picker semantics, control/focus contrast, and 320px/text-spacing behavior. Axe scans unselected, selected, editing, removed, and picker states in both themes for WCAG A/AA and best-practice rules. Violations fail the gate; incomplete findings remain explicitly recorded for manual review. Evidence is written under the platform temporary directory as `nmnm-ui-<browser>-axe-*.json` and `nmnm-ui-*.png`; CI/release Ubuntu jobs retain available evidence for 7 days.
+Chromium launches headlessly without a channel, using the headless shell. `--only-shell` is a Chromium installation option; Firefox and WebKit run headlessly but have no separate reduced shell download. The official container includes full browser builds as well as the Chromium shell, so this flag does not reduce the prebuilt image size. Native Linux testing outside the container may require `python3 -m playwright install-deps chromium firefox webkit`; unlike CI container setup, that invokes the system package manager.
+The existing workflow suite verifies normal review/cleanup behavior. The regression suite verifies credential/anchor reloads, page shrink after remove/purge/expiry, staged filters, keyboard focus restoration, mobile focus handoff, headings/picker semantics, control/focus contrast, and 320px/text-spacing behavior. Axe scans unselected, selected, editing, removed, and picker states in both themes for WCAG A/AA and best-practice rules. Violations fail the gate; incomplete findings remain explicitly recorded for manual review. Evidence is written under the platform temporary directory as `nmnm-ui-<browser>-axe-*.json` and `nmnm-ui-<browser>-*.png`, preventing later engines from overwriting screenshots. CI/release retain available evidence for 7 days. A cold hosted run must confirm container-pull and setup timings; local browser passes do not establish GitHub Actions provisioning reliability.
 WebKit's default link tabbing varies with platform keyboard settings. The workflow suite focuses the skip link explicitly in WebKit; activation, credential preservation, control tabbing, and focus recovery still have behavioral coverage. This does not establish default Safari/macOS keyboard settings or native desktop opener behavior.
 
 ## Developer notes

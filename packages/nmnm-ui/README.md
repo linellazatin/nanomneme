@@ -296,18 +296,20 @@ npm run validate
 - Disposable-store tests cover read-only enforcement, lifecycle operations, provenance, stale edits, duplicate IDs across stores, pagination, schema rejection, split Unicode requests, HTTP boundaries, launcher flags, and shutdown.
 - Logging tests cover schema conformance, mutation/error outcomes, duplicate suppression, opt-in/config refresh, quiet reads, payload exclusion, file permissions, and sink failure isolation.
 - Launcher tests cover platform command dispatch, opener failures/timeouts/cancellation, default automatic dispatch, and both opt-out flags. Automated tests use fake openers; they do not verify desktop browser launch on every platform.
-- Rendered suites require Python Playwright and installed browser engines; root development dependencies supply axe-core. These are test tools, not UI runtime dependencies. CI and tagged releases run separate blocking Ubuntu matrix lanes for Chromium, Firefox, and WebKit; publishing requires repository validation and every browser lane:
+- Rendered suites require Python Playwright and installed browser engines; root development dependencies supply axe-core. These are test tools, not UI runtime dependencies. CI and tagged releases use one pinned Playwright container to run Chromium, Firefox, and WebKit sequentially; publishing requires repository validation and every browser suite:
 
 ```sh
 python3 packages/nmnm-ui/test/browser.py
 python3 packages/nmnm-ui/test/browser_regressions.py
+# Both suites in all three engines; any failure blocks the gate.
+bash scripts/run-ui-browser-checks.sh
 ```
 
 - These commands default to Chromium; set `NMNM_UI_BROWSER=firefox` or `NMNM_UI_BROWSER=webkit` for other engines. See [Workbench web standards](docs/WEB_STANDARDS.md) for installation, all-engine commands, accessibility rules, and manual release checks.
 
 - Browser checks cover directory navigation/selection/errors, store removal and collapse/count controls, independent list scrolling, source selection, literal rendering, read-only controls, drafts, pending-request protection, cleanup, expiry, keyboard focus, theme icons, fixed header/footer, mobile navigation, and browser error reporting.
 - The rendered suite creates and cleans its own temporary database/server. Screenshots are saved to `/tmp/nmnm-ui-*.png`.
-- CI uses Python 3.14 and Playwright 1.62.0, installs each matrix engine with Linux dependencies, and has a 15-minute timeout per lane. Available screenshots and axe reports upload even after failure and remain downloadable for 7 days. No credentials or deployed server are required. WebKit explicitly focuses the skip link because default link tabbing is platform-dependent; native desktop browser opening and full accessibility conformance are not established.
+- CI uses Node 22, Python 3.14, and `mcr.microsoft.com/playwright/python:v1.62.0-noble`, with matching Playwright 1.62.0. The image supplies browsers/Linux libraries without runtime APT; `install --only-shell chromium` ensures the headless shell. Firefox/WebKit have no equivalent reduced shell download. One job has a 15-minute limit, bounded setup steps, and a six-minute browser-suite step. Available engine-qualified screenshots and axe reports upload even after failure and remain downloadable for 7 days. No credentials or deployed server are required. WebKit explicitly focuses the skip link because default link tabbing is platform-dependent; native desktop browser opening and full accessibility conformance are not established.
 - Regression checks cover anchor-safe credential reloads, last-page shrink, staged filters, keyboard/mobile focus, semantic headings/picker groups, control/focus contrast, 320px reflow with text spacing, and axe scans across five workbench states in both themes. Incomplete axe findings are retained for manual review; WCAG 2.2 AA is the maintenance target, not a certification.
 - Use disposable stores for mutation testing; never personal databases.
 

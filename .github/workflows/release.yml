@@ -47,6 +47,12 @@ jobs:
     name: Rendered UI checks
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    env:
+      NMNM_UI_BROWSER: ${{ matrix.browser }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -60,15 +66,19 @@ jobs:
       - name: Install browser test dependencies
         run: |
           python -m pip install playwright==1.62.0
-          python -m playwright install --with-deps chromium
+          python -m playwright install --with-deps ${{ matrix.browser }}
       - name: Run rendered UI checks
         run: python packages/nmnm-ui/test/browser.py
+      - name: Run correctness and accessibility regressions
+        run: python packages/nmnm-ui/test/browser_regressions.py
       - name: Upload UI screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: nmnm-ui-screenshots
-          path: /tmp/nmnm-ui-*.png
+          name: nmnm-ui-${{ matrix.browser }}-evidence
+          path: |
+            /tmp/nmnm-ui-*.png
+            /tmp/nmnm-ui-${{ matrix.browser }}-axe-*.json
           if-no-files-found: warn
           retention-days: 7
 

@@ -7,6 +7,7 @@ import tempfile
 from playwright.sync_api import sync_playwright, expect
 
 ROOT = Path(__file__).resolve().parents[3]
+ENGINE = os.environ.get('NMNM_UI_BROWSER', 'chromium')
 FIXTURE = """
 import { startServer } from './packages/nmnm-ui/src/server.js';
 import { open } from './packages/nmnm-core/src/index.js';
@@ -35,7 +36,7 @@ with tempfile.TemporaryDirectory(prefix="nmnm-ui-browser-") as directory:
     try:
         fixture = json.loads(server.stdout.readline())
         with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(headless=True)
+            browser = getattr(playwright, ENGINE).launch(headless=True)
             page = browser.new_page(viewport={"width": 1440, "height": 1000})
             errors = []
             page.on("pageerror", lambda error: errors.append(str(error)))
@@ -50,7 +51,11 @@ with tempfile.TemporaryDirectory(prefix="nmnm-ui-browser-") as directory:
             assert records[0]["error"]["message"] == "Browser diagnostic smoke"
             version = json.loads((ROOT / "packages/nmnm-ui/package.json").read_text())["version"]
             expect(page.locator("header .brand span")).to_have_text(f"memory workbench {version}")
-            page.keyboard.press("Tab")
+            if ENGINE == 'webkit':
+                # WebKit's link tabbing depends on platform keyboard settings.
+                page.get_by_role("link", name="Skip to memories").focus()
+            else:
+                page.keyboard.press("Tab")
             expect(page.get_by_role("link", name="Skip to memories")).to_be_focused()
             page.get_by_role("button", name="Switch to light theme").focus()
             page.keyboard.press("Enter")

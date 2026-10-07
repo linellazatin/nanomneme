@@ -295,7 +295,7 @@ npm run validate
 - Disposable-store tests cover read-only enforcement, lifecycle operations, provenance, stale edits, duplicate IDs across stores, pagination, schema rejection, split Unicode requests, HTTP boundaries, launcher flags, and shutdown.
 - Logging tests cover schema conformance, mutation/error outcomes, duplicate suppression, opt-in/config refresh, quiet reads, payload exclusion, file permissions, and sink failure isolation.
 - Launcher tests cover platform command dispatch, opener failures/timeouts/cancellation, default automatic dispatch, and both opt-out flags. Automated tests use fake openers; they do not verify desktop browser launch on every platform.
-- Rendered suite requires Python Playwright and Chromium; these are test tools, not UI runtime dependencies. CI runs it as a separate blocking Ubuntu job on pull requests and pushes to `main`, alongside repository validation:
+- Rendered suite requires Python Playwright and Chromium; these are test tools, not UI runtime dependencies. CI runs it as a separate blocking Ubuntu job on pull requests and pushes to `main`. Tagged releases run the same job on the tagged checkout; publishing requires both repository validation and rendered UI success:
 
 ```sh
 python3 packages/nmnm-ui/test/browser.py

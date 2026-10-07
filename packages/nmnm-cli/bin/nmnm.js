@@ -82,6 +82,10 @@ function validateCommand(command, positionals, options) {
   for (const name of Object.keys(options)) {
     if (!COMMAND_OPTIONS[command].includes(name)) throw new TypeError(`--${name} is not valid with ${command}`);
   }
+  if (options.scope !== undefined) {
+    options.scope = options.scope.trim();
+    if (!['project', 'global'].includes(options.scope)) throw new TypeError('scope must be project or global');
+  }
   if (command === 'retain' && positionals.length > 1) throw new TypeError('retain accepts one content argument');
   if (command === 'retain' && !positionals.length && options.id === undefined) throw new TypeError('retain requires content unless --id is supplied');
   if (command === 'retain' && options.db && options.scope === undefined) throw new TypeError('--db requires --scope project or global');

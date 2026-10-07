@@ -494,6 +494,37 @@ test('CLI requires scope for custom database retains and aligns standard routes'
   assert.equal(JSON.parse(custom.stdout).scope, 'global');
 });
 
+test('CLI validates normalized scopes before database selection or creation', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-cli-normalized-scope-'));
+  try {
+    for (const scope of ['', ' ', 'GLOBAL', 'invalid']) {
+      const result = runIn(directory, 'retain', 'Invalid scope', '--scope', scope);
+      assert.equal(result.status, 1, result.stderr);
+      assert.match(result.stderr, /scope/);
+      await assert.rejects(access(join(directory, '.nanomneme')));
+    }
+    const conflict = runIn(directory, 'retain', 'Project mismatch', '--scope', ' global ');
+    assert.equal(conflict.status, 1);
+    assert.match(conflict.stderr, /project database requires --scope project/);
+    await assert.rejects(access(join(directory, '.nanomneme')));
+    const globalConflict = runIn(directory, 'retain', 'Global mismatch', '--global', '--scope', ' project ');
+    assert.equal(globalConflict.status, 1);
+    assert.match(globalConflict.stderr, /--global requires --scope global/);
+    await assert.rejects(access(join(directory, '.local')));
+    for (const scope of ['project', 'global']) {
+      const args = scope === 'global' ? ['--global'] : [];
+      const result = runIn(directory, 'retain', 'Normalized scope', ...args, '--scope', ` ${scope} `, '--json');
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(JSON.parse(result.stdout).scope, scope);
+    }
+    const custom = runIn(directory, 'retain', 'Custom scope', '--db', join(directory, 'custom.db'), '--scope', ' global ', '--json');
+    assert.equal(custom.status, 0, custom.stderr);
+    assert.equal(JSON.parse(custom.stdout).scope, 'global');
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('CLI keeps project defaults and rejects ambiguous database flags', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-project-'));
   const project = runIn(directory, 'retain', 'Project default', '--json');

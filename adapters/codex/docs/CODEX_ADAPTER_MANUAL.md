@@ -12,43 +12,29 @@ For live Codex development, use the repo-local `.agents/plugins/marketplace.json
 
 ## Refresh after checkout updates
 
-For an existing local marketplace installation, repeat this procedure after core changes, shared logger changes, or Codex adapter/dependency changes. Codex runs a cached plugin with physical bundled dependencies; updating the checkout or reinstalling the plugin alone does not refresh an already prepared core copy. The displayed version can remain unchanged while the bundled code is stale.
-
-1. From the repository root, confirm the generated logger is current:
+For an existing local marketplace installation, use this command after core, logger, adapter, or dependency changes:
 
 ```sh
-node scripts/build-logger.js --check
+npm run codex:update
 ```
 
-If this reports a stale bundle after a shared logger change, run `node scripts/build-logger.js`, review the generated diff, then repeat the check.
+- Requires Node 22.19+, npm, installed repository dependencies, and a Codex CLI supporting JSON marketplace/plugin listing and installation.
+- Requires `nanomneme-local` to point to this checkout and `nmnm-codex` to be installed and enabled. Missing setup prints the applicable registration/install command. Wrong marketplace/source, disabled plugins, and unsupported CLI output stop before generation or preparation; disabled plugins remain untouched.
+- Refreshes stale logger bundles, then prepares physical core/parser dependencies without running the full package suite. Uses packaged core files and the installed parser matching core's exact dependency; it does not fetch upstream Logslines or install new dependencies. Reinstall repository dependencies if the parser is unavailable or mismatched.
+- Compares complete file contents, including core/parser and adapter files; unchanged versions do not hide changes. Replaces stale managed dependency trees and removes obsolete files within them; unrelated adapter dependencies remain intact.
+- Reinstalls through the existing marketplace only when the cache differs, then verifies version, enablement, and cached contents.
+- Respects `CODEX_HOME`, defaulting to `~/.codex`. Cached content is checked under `plugins/cache/nanomneme-local/nmnm-codex/<installed-version>/`.
+- Reports dependency freshness and `up-to-date` or `updated`. After reinstalling, `reload-required` means start a new Codex session and review any renewed hook trust prompt. Failures exit nonzero; preparation or installation changes already made remain in place.
+- Freshness verification does not establish live hook registration, trust, provider behavior, or end-to-end memory operations. The command does not run the full suite or reload Codex.
 
-2. Refresh the adapter's physical core/parser dependencies, then refresh the installed plugin:
+The existing manual preparation path remains available:
 
 ```sh
 node scripts/check-logging-packages.js --prepare-codex
 codex plugin add nmnm-codex@nanomneme-local --json
 ```
 
-Preparation requires npm registry access for ordinary dependencies and must complete successfully before reinstalling. The plain package check without `--prepare-codex` validates temporary packages but does not update `adapters/codex/node_modules`. Marketplace reinstall refreshes the cached plugin even when its version remains `0.2.1`.
-
-3. Reload Codex or start a new session so it uses the refreshed plugin.
-4. Compare the checkout core and logger with both bundled copies:
-
-```sh
-cmp packages/nmnm-core/src/index.js \
-  adapters/codex/node_modules/@openlines/nmnm-core/src/index.js
-
-cmp packages/nmnm-core/src/index.js \
-  "${CODEX_HOME:-$HOME/.codex}/plugins/cache/nanomneme-local/nmnm-codex/0.2.1/node_modules/@openlines/nmnm-core/src/index.js"
-
-cmp packages/nmnm-core/src/logging-runtime.generated.js \
-  adapters/codex/node_modules/@openlines/nmnm-core/src/logging-runtime.generated.js
-
-cmp packages/nmnm-core/src/logging-runtime.generated.js \
-  "${CODEX_HOME:-$HOME/.codex}/plugins/cache/nanomneme-local/nmnm-codex/0.2.1/node_modules/@openlines/nmnm-core/src/logging-runtime.generated.js"
-```
-
-Each comparison succeeds with no output and exit code `0`. Replace `0.2.1` with the installed plugin version when it changes. If the adapter copy differs, repeat preparation; if only the cached copy differs, repeat marketplace reinstall and reload. For generation and Logslines maintenance, see the [Logger manual](../../../docs/LOGGER.md).
+`--prepare-codex` runs standalone package validation first, then uses the same preparation helper with validated dependencies. It may need npm registry access. The plain package check only validates temporary packages and does not update the adapter or installed cache. For generation and upstream maintenance, see the [Logger manual](../../../docs/LOGGER.md).
 
 ## Hook trust and bounded context
 
@@ -60,7 +46,7 @@ The `memory` skill resolves and invokes `skills/memory/runner.js`, which accepts
 
 ## Store behavior
 
-Project memory is `./.nanomneme/memory.db`. Global memory is `~/.local/share/nanomneme/memory.db`. The runner defaults to project memory and gives new global records global scope. These stores are shared with the Nanomneme CLI and other adapters, so use the `nmnm` CLI for model-free inspection, transfer, maintenance, backups, verification, repair, and irreversible purge.
+Project memory is `./.nanomneme/memory.db`. Global memory is `~/.local/share/nanomneme/memory.db`. The runner defaults to project memory and gives new global records global scope. These stores are shared with the CLI and other adapters. Use the CLI for transfer, maintenance, backups, verification, and repair; model-free inspection and existing-record cleanup, including purge, are also available through `nmnm ui`.
 
 ## Token and failure boundaries
 
@@ -72,6 +58,8 @@ This prototype does not add Windows support, MCP, automatic retention, context c
 
 ## Shared opt-in diagnostics
 
-Set `"logging": { "enabled": true }` in `~/.local/share/nanomneme/config.jsonc` to enable the shared default. JSONC comments and trailing commas are supported. Adapter user-level `nmnm.jsonc` can explicitly enable or disable logging; absence inherits. Either invalid applicable logging configuration disables that caller. Project settings cannot authorize logging. Records use the shared `logslines/v1` catalog and core-distributed runtime, omit structured memory payloads and stack traces, preserve thrown-error messages verbatim without redaction, and append to `~/.local/share/nanomneme/logs/<component>.jsonl`. Error messages may expose sensitive input or paths; review logs before sharing. Logging failures preserve operations and output. Existing databases, pin files, and logs require no migration.
+Diagnostics default off. Enable shared `logging.enabled` in `~/.local/share/nanomneme/config.jsonc`. User-level adapter settings can override it. Raw error messages are not redacted. See the [Logger manual](../../../docs/LOGGER.md#configuration-and-record-contract) for configuration, record fields, permissions, and privacy boundaries.
 
 Codex uses `$CODEX_HOME/nmnm.jsonc`, defaulting to `~/.codex/nmnm.jsonc`, for logging only. Explicit runner 4Rs are observed; SessionStart indexes remain unlogged. Correlation uses nonempty host-provided `CODEX_THREAD_ID`, falling back to `CODEX_SESSION_ID`, otherwise null. Request-supplied session fields are ignored. Each runner process resolves settings and correlation anew. Hosts without these environment values retain null correlation; no session mapping or transcript inspection is required.
+
+`src/logslines.js` supplies the adapter-specific logging binding. The [Logger manual](../../../docs/LOGGER.md#source-and-artifact-map) owns the shared source, generated-artifact, and package-check reference.

@@ -11,6 +11,8 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    outputs:
+      notes: ${{ steps.changelog.outputs.notes }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -27,6 +29,15 @@ jobs:
         run: |
           version=$(node -p "require('./package.json').version")
           test "$GITHUB_REF_NAME" = "v$version"
+      - name: Extract changelog for this version
+        id: changelog
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          NOTES=$(awk -v version="$VERSION" '$0 == "## " version || index($0, "## " version " - ") == 1 { found=1; next } found && /^## / { exit } found { print }' CHANGELOG.md)
+          test -n "$NOTES"
+          echo "notes<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$NOTES" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
       # Blocking: generated runtimes, tests, shipped dependency audit, packages.
       - run: npm run validate
       - run: git diff --check
@@ -88,16 +99,7 @@ jobs:
           if npm view "@openlines/nmnm-opencode@$version" version >/dev/null 2>error.log; then exit 0; fi
           if ! grep -q 'E404' error.log; then cat error.log; exit 1; fi
           npm publish --workspace @openlines/nmnm-opencode --access public --provenance
-      - name: Extract changelog for this version
-        id: changelog
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          NOTES=$(awk -v version="$VERSION" '$0 == "## " version || index($0, "## " version " - ") == 1 { found=1; next } found && /^## / { exit } found { print }' CHANGELOG.md)
-          test -n "$NOTES"
-          echo "notes<<EOF" >> "$GITHUB_OUTPUT"
-          echo "$NOTES" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
       - name: Create GitHub Release from changelog
         uses: softprops/action-gh-release@v2
         with:
-          body: ${{ steps.changelog.outputs.notes }}
+          body: ${{ needs.validate.outputs.notes }}

@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 function json(path) {
   return JSON.parse(readFileSync(path, 'utf8'));
@@ -98,4 +101,35 @@ test('CI and release use read-only validation while retaining informational audi
   const publish = ['core', 'UI', 'CLI', 'Pi adapter', 'OpenCode adapter'].map(name => release.indexOf(`name: Publish ${name} when this version is new`));
   assert.ok(publish.every((position, index) => position >= 0 && (!index || position > publish[index - 1])));
   assert.match(release, /Verify release tag/);
+});
+
+test('release validates changelog before publishing and forwards the extracted notes', () => {
+  const release = readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
+  const [validation, publish] = release.split('\n  publish:');
+  assert.match(validation, /notes: \$\{\{ steps\.changelog\.outputs\.notes \}\}/);
+  assert.match(publish, /needs: validate/);
+  assert.match(publish, /body: \$\{\{ needs\.validate\.outputs\.notes \}\}/);
+  assert.doesNotMatch(publish, /Extract changelog/);
+  const script = validation.match(/id: changelog\n        run: \|\n([\s\S]*?)(?=      #)/)[1]
+    .split('\n').map(line => line.replace(/^          /, '')).join('\n');
+  const directory = mkdtempSync(join(tmpdir(), 'nmnm-release-notes-'));
+  const output = join(directory, 'output');
+  try {
+    const env = { ...process.env, GITHUB_REF_NAME: 'v0.8.0', GITHUB_OUTPUT: output };
+    writeFileSync(join(directory, 'CHANGELOG.md'), '# Changelog\n\n## 0.8.0 - Workbench\n\n### New\n\n- UI workbench.\n\n## 0.7.0\n\n- Older change.\n');
+    const extracted = spawnSync('bash', ['-e', '-c', script], { cwd: directory, env, encoding: 'utf8' });
+    assert.equal(extracted.status, 0, extracted.stderr);
+    const notes = readFileSync(output, 'utf8');
+    assert.match(notes, /### New\n\n- UI workbench\./);
+    assert.doesNotMatch(notes, /Older change/);
+    rmSync(output);
+    for (const changelog of ['## 0.7.0\n\n- Older change.\n', '## 0.8.0\n\n## 0.7.0\n- Older change.\n']) {
+      writeFileSync(join(directory, 'CHANGELOG.md'), changelog);
+      const rejected = spawnSync('bash', ['-e', '-c', script], { cwd: directory, env, encoding: 'utf8' });
+      assert.notEqual(rejected.status, 0);
+      assert.throws(() => readFileSync(output));
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });

@@ -10,7 +10,7 @@ function temporaryDirectory(name) {
   return mkdtempSync(join(tmpdir(), name));
 }
 
-test('Pi 1.0.4 loads only the nanomneme adapter and its declared surface', async () => {
+test('Pi test host loads only the nanomneme adapter and its declared surface', async () => {
   const cwd = temporaryDirectory('nmnm-pi-loader-cwd-');
   const agentDir = temporaryDirectory('nmnm-pi-loader-agent-');
   try {
@@ -60,7 +60,13 @@ test('Pi host registry executes adapter tools, lifecycle injection, and Logsline
     const retained = JSON.parse((await extension.tools.get('retain_memory').definition.execute('host-loader-call', {
       content: 'Host-loader memory',
     }, undefined, undefined, ctx)).content[0].text);
-    const injected = await extension.handlers.get('before_agent_start')[0]({ systemPrompt: 'Base prompt' }, ctx);
+    const before = extension.handlers.get('before_agent_start')[0];
+    assert.equal(await before({
+      messageType: 'custom',
+      message: { role: 'custom', customType: 'probe', content: 'continue', display: false, timestamp: Date.now() },
+      systemPrompt: 'Base prompt',
+    }, ctx), undefined);
+    const injected = await before({ messageType: 'user', prompt: 'hello', systemPrompt: 'Base prompt' }, ctx);
 
     assert.match(injected.systemPrompt, /Host-loader memory/);
     assert.equal(existsSync(logPath), true);

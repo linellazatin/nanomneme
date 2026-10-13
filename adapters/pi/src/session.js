@@ -493,6 +493,7 @@ export function registerPiMemory(pi, options = {}) {
   });
   pi.on('session_compact', () => refresh('compact'));
   pi.on('before_agent_start', (event, ctx) => {
+    if (event.messageType === 'custom') return undefined;
     if (!pending && periodicPolicy.enabled) {
       promptCountSinceInjection += 1;
       if (promptCountSinceInjection >= periodicPolicy.every_n_prompts) refresh('cadence');

@@ -112,6 +112,49 @@ test('injects a compact index once and refresh makes it pending again', async ()
   }
 });
 
+test('custom runs preserve pending injection and do not advance user-prompt cadence', async () => {
+  const project = temporaryDirectory('nmnm-pi-custom-project-');
+  const home = temporaryDirectory('nmnm-pi-custom-home-');
+  try {
+    const handlers = new Map();
+    const commands = new Map();
+    const notices = [];
+    const agentDir = join(home, 'pi-agent');
+    mkdirSync(agentDir, { recursive: true });
+    writeFileSync(join(agentDir, 'nmnm.jsonc'), '{ "reinjection": { "enabled": true, "every_n_prompts": 2 } }\n');
+    runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'User-only context' } });
+    registerPiMemory({
+      on: (event, handler) => handlers.set(event, handler),
+      registerCommand: (name, command) => commands.set(name, command),
+    }, { home, agentDir, platform: 'darwin' });
+    const ctx = trustedContext(project, { notify: (message) => notices.push(message) });
+    const before = handlers.get('before_agent_start');
+    const custom = { messageType: 'custom', message: { customType: 'probe', content: 'continue', display: false }, systemPrompt: 'Base prompt' };
+    const user = { messageType: 'user', prompt: 'hello', systemPrompt: 'Base prompt' };
+
+    assert.equal(await before(custom, ctx), undefined);
+    await commands.get('memory').handler('status', ctx);
+    assert.match(notices.at(-1), /Injection pending         yes/);
+    assert.match((await before(user, ctx)).systemPrompt, /User-only context/);
+    assert.equal(await before(user, ctx), undefined);
+    for (let run = 0; run < 3; run += 1) assert.equal(await before(custom, ctx), undefined);
+    await commands.get('memory').handler('status', ctx);
+    assert.match(notices.at(-1), /Prompts since injection   1/);
+    assert.match((await before(user, ctx)).systemPrompt, /User-only context/);
+
+    await commands.get('memory').handler('refresh', ctx);
+    assert.equal(await before(custom, ctx), undefined);
+    assert.match((await before(user, ctx)).systemPrompt, /User-only context/);
+    await handlers.get('session_compact')({}, ctx);
+    assert.equal(await before(custom, ctx), undefined);
+    // Older supported hosts omit messageType.
+    assert.match((await before({ systemPrompt: 'Base prompt' }, ctx)).systemPrompt, /User-only context/);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test('injects opt-in cadence context on the fifth eligible prompt only', async () => {
   const project = temporaryDirectory('nmnm-pi-session-cadence-project-');
   const home = temporaryDirectory('nmnm-pi-session-cadence-home-');

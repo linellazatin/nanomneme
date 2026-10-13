@@ -9,7 +9,7 @@ function json(path) {
   return JSON.parse(readFileSync(path, 'utf8'));
 }
 
-test('release metadata aligns the 0.8.1 UI patch and every consumer', () => {
+test('release metadata aligns the 0.8.2 Pi patch and every consumer', () => {
   const root = json(new URL('../package.json', import.meta.url));
   const lock = json(new URL('../package-lock.json', import.meta.url));
   const pi = json(new URL('../adapters/pi/package.json', import.meta.url));
@@ -19,7 +19,7 @@ test('release metadata aligns the 0.8.1 UI patch and every consumer', () => {
   const claude = json(new URL('../adapters/claude/package.json', import.meta.url));
   const codex = json(new URL('../adapters/codex/package.json', import.meta.url));
   const opencode = json(new URL('../adapters/opencode/package.json', import.meta.url));
-  assert.equal(root.version, '0.8.1');
+  assert.equal(root.version, '0.8.2');
   assert.equal(lock.version, root.version);
   assert.equal(lock.packages['adapters/codex'].name, '@openlines/nmnm-codex');
   assert.equal(lock.packages['node_modules/@openlines/nmnm-codex'].resolved, 'adapters/codex');
@@ -36,7 +36,7 @@ test('release metadata aligns the 0.8.1 UI patch and every consumer', () => {
   assert.equal(ui.exports, './src/launcher.js');
   assert.equal(ui.engines.node, root.engines.node);
   assert.equal(lock.packages['node_modules/@openlines/nmnm-ui'].resolved, 'packages/nmnm-ui');
-  assert.equal(pi.version, '0.4.2');
+  assert.equal(pi.version, '0.4.3');
   assert.equal(claude.name, '@openlines/nmnm-claude');
   assert.equal(claude.version, '0.2.2');
   assert.equal(claude.dependencies['@modelcontextprotocol/sdk'], '^1.31.0');
@@ -63,7 +63,9 @@ test('release metadata aligns the 0.8.1 UI patch and every consumer', () => {
   assert.equal(root.engines.node, '>=22.19.0');
   assert.equal(pi.engines.node, '>=22.19.0');
   assert.equal(root.devDependencies['@earendil-works/pi-coding-agent'], '>=0.87.0');
-  assert.equal(lock.packages['node_modules/@earendil-works/pi-coding-agent'].version, '1.0.4');
+  // Development host policy is ~1.2.0; npm ci still uses an exact lockfile resolution.
+  assert.match(lock.packages['node_modules/@earendil-works/pi-coding-agent'].version,
+    /^1\.2\.(0|[1-9]\d*)(?:\+[0-9A-Za-z.-]+)?$/, 'Pi test host must satisfy ~1.2.0');
   assert.deepEqual(pi.peerDependencies, {
     '@earendil-works/pi-tui': '*',
     typebox: '*',
@@ -134,6 +136,16 @@ test('CI and release use read-only validation while retaining informational audi
   const publish = ['core', 'UI', 'CLI', 'Pi adapter', 'OpenCode adapter'].map(name => release.indexOf(`name: Publish ${name} when this version is new`));
   assert.ok(publish.every((position, index) => position >= 0 && (!index || position > publish[index - 1])));
   assert.match(release, /Verify release tag/);
+});
+
+test('CI checks Pi compatibility separately from locked release validation', () => {
+  const ci = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  const release = readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
+  assert.match(ci, /pi-compatibility:/);
+  assert.match(ci, /fail-fast: false/);
+  for (const host of ['0.87.0', '~0.87.0', '~0.99.0', '~1.2.0']) assert.ok(ci.includes(`'${host}'`));
+  assert.match(ci, /node scripts\/check-pi-compatibility\.js/);
+  assert.doesNotMatch(release, /check-pi-compatibility|pi-compatibility:/);
 });
 
 test('release validates changelog before publishing and forwards the extracted notes', () => {

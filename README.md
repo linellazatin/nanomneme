@@ -28,6 +28,9 @@
 </div>
 
 >
+> ### v0.8.2 - Pi adapter compatibility (for pi release 1.2.0)
+> - Pi adapter `0.4.3` preserves user-prompt-only memory injection on Pi 1.2.0.
+> - CI checks older hosts and latest 1.2.x patches; the compatibility floor remains Pi 0.87.0.
 > ### v0.8.1 - workbench correctness and web standards
 > - Patched UI `0.1.1` preserves credentials after skip-link reloads, repairs shrinking pagination, stages filter changes, and restores keyboard/mobile focus.
 > - Semantic HTML, stronger input contrast, a WCAG 2.2 AA maintenance target, and blocking Chromium/Firefox/WebKit correctness/accessibility gates. CLI `0.4.1` pins the patched UI; publication remains separate.
@@ -35,10 +38,6 @@
 > - `nmnm ui` with CLI-bundled UI: on-demand browser workbench with explicit store/source selection, read-only defaults, editing, expiry management, removal, restoration, and purge. See the [UI README](packages/nmnm-ui/README.md).
 > - Consistent `src/logslines.js` bindings, unified logger generation, explicit UI packaging, adapter/core patch releases, and resolved dependency audit findings.
 > - Maintenance commands for logger builds, reviewed upstream updates, Codex cache refresh, and read-only validation shared with CI/release.
-> ### v0.7.0 - core and CLI hardening
-> - Private new storage, transactional patches, Unicode and Boolean search, ordered record timestamps, and explicit deletion guarantees. Adapters pinned core `0.3.0` in that release; Claude/OpenCode pin updates are locked and atomic.
-> ### v0.6.0 - logslines shared logger integration
-> - Initial implementation of shared logger for ALL adapters, including nmnm-cli.
 >
 > see [CHANGELOG](CHANGELOG.md) for more details.
 >

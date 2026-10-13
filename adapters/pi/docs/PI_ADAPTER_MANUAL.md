@@ -4,7 +4,7 @@
 
 ## Install
 
-Use Node.js 22.19+ and Pi 0.87.0 or newer, verified through Pi 1.0.4. This manual describes `@openlines/nmnm-pi` 0.4.2. Install the public package:
+Use Node.js 22.19+ and Pi 0.87.0 or newer, verified through Pi 1.2.0. This manual describes `@openlines/nmnm-pi` 0.4.3. Install the public package:
 
 ```sh
 pi install npm:@openlines/nmnm-pi
@@ -132,7 +132,9 @@ Pin mutations take an exclusive same-directory lock, reread the current array wh
 
 `injection_budget` is a non-negative total character limit for all transient Nanomneme context. The project value overrides the global value; the default is 2,000. Complete autoretention guidance is included before index rows; individual rules are never truncated. If enabled guidance alone exceeds the budget, no Nanomneme context is injected until the rules are shortened or the budget is raised. `autoretention` is inactive unless its effective `enabled` value is `true` (project overrides global). Rule arrays from both scopes combine with global entries first; `never_persist` takes precedence, `always_ask` requires user confirmation, and `always_persist` guides the active model when applicable. The adapter never writes memory directly for autoretention: the active model decides whether to call `retain_memory`.
 
-`reinjection` is disabled unless its effective `enabled` value is `true` (project overrides global). When enabled, `every_n_prompts` is a positive safe integer that resolves project, then global, then `5`. After a successful context build, each eligible user prompt increments a session-local counter; the configured prompt queues a transient `cadence` rebuild in that same prompt. A successful build resets the counter, while a failed build leaves it pending. Slash commands do not count. The adapter caches the effective policy after a successful build, so ordinary prompts do not reread settings or stores; change settings with `/memory refresh` or reload the session. Cadence uses the existing total `injection_budget`, increases recurring provider input/cache activity, and creates no timer, worker, session record, memory, or SQLite write. A project pin and a global pin use the same ID format but remain distinct `(store, id)` references. The unreleased combined `nmnm-memory.json` layout is not migrated automatically.
+#### Updated
+
+`reinjection` is disabled unless its effective `enabled` value is `true` (project overrides global). When enabled, `every_n_prompts` is a positive safe integer that resolves project, then global, then `5`. After a successful context build, each eligible user prompt increments a session-local counter; the configured prompt queues a transient `cadence` rebuild in that same prompt. A successful build resets the counter, while a failed build leaves it pending. Slash commands and extension-triggered custom-message runs do not count. Custom-message runs also leave queued injection pending for the next user prompt. The adapter caches the effective policy after a successful build, so ordinary prompts do not reread settings or stores; change settings with `/memory refresh` or reload the session. Cadence uses the existing total `injection_budget`, increases recurring provider input/cache activity, and creates no timer, worker, session record, memory, or SQLite write. A project pin and a global pin use the same ID format but remain distinct `(store, id)` references. The unreleased combined `nmnm-memory.json` layout is not migrated automatically.
 
 ### Normal file lifecycle
 
@@ -235,6 +237,8 @@ first or queued-turn adapter overhead =
 To measure exact overhead for a chosen model and provider, compare equivalent first-turn sessions with identical prompt, project context, and enabled non-nanomneme tools: run once with `nmnm-pi` enabled and once without it, then subtract the first assistant response's `usage.input` values in the Pi session JSONL. For later turns, report `usage.cacheRead` and `usage.cacheWrite` separately rather than treating cached input as fresh overhead. Session usage is provider-reported and is the authoritative token and cost measurement.
 
 ## Boundaries
+
+Repository development-host checks accept stable Pi `~1.2.0`; the dependency floor remains `>=0.87.0`. Main CI and release validation use the reviewed lockfile. A separate blocking CI matrix tests Pi `0.87.0` plus the latest stable patches in `~0.87.0`, `~0.99.0`, and `~1.2.0`, reporting resolved Pi/TUI/AI/TypeBox versions. It runs the adapter suite, including host-loader and tool-schema checks, excluding only the development-host version assertion. To reproduce in a disposable checkout after `npm ci`, run `node scripts/check-pi-compatibility.js '~0.87.0'` (or another matrix selector). This command changes `node_modules`, not manifests or lockfiles. These checks do not establish live-provider or rendered-TUI behavior, nor coverage of every intermediate Pi release.
 
 The current production adapter injects transient context through the `before_agent_start` system-prompt return. Pi 0.87 structured prompt sections remain under a separate behavior and cache probe; Pi 0.99 documentation prefers those sections over a whole-prompt replacement, but the replacement path is unchanged and this release does not claim a cache improvement or change the injection lifecycle.
 

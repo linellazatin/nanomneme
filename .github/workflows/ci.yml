@@ -33,6 +33,28 @@ jobs:
       - run: git diff --check
       - run: npm pack --dry-run --workspace @openlines/nmnm-core --workspace @openlines/nmnm-ui --workspace @openlines/nmnm-cli --workspace @openlines/nmnm-pi --workspace @openlines/nmnm-opencode
 
+  pi-compatibility:
+    name: Pi compatibility (${{ matrix.host }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        host: ['0.87.0', '~0.87.0', '~0.99.0', '~1.2.0']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install selected host and run adapter compatibility suite
+        env:
+          PI_HOST_RANGE: ${{ matrix.host }}
+        run: node scripts/check-pi-compatibility.js "$PI_HOST_RANGE"
+      - name: Ensure tracked dependency metadata is unchanged
+        run: git diff --exit-code -- package.json package-lock.json adapters/pi/package.json
+
   ui:
     name: Rendered UI checks
     runs-on: ubuntu-24.04

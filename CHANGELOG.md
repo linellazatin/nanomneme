@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.8.2 - Pi adapter compatibility release for pi v1.2.0
+
+### Updated components
+
+| Component | Version |
+| --- | --- |
+| Repository | 0.8.2 |
+| `@openlines/nmnm-pi` | 0.4.3 |
+
+### Changed
+
+- Pi adapter ignores custom-message agent starts introduced in Pi 1.2.0, preserving pending memory injection and user-prompt-only reinjection cadence. Older hosts without `messageType` retain existing behavior.
+- Updated the development Pi host to 1.2.0; validation accepts stable patches in `~1.2.0` while main CI/release validation retain exact lockfile resolution and the dependency floor remains `>=0.87.0`. Added regression coverage for custom starts, queued refreshes, compaction, and cadence.
+- Added a separate blocking Pi compatibility matrix for `0.87.0` and latest stable patches in `~0.87.0`, `~0.99.0`, and `~1.2.0`. Adapter suites passed locally on 0.87.0, 0.87.1, 0.99.2, and 1.2.0; live-provider and rendered-TUI behavior remain outside these checks.
+
 ## 0.8.1 - Workbench correctness and web standards
 
 Workbench bug fixes, accessibility improvements, and cross-browser validation. No feature expansion; core and adapter versions remain unchanged. Publication remains a separate maintainer action.

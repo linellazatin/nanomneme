@@ -44,6 +44,8 @@ This uses npm registry access for ordinary dependencies, checks all components, 
 
 It also installs a disposable Claude plugin from `adapters/claude/package-lock.json` with frozen resolution and lifecycle scripts disabled, audits that dependency tree, runs the Claude adapter suite, and exercises stdio MCP 4Rs and the management CLI. Claude's `^0.3.0` manifest deliberately locks registry core `0.3.0`; root workspace development uses checkout `0.3.1`. Publishing core does not refresh the plugin lock. Review a later lock update, update its test assertion, and increase the plugin package/manifest versions together before distributing it. These checks do not establish native cache installation or provider behavior.
 
+Pi development-host checks accept stable `~1.2.0` while the dependency floor remains `>=0.87.0`. Main CI/release validation use the lockfile; a separate blocking CI matrix runs adapter tests against `0.87.0`, `~0.87.0`, `~0.99.0`, and `~1.2.0`. Reproduce only in a disposable checkout after `npm ci` with `node scripts/check-pi-compatibility.js '~0.87.0'` (or another matrix selector): it changes `node_modules` without changing manifests/locks and excludes only the development-host version assertion. Host-loader and schema checks do not establish live-provider or rendered-TUI behavior.
+
 Run rendered UI checks when browser behavior or UI logging changes:
 
 ```sh

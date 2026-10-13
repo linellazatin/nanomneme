@@ -36,7 +36,11 @@ Pi package for the [nanomneme](https://nanomneme.openlines.dev) SQLite memory ad
 
 ## Quickstart
 
-Version 0.4.2 targets Pi 0.87.0 or newer, verified through Pi 1.0.4, and Node.js 22.19 or newer. Install it globally with Pi:
+>
+> Version 0.4.3 targets Pi 0.87.0 or newer, verified through Pi 1.2.0, and Node.js 22.19 or newer. Repository validation accepts stable Pi `~1.2.0` development hosts while retaining the `>=0.87.0` dependency floor. Main CI and release validation use the exact lockfile resolution; a separate blocking CI matrix runs the adapter suite against Pi `0.87.0` and the latest stable patches in `~0.87.0`, `~0.99.0`, and `~1.2.0`. 
+>
+
+Install it globally with Pi:
 
 ```sh
 pi install npm:@openlines/nmnm-pi

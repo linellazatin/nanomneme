@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { open } from '@openlines/nmnm-core';
+import { visibleWidth } from '@earendil-works/pi-tui';
 import fs from 'node:fs';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
@@ -739,6 +740,43 @@ test('memory browser shows record details in the native action dialog', async ()
     rmSync(home, { recursive: true, force: true });
   }
 });
+
+for (const [name, content, truncated] of [
+  ['ten lines', Array.from({ length: 10 }, (_, i) => `Content line ${i + 1}`).join('\n'), false],
+  ['eleven lines', Array.from({ length: 11 }, (_, i) => `Content line ${i + 1}`).join('\n'), true],
+  ['wrapped paragraph', 'Long paragraph '.repeat(1000).trim(), true],
+  ['wide characters', '界'.repeat(1000), true],
+]) {
+  test(`memory browser bounds ${name} to ten displayed content lines without losing details`, async () => {
+    const project = temporaryDirectory('nmnm-pi-browser-long-project-');
+    const home = temporaryDirectory('nmnm-pi-browser-long-home-');
+    try {
+      const commands = new Map();
+      const retained = runMemory({ cwd: project, store: 'project', operation: 'retain', input: {
+        content, namespace: 'preview-test', tags: ['visible'], metadata: { source: 'pi' },
+      } });
+      const scripted = scriptedUi({ selections: [(options) => options.find((option) => option.startsWith('[project]')), 'Back', undefined] });
+      registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, { home, platform: 'darwin' });
+      await commands.get('memory').handler('browse', { cwd: project, hasUI: true, ui: scripted.ui });
+      const dialog = scripted.selectCalls[1];
+      const body = dialog.title.split('\n\n')[1];
+      assert.equal(body.split('\n').length, 10);
+      assert.ok(body.split('\n').every((line) => visibleWidth(line) <= (process.stdout.columns || 80) - 2));
+      assert.equal(body.includes('… content truncated'), truncated);
+      if (!truncated) assert.equal(body, content);
+      for (const field of ['Kind', 'Scope', 'Namespace', 'Tags', 'Importance', 'Confidence', 'Created', 'Updated', 'Expires', 'Removed', 'Metadata']) {
+        assert.match(dialog.title, new RegExp(`\\n${field} +`));
+      }
+      assert.match(dialog.title, /preview-test/);
+      assert.match(dialog.title, /visible/);
+      assert.deepEqual(dialog.options, ['Pin', 'Remove', 'Back']);
+      assert.equal(runMemory({ cwd: project, store: 'project', operation: 'recall', input: { id: retained.id } }).content, content);
+    } finally {
+      rmSync(project, { recursive: true, force: true });
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+}
 
 test('memory browser searches both stores and opens the selected record', async () => {
   const project = temporaryDirectory('nmnm-pi-browser-search-project-');

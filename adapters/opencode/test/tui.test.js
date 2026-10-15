@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { nanomnemeTui } from '../tui.js';
 import { runBridge } from '../src/bridge-client.js';
+import { runMemory } from '../src/store.js';
 
 function temp(name) {
   return mkdtempSync(join(tmpdir(), name));
@@ -96,7 +97,7 @@ test('viewing a memory exposes pin, soft-remove (confirmed), and back without le
   assert.equal(JSON.parse(runBridge({ op: 'tool', name: 'recall_memory', params: { id: memory.id, store: 'project' }, ctx }).text).content, 'viewable record');
   choose(selectOption('Remove (soft)'));
   assert.equal(last().kind, 'confirm');
-  last().props.onConfirm();
+  await last().props.onConfirm();
   assert.ok(renders.some((r) => r.kind === 'toast' && r.message === 'Memory soft-removed'));
   assert.match(last().props.title, /^All/);
   assert.deepEqual(runBridge({ op: 'browse', store: 'project', ctx }).items, []);
@@ -121,6 +122,20 @@ test('detail view shows selected fields, then returns to the memory action menu'
   assert.ok(!titles.some((title) => title.startsWith('Content')));
   choose(selectOption('Back'));
   assert.equal(last().props.title, 'Nanomneme [project] decision');
+  assert.ok(selectOption('View detail'));
+});
+
+test('V1 confirmation navigation survives the host clearing its completed dialog', async (t) => {
+  const { api, renders, seed, last, selectOption, choose } = await open(t);
+  seed('confirmation lifecycle');
+  api.__layer.commands[0].run();
+  choose(selectOption('All'));
+  choose(last().props.options.find(option => option.value?.record));
+  choose(selectOption('Remove (soft)'));
+  last().props.onCancel();
+  renders.length = 0; // Native confirm clears the stack after invoking its callback.
+  await Promise.resolve();
+  assert.equal(last()?.kind, 'select');
   assert.ok(selectOption('View detail'));
 });
 
@@ -169,7 +184,7 @@ test('returning to the list restores the highlight on the last-selected record',
   choose(target);
   assert.equal(last().props.title, 'Nanomneme [project] note');
   choose(selectOption('Back to list'));
-  assert.equal(last().props.current, target);
+  assert.equal(last().props.current, last().props.options.find(option => option.value?.record?.id === target.value.record.id).value);
 });
 
 test('the highlight resets when switching tabs', async (t) => {
@@ -180,7 +195,63 @@ test('the highlight resets when switching tabs', async (t) => {
   const target = last().props.options.find((o) => o.value?.record);
   choose(target);
   choose(selectOption('Back to list'));
-  assert.equal(last().props.current, target);
+  assert.equal(last().props.current, last().props.options.find(option => option.value?.record?.id === target.value.record.id).value);
   choose(selectOption('Project'));
   assert.equal(last().props.current, undefined);
+});
+
+test('V1 removal cancellation leaves the selected memory and pin unchanged', async t => {
+  const { api, ctx, seed, last, selectOption, choose } = await open(t);
+  const memory = seed('cancelled removal');
+  api.__layer.commands[0].run();
+  choose(selectOption('All'));
+  choose(last().props.options.find(option => option.value?.record));
+  choose(selectOption('Pin'));
+  choose(selectOption('Remove (soft)'));
+  assert.equal(last().kind, 'confirm');
+  await last().props.onCancel();
+  assert.equal(last().kind, 'select');
+  assert.ok(selectOption('Unpin'));
+  const page = runBridge({ op: 'browse', ctx, store: 'project' });
+  assert.equal(page.items[0].id, memory.id);
+  assert.equal(page.items[0].pinned, true);
+});
+
+test('V1 pagination crosses the project/global boundary and returns to the first page', async t => {
+  const { api, ctx, last, selectOption, choose } = await open(t);
+  for (let index = 0; index < 22; index++) {
+    runMemory({ ...ctx, store: index < 20 ? 'project' : 'global', operation: 'retain', input: { content: `page record ${index}`, metadata: { source: 'opencode' } } });
+  }
+  const records = () => last().props.options.filter(option => option.value?.record);
+  api.__layer.commands[0].run();
+  choose(selectOption('All'));
+  assert.equal(records().length, 20);
+  assert.ok(records().every(option => option.value.record.store === 'project'));
+  choose(selectOption('Next page'));
+  assert.equal(records().length, 2);
+  assert.ok(records().every(option => option.value.record.store === 'global'));
+  choose(selectOption('Previous page'));
+  assert.equal(records().length, 20);
+  assert.match(last().props.title, /showing 1-20 of 22/);
+});
+
+test('V1 pin contention surfaces an error without changing the record or its pin', async t => {
+  const { api, ctx, seed, renders, last, selectOption, choose } = await open(t);
+  const memory = seed('contended pin');
+  writeFileSync(join(ctx.cwd, '.nanomneme/nmnm-opencode.json.lock'), 'owned');
+  api.__layer.commands[0].run();
+  choose(selectOption('All'));
+  choose(last().props.options.find(option => option.value?.record));
+  choose(selectOption('Pin'));
+  assert.ok(renders.some(render => render.kind === 'toast' && /retry|lock|busy/i.test(render.message)));
+  const page = runBridge({ op: 'browse', ctx, store: 'project' });
+  assert.equal(page.items[0].id, memory.id);
+  assert.equal(page.items[0].pinned, false);
+});
+
+test('V1 teardown disposes the registered browser layer', async t => {
+  const { api } = await open(t);
+  assert.equal(typeof api.__dispose, 'function');
+  api.__dispose();
+  assert.equal(api.__disposed, true);
 });

@@ -4,7 +4,7 @@
 
 ## Install
 
-Use Node.js 22.19+ and Pi 0.87.0 or newer, verified through Pi 1.2.0. This manual describes `@openlines/nmnm-pi` 0.4.3. Install the public package:
+Use Node.js 22.19+ and Pi 0.87.0 or newer, verified through Pi 1.2.0. This manual describes `@openlines/nmnm-pi` 0.4.4. Install the public package:
 
 ```sh
 pi install npm:@openlines/nmnm-pi
@@ -183,7 +183,7 @@ An invalid settings or pin file leaves the file unchanged. Session start reports
 | Topic | Behavior |
 |---|---|
 | Browser | In the Pi TUI, `/memory` and `/memory browse` open a custom menu with `Status`, `All`, `Project`, and `Global` tabs. Left/right selects tabs; configured `tui.select.up`, `tui.select.down`, `tui.select.confirm`, and `tui.select.cancel` bindings control selection, confirmation, and cancellation. Raw `h`/`l` change tabs and `j`/`k` navigate rows. Status renders the shared read-only card. Store tabs contain search, source selection, records, paging, and Close. Text search uses FTS retrieval (hyphenated terms are literal); changing search or source resets that tab’s pagination. Source `all` includes legacy records; `pi` matches `metadata.source: "pi"`. The selected row remains selected after tab changes, details, and pin/unpin; removal selects the nearest remaining row. Non-TUI UI modes retain the native dialog browser; non-UI modes should use explicit subcommands. |
-| Browser details | Selecting a row opens a native action dialog whose title contains full canonical content and fields, then offers exact-store pin/unpin, confirmed soft removal, or back. Closing it returns to the custom browser with the previous selection retained. |
+| Browser details | Selecting a row opens a native action dialog whose title contains a content preview capped at 10 displayed lines, including a truncation notice when needed, followed by all canonical fields. Wrapping uses the current terminal width (80 columns when unavailable); stored content is unchanged. The dialog offers exact-store pin/unpin, confirmed soft removal, or back. Closing it returns to the custom browser with the previous selection retained. |
 | List order | Unscoped list and browser `both` pages combine project entries before global entries; selected-store views read one store. |
 | List display | Browser rows include `[project]` or `[global]`; `*` marks an exact `(store, id)` pin. They omit IDs; details show the selected record's ID. Previews normalize whitespace, show 60 characters, and append `...` only when truncated. |
 | List output | The notification reports `showing <n> of <total>` and is local command output, not a model request. |

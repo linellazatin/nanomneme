@@ -22,6 +22,12 @@ test('Bun-loaded entry and client never import the core, SQLite, or jsonc', asyn
   const indexSource = await source('index.js');
   const clientSource = await source('src/bridge-client.js');
   const tuiSource = await source('tui.js');
+  const serverV1Source = source('src/server-v1.js');
+  const serverV2Source = source('src/server-v2.js');
+  const tuiV1Source = source('src/tui-v1.js');
+  const tuiV2Source = source('src/tui-v2.js');
+  const rpcServerSource = source('src/browser-rpc-server.js');
+  const rpcClientSource = source('src/browser-rpc-client.js');
   const forbidden = [
     /from ['"]@openlines\/nmnm-core['"]/,
     /from ['"]node:sqlite['"]/,
@@ -30,7 +36,7 @@ test('Bun-loaded entry and client never import the core, SQLite, or jsonc', asyn
     /require\(['"]@openlines\/nmnm-core['"]\)/,
     /from ['"]\.\/(?:src\/)?(?:operations|context|store|cli|browse)\.js['"]/,
   ];
-  for (const text of [indexSource, clientSource, tuiSource]) {
+  for (const text of [indexSource, clientSource, tuiSource, serverV1Source, serverV2Source, tuiV1Source, tuiV2Source, rpcServerSource, rpcClientSource]) {
     for (const pattern of forbidden) {
       assert.doesNotMatch(text, pattern);
     }

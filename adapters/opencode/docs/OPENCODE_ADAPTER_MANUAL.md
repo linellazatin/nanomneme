@@ -4,10 +4,31 @@ The OpenCode adapter (`@openlines/nmnm-opencode`) is a native OpenCode **server 
 
 Runtime code and tests are authoritative if this manual disagrees with behavior.
 
+## Dual-host compatibility
+
+Adapter 0.3.0 targets native V1 1.19.0 and V2 2.0.29. Unchanged legacy API and Node engine bounds do not certify broader host compatibility. V1 receives compatibility fixes for the tested baseline, not indefinite feature parity. The standalone Node CLI is independent of host APIs. The adapter suite passes on Node 22.19.0 and 26.11.1; the tested stock 22.13.0 binary lacks required FTS5. Independently installed 0.3.0 packages passed native loading, tools, both rendered browsers, and V2 live-provider checks.
+
+| Surface | V1 1.19.0 | V2 2.0.29 |
+| --- | --- | --- |
+| Native checkout loading and 4Rs | Verified | Verified |
+| Rendered browser navigation/mutations | Verified | Verified |
+| Live-provider context | Historical older-host evidence only | Bedrock Haiku 5.5 verified |
+| Reload | Restart verified; callback disposal unit-tested | Live disable/re-enable verified |
+| Active-session location changes | Not established | Tools and rendered stale-selection rejection verified |
+| Separate client/server homes | Terminal-local design | Authenticated loopback verified |
+| Current installed tarball | Native loader/browser verified | Native tools/browser/live provider verified |
+| Remote-machine deployment | Not established | Not established |
+
+`index.js` preserves V1's named callback and delegates V2 setup to `src/server-v2.js`. V2 tools and primary context resolve each session's absolute directory; missing routing rejects tools and silently omits context without cwd fallback. Only primary requests receive the fresh transient index. `tui.js` preserves V1 and delegates V2 setup to `src/tui-v2.js`, using promise dialogs, host-owned keymap layers, and connected-client RPC. Each call resolves the active location; origin mismatches reject stale selections. Disposal aborts requests and closes owned dialogs. Status/browse/detail/mutate use server-owned paths without local fallback, automatic retries, retain, or purge.
+
+Native regression tests use V1 1.19.0 and V2 2.0.29 with isolated configuration, state, and memory stores. Run `NMNM_OPENCODE_V1=/absolute/path/to/v1/opencode node --test adapters/opencode/test/browser-rpc-v1-host.test.js` and `NMNM_OPENCODE_V2=/absolute/path/to/v2/opencode node --test adapters/opencode/test/browser-rpc-host.test.js`. V1 observes retain/index behavior; V2 verifies authenticated RPC, native 4Rs, source metadata, child-session routing, actual session movement, and missing-store safety. For optional paid Bedrock checks, also set `NMNM_OPENCODE_LIVE_MODEL=global.anthropic.claude-haiku-5-5` and valid AWS credentials/profile/region; isolated HOME requires absolute `AWS_CONFIG_FILE` and `AWS_SHARED_CREDENTIALS_FILE` when using profile files. This verifies model-visible memory, real recall execution through Code Mode, completed compaction, and newly retained/pinned context after removing the old fact. It does not establish remote-machine deployment, rendered UI, all providers, or packed-release readiness. Cancellation cannot roll back an already dispatched synchronous mutation; ambiguous failures must not be retried automatically.
+
+Rendered terminal checks require Python `pexpect` and `pyte`, not shipped runtime dependencies. Run `python adapters/opencode/test/terminal_browser.py --host /absolute/native/opencode --generation v1` or `--generation v2 --connected`. Disposable homes and stores cover the hotkey, all tabs, source filtering, 20-record pagination, detail/back, selection restoration, pin/unpin, explicit cancellation, confirmed soft removal, and reopening. V2's connected check uses authenticated loopback with different terminal/server homes, changes to an actual second-location session during confirmation, rejects the stale mutation, and exercises two live disable/re-enable cycles without duplicate palette entries. V1 configuration changes require terminal restart; restart-based removal/reloading and callback-level disposal tests do not establish native in-process deactivation. This is not remote-machine deployment or packed-release evidence.
+
 ## Requirements and architecture
 
 - Node.js 22.13+ with FTS5 in built-in `node:sqlite` (22.19.0 is tested), available on `PATH` (or set `NMNM_NODE` to its absolute path).
-- An OpenCode version exposing the `@opencode-ai/plugin` server API, native `tool` registration, and `experimental.chat.system.transform`. The host dependency declares `@opencode-ai/plugin >=1.18.15`; the repository lock retains tested 1.18.15. Developed and verified against OpenCode 1.18.31; isolated packed-adapter Bun/Node smoke checks also pass with host package 1.18.35. Fresh installs may resolve a newer host package; the system-transform hook is marked experimental upstream.
+- Native baselines are V1 1.19.0 and V2 2.0.29. Legacy API dependency `@opencode-ai/plugin >=1.18.15` and locked 1.18.15 are not older-host compatibility promises. Historical probes used V1 1.18.31/1.18.35. Current independent installed-package checks cover both browsers and V2 tools/context/RPC. The V1 system-transform hook remains experimental upstream.
 
 OpenCode loads server plugins under **Bun**, and its Bun build provides no `node:sqlite` (only the incompatible `bun:sqlite`). Because `@openlines/nmnm-core` requires `node:sqlite`, the plugin does **not** import core persistence in the Bun host; it can use the sqlite-free logging subpath. Instead:
 
@@ -15,13 +36,21 @@ OpenCode loads server plugins under **Bun**, and its Bun build provides no `node
 OpenCode (Bun) plugin  ->  spawns  node  src/bridge.js  (per core call)  ->  @openlines/nmnm-core
 ```
 
-`index.js` (Bun-safe plugin, bridge, path, and logging imports) registers the tools and the system transform; every core operation (a 4R tool call or the bounded index) runs in a short-lived `node` bridge process (`src/bridge.js` via `src/bridge-client.js`). The bridge reads a JSON request on stdin and writes a JSON response on stdout; the core's SQLite experimental warning goes to stderr and never pollutes the result. This is a stateless process-per-call, not a daemon or network service, so the "thin core client, no direct SQLite" rule holds: only Node bridge processes touch core persistence; the Bun host uses `@openlines/nmnm-core/logging` for proven spawn failures.
+`index.js` is the Bun-safe dual server entry; its named V1 callback comes from `src/server-v1.js`, which registers the legacy tools and system transform. Every core operation (a 4R tool call or the bounded index) runs in a short-lived `node` bridge process (`src/bridge.js` via `src/bridge-client.js`). The bridge reads a JSON request on stdin and writes a JSON response on stdout; the core's SQLite experimental warning goes to stderr and never pollutes the result. This is a stateless process-per-call, not a daemon or network service, so the "thin core client, no direct SQLite" rule holds: only Node bridge processes touch core persistence; the Bun host uses `@openlines/nmnm-core/logging` for proven spawn failures.
 
-The TUI browser (`tui.js`, exported as `./tui`) is a separate OpenCode **TUI plugin** module that runs under the same Bun host, so it reuses the identical Node bridge (`status`/`browse`/`detail`/ `mutate` ops) rather than importing the core. It only drives OpenCode's native dialog and keymap API and never performs an LLM turn.
+The V1 TUI browser (`tui.js`, exported as `./tui` and forwarding to `src/tui-v1.js`) is a separate OpenCode **TUI plugin** module that runs under the same Bun host, so it reuses the identical Node bridge (`status`/`browse`/`detail`/`mutate` ops) rather than importing the core. It only drives OpenCode's native dialog and keymap API and never performs an LLM turn. The public entrypoints and named callback exports remain stable; the version-specific modules isolate V1 host APIs without changing shared memory behavior.
 
 ## Install
 
-### Option A: npm plugin
+### OpenCode V2
+
+Add `{"$schema":"https://opencode.ai/config.json","plugins":["@openlines/nmnm-opencode@0.3.0"]}` to server `opencode.json(c)`. The CLI automatically loads the package's `./tui` component from the connected server's plugin list. Explicit terminal registration belongs in global `${XDG_CONFIG_HOME:-~/.config}/opencode/cli.json`: `{"plugins":["@openlines/nmnm-opencode@0.3.0"]}`. There is no project-local CLI configuration. Press **ctrl+alt+m**, or use the command palette. Publication of 0.3.0 remains separate.
+
+For development, use the absolute adapter directory in `plugins`, such as `{"plugins":["/absolute/path/to/nanomneme/adapters/opencode"]}`. V2 rejects individual entrypoint file paths; V1 examples below are not V2 examples. The connected server must enable the server plugin and have Node for its bridge. Its home, project directory, settings, and pins own persistence; there is no terminal-local fallback. RPC errors are visible without mutation retries. Changed active locations reject selected actions; reopen the browser in the new location.
+
+### OpenCode V1
+
+#### Option A: npm plugin
 
 Add the package to OpenCode config. OpenCode installs npm plugins and their dependencies via Bun at startup and caches them under `~/.cache/opencode/node_modules`.
 
@@ -44,7 +73,7 @@ To also enable the TUI memory browser, register the same package in the **TUI** 
 
 Restart OpenCode after saving the TUI config, then press **ctrl+alt+m**. The browser is model-free and provides Status, All, Project, and Global tabs with source filtering, pin/unpin, and confirmed soft removal. The server plugin and TUI plugin are separate registrations: `opencode.json` enables the memory tools and `tui.jsonc` enables the browser.
 
-### Option B: local development loading
+#### Option B: local development loading
 
 From this checkout, point the entry at the source. Plugins in a project `opencode.json`, or files under `.opencode/plugins/`, are discovered automatically.
 
@@ -183,7 +212,7 @@ Pin mutations use a same-directory lock and atomic replacement. Competing writer
 
 ## Compatibility probes
 
-The runtime shape below was established by historical design probes against OpenCode 1.18.31. These provider results are not fresh validation of this checkout; the current package/Bun bridge checks do not establish native registration, provider behavior, or interactive TUI behavior:
+The following table records historical OpenCode 1.18.31 probes, not fresh checkout evidence. Use the dual-host matrix above for current results:
 
 | Probe | Result |
 | --- | --- |
@@ -205,13 +234,7 @@ Confirmed against OpenCode 1.18.31 with a configured provider:
 2. A turn instructed to call `retain_memory` did so, and reading the project store confirmed a new record with `metadata.source: "opencode"` in the project store.
 3. Reads and soft removal left a missing store absent.
 
-Still to confirm interactively (requires a live TUI session):
-
-4. With `tui.jsonc` registering the package, ctrl+alt+m opens the Status tab at `xlarge` width; All/Project/Global tabs list seeded memories, the source row cycles all → opencode, and the action menu pins, unpins, and soft-removes (with a confirm) — with the store reflecting each
-    change. **View detail** shows the five selected fields without repeating content from the list,
-    then returns to the menu on Back without closing the browser; returning to a list re-highlights
-    the last-opened record.
-   Note: OpenCode exposes only `medium`/`large`/`xlarge` dialog presets (no percentage width), and the list-filter dialog does not surface raw left/right arrow keys, so tab changes stay on the `‹ / ›` nav rows.
+The terminal checks exercise navigation, confirmation, filtering, paging, detail/back, and selection restoration on both hosts. V1 requests `xlarge`; V2 requests `large`. Tabs use navigation rows. Set `NMNM_ADAPTER_ROOT` to the absolute independently installed package directory for both native host tests and the Python terminal checks; the default targets this checkout. Installed 0.3.0 checks passed without workspace dependencies. Remote deployment and V1 in-process deactivation remain unverified. For V1 rollback, pin `@openlines/nmnm-opencode@0.2.2` in both registrations and restart; that release does not support V2. Disabling the plugin does not migrate or delete stores.
 
 ```sh
 npm test

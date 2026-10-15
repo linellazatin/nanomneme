@@ -1,5 +1,7 @@
 # @openlines/nmnm-opencode
 
+Version 0.3.0 supports native baselines OpenCode V1 1.19.0 and V2 2.0.29. Checkout and independently installed-package checks cover both terminal browsers; live Bedrock Haiku 5.5 verifies V2 context, recall continuation, and post-compaction freshness. Node 22.19.0 and 26.11.1 are verified. Remote-machine deployment and publication remain separate.
+
 <div align="center">
 
 [![nmnm-opencode version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-opencode?label=opencode&logo=opencode&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-opencode) [![nmnm-opencode downloads](https://img.shields.io/npm/dt/@openlines/nmnm-opencode?label=downloads&logo=npm&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-opencode)
@@ -10,10 +12,10 @@ OpenCode adapter for [nanomneme](https://github.com/linellazatin/nanomneme): a s
 
 ## What it provides
 
-- A native OpenCode **server plugin** (`index.js`) registering `retain_memory`, `recall_memory`, `retrieve_memory`, and `remove_memory` via the `@opencode-ai/plugin` tool API. OpenCode loads plugins under Bun, which has no `node:sqlite`, so each core call runs in a short-lived spawned `node` bridge (`src/bridge.js`) rather than in the Bun host. No MCP server, daemon, or network. New retains record `metadata.source` as `"opencode"`; ID-based patches preserve existing source when metadata is omitted. Only `retain_memory` creates a missing store; reads and soft removal never create one. Removal is always soft; purge requires `nmnm remove --purge` or the UI workbench.
-- **Bounded transient injection** through `experimental.chat.system.transform`: optional autoretention guidance precedes the project/global pin set and recent active memories in a block appended to every model request whose context is non-empty. OpenCode rebuilds the system prompt per request, so no cadence/compaction/mutation gating is needed and the `reinjection` setting stays inert. No context is ever written to disk.
+- A native **server plugin** (`index.js`, delegating to `src/server-v1.js` or `src/server-v2.js`) registers `retain_memory`, `recall_memory`, `retrieve_memory`, and `remove_memory`. Bun-hosted calls use the short-lived Node bridge (`src/bridge.js`) for SQLite access. No additional MCP server or daemon is introduced. New retains record `metadata.source: "opencode"`; patches preserve existing source when metadata is omitted. Only retain creates missing stores. Removal is soft; purge requires the core CLI or workbench.
+- **Bounded transient injection:** optional autoretention guidance precedes pins and recent memories. V1 uses `experimental.chat.system.transform`; V2 uses the primary session context hook, resolving the session directory each time. V2 auxiliary title/generate/compaction requests have no additional memory hook. The next primary request receives a fresh index. `reinjection` stays inert; context is never persisted.
 - A deterministic, model-free **management CLI** — `nmnm-opencode` (`status`, `list`, `search`, `show`, `pin`, `unpin`, `remove`).
-- An optional model-free **TUI memory browser** (`tui.js`, registered via `tui.jsonc`) opened on **ctrl+alt+m**: a compact label-aligned Status summary plus All / Project / Global tabs, source cycling, pin/unpin, and confirmed soft removal, all routed through the same Node bridge.
+- A model-free **terminal browser** on **ctrl+alt+m** provides Status/All/Project/Global, source cycling, pagination, pin/unpin, and confirmed soft removal. V1 uses a terminal-local bridge; V2 uses authenticated OpenCode RPC and the server's home/store paths. Location changes reject stale selections rather than mutating a different store.
 
 ![ss-memory-status](docs/img/ss-memory-status.png)
 
@@ -23,13 +25,27 @@ OpenCode adapter for [nanomneme](https://github.com/linellazatin/nanomneme): a s
 
 ## Install
 
-Requires Node.js 22.13+ with FTS5 in `node:sqlite` on `PATH` (or set `NMNM_NODE`) for the bridge, and an OpenCode version exposing the `@opencode-ai/plugin` server API. Add the npm plugin to your OpenCode config:
+Use Node.js 22.19+ with built-in SQLite/FTS5 on the server's `PATH` (or `NMNM_NODE`). The unchanged package engine floor is 22.13 with FTS5 required separately, but the tested stock 22.13.0 binary lacks FTS5 and is unsuitable. The complete adapter suite passes on 22.19.0 and 26.11.1. Tested hosts are V1 1.19.0 and V2 2.0.29, not every version accepted by the legacy API dependency. V1 receives compatibility fixes, not indefinite feature parity or an older-host guarantee.
+
+### OpenCode V2
+
+Configure the server in `opencode.json(c)`:
+
+```jsonc
+{ "$schema": "https://opencode.ai/config.json", "plugins": ["@openlines/nmnm-opencode@0.3.0"] }
+```
+
+OpenCode automatically loads the package's `./tui` entry from the connected server's plugin list. For an explicit terminal-local registration, use global `${XDG_CONFIG_HOME:-~/.config}/opencode/cli.json` with `{"plugins":["@openlines/nmnm-opencode@0.3.0"]}`; do not put terminal preferences in server configuration. Press **ctrl+alt+m**. Local development must use the adapter directory, such as `{"plugins":["/absolute/path/to/nanomneme/adapters/opencode"]}`, not `index.js` or `tui.js`. A remote server must have the server plugin enabled; the terminal browser never substitutes local persistence. Version 0.3.0 must be published separately before registry installation is available.
+
+### OpenCode V1
+
+Use singular `plugin` in the server configuration:
 
 ```jsonc
 // opencode.json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["@openlines/nmnm-opencode"]
+  "plugin": ["@openlines/nmnm-opencode@0.3.0"]
 }
 ```
 
@@ -40,7 +56,7 @@ OpenCode installs npm plugins (and their dependencies) via Bun at startup and ca
 The TUI browser is a separate plugin entry from the server plugin. Register the same package in `~/.config/opencode/tui.jsonc`; OpenCode resolves the package's `./tui` export:
 
 ```jsonc
-{ "plugin": ["@openlines/nmnm-opencode"] }
+{ "plugin": ["@openlines/nmnm-opencode@0.3.0"] }
 ```
 
 Restart OpenCode, then press **ctrl+alt+m** to open the model-free browser. It provides Status, All, Project, and Global tabs plus source filtering, pin/unpin, and confirmed soft removal.
@@ -59,6 +75,8 @@ Register the TUI source separately in `~/.config/opencode/tui.jsonc`:
 
 The four memory tools then appear natively to the agent. See the [OpenCode Adapter Manual](docs/OPENCODE_ADAPTER_MANUAL.md) for the full guide, including the compatibility probes and the manual smoke check.
 
+To roll back a previously installed V1 integration, pin `@openlines/nmnm-opencode@0.2.2` in both V1 registrations and restart. That older adapter is not a V2 rollback option. V2 may disable this plugin through its existing plugin configuration; no store migration is required in either direction.
+
 ## Configuration
 
 - Project settings (shared across adapters): `<repo>/.nanomneme/nmnm.jsonc`.
@@ -68,6 +86,8 @@ The four memory tools then appear natively to the agent. See the [OpenCode Adapt
 See the [OpenCode Adapter Manual](docs/OPENCODE_ADAPTER_MANUAL.md) for the config schema, tool reference, and injection lifecycle.
 
 ## Develop
+
+The browser RPC transport exposes only status, browse, detail, and pin/unpin/soft-removal operations through the connected OpenCode server. The server owns store routing and the Node bridge; the V2 client transport never falls back to local persistence. Transport failures are not retried automatically, and cancellation does not roll back a mutation already dispatched to the synchronous bridge. Native transport checks are opt-in: set `NMNM_OPENCODE_V1` or `NMNM_OPENCODE_V2` to the corresponding executable and run `node --test adapters/opencode/test/browser-rpc-v1-host.test.js` or `node --test adapters/opencode/test/browser-rpc-host.test.js`. Each creates isolated host state and disposable stores without using the personal background service; without the environment variable, that host check is explicitly skipped.
 
 Core hardening introduced in `0.3.0` and retained in `0.3.1` is covered through the real Node bridge for Unicode search/validation, invalid metadata/range operators, and private project/global first-use storage; direct handlers cover monotonic patch/restore timestamps under frozen/backward clocks. Tool-handler APIs are unchanged. Export/import/verification remain core CLI operations, not adapter tools.
 

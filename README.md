@@ -28,6 +28,9 @@
 </div>
 
 >
+> ### v0.8.3 - OpenCode V2 adapter port + bugfixes
+> - OpenCode adapter `0.3.0` adds V2 tools, transient session context, and server-routed terminal management while retaining tested V1 1.19.0 support. V2 baseline: 2.0.29. Independent installed-package checks pass; publication remains separate.
+> - Pi adapter `0.4.4` fixed clipping of long memory content; now only shows max 10 lines.
 > ### v0.8.2 - Pi adapter compatibility (for pi release 1.2.0)
 > - Pi adapter `0.4.3` preserves user-prompt-only memory injection on Pi 1.2.0.
 > - CI checks older hosts and latest 1.2.x patches; the compatibility floor remains Pi 0.87.0.
@@ -107,11 +110,11 @@ Diagnostics default off. CLI, UI mutations, and adapters use the shared Logsline
 
 #### OpenCode
 
-- **Native plugin memory tools:** an OpenCode server plugin on `@opencode-ai/plugin` registers retain, recall, retrieve, and remove backed by `nmnm-core` with no MCP server, daemon, network, or CLI parsing. Because OpenCode loads plugins under Bun (no `node:sqlite`), each core call runs in a short-lived spawned `node` bridge. `retain_memory` records `"opencode"` source provenance on new entries and is the only operation that creates a missing store; `remove_memory` is soft-only.
-- **Bounded transient injection:** `experimental.chat.system.transform` appends the project/global index and optional autoretention guidance to the merged system prompt on every request with non-empty context (OpenCode rebuilds the prompt per request, so no cadence gating is needed). No context is written to disk.
+- **Native V1/V2 memory tools:** adapter `0.3.0` exposes retain, recall, retrieve, and soft remove through the server's short-lived Node bridge. Tested host baselines are V1 1.19.0 and V2 2.0.29; only retain creates missing stores and new records carry `"opencode"` source provenance.
+- **Bounded transient injection:** V1 uses its experimental system transform; V2 rebuilds context for each primary request using the session's location. Guidance precedes pins and recent memories. No context is persisted or added to V2 auxiliary generation/compaction requests; the next primary request receives fresh context.
 - **Shared and adapter-owned config:** project `nmnm.jsonc` settings shared with Pi and Claude, adapter-owned `nmnm-opencode.json` pins, and global settings under `${XDG_CONFIG_HOME:-~/.config}/opencode`.
 - **Model-free management CLI:** `nmnm-opencode` (`status`, `list`, `search`, `show`, `pin`, `unpin`, `remove`) with project-first combined pagination and `--source all|opencode`; purge is available through `nmnm remove --purge` or the UI workbench, outside adapter management.
-- **Model-free TUI memory browser:** an optional `tui.js` plugin (registered via `tui.jsonc`) opened on **ctrl+alt+m** with Status/All/Project/Global tabs, source cycling, and pin/unpin/soft-remove, routed through the same Node bridge.
+- **Model-free terminal browser:** **ctrl+alt+m** opens Status/All/Project/Global, filtering, pagination, pin/unpin, and confirmed soft removal. V1 registers via `tui.jsonc` and uses its local bridge; V2 loads `./tui` automatically or through global `cli.json`, routing operations over authenticated OpenCode RPC to server-owned stores. Changed locations reject stale selections. See the [adapter guide](adapters/opencode/README.md) for version-specific setup and verification limits.
 
 #### Claude Code
 

@@ -7,7 +7,14 @@
 | Component | Version |
 | --- | --- |
 | Repository | 0.8.3 |
+| `@openlines/nmnm-opencode` | 0.3.0 |
 | `@openlines/nmnm-pi` | 0.4.4 |
+
+### Changed
+
+- `nmnm-opencode` added V2 memory tools, per-session transient context, and a model-free terminal browser while preserving bounded V1 support. Native baselines are V1 1.19.0 and V2 2.0.29, not all versions allowed by the legacy API dependency.
+- `nmnm-opencode` V2 browser operations use authenticated OpenCode RPC and the server's Node bridge. Changed locations reject stale selections; ambiguous mutations are not retried automatically.
+- `nmnm-opencode` fixed V1 selection restoration and confirmation navigation.
 
 ### Fixed
 

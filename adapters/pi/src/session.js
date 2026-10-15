@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { matchesKey, truncateToWidth } from '@earendil-works/pi-tui';
+import { matchesKey, truncateToWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui';
 
 import { buildMemoryIndex, pin, piAgentDir, pinsPath, readPins, readSettings, settingsPath, unpin, updatePins } from './context.js';
 import { getPiLogger, piSessionId } from './logslines.js';
@@ -9,6 +9,7 @@ const DEFAULT_LIST_LIMIT = 20;
 const MAX_LIST_LIMIT = 100;
 const LIST_PREVIEW_LENGTH = 60;
 const BROWSER_LIMIT = 20;
+const BROWSER_CONTENT_LINES = 10;
 
 function commandInput(args) {
   return args.trim().split(/\s+/).filter(Boolean);
@@ -109,10 +110,16 @@ function browserRow({ store, memory }, pinned) {
 }
 
 function browserDetails(store, memory, pinned) {
+  // Native selectors pad their title by one column on each side.
+  const width = Math.max(1, (process.stdout.columns || 80) - 2);
+  const lines = wrapTextWithAnsi(memory.content.replace(/\t/g, '   '), width);
+  const content = lines.length > BROWSER_CONTENT_LINES
+    ? [...lines.slice(0, BROWSER_CONTENT_LINES - 1), truncateToWidth('… content truncated', width)].join('\n')
+    : lines.join('\n');
   return [
     `Nanomneme [${store}] ${memory.id}${pinned ? ' · pinned' : ''}`,
     '',
-    memory.content,
+    content,
     '',
     `Kind       ${memory.kind}`,
     `Scope      ${memory.scope}`,

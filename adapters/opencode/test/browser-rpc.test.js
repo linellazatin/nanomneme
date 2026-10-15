@@ -31,8 +31,8 @@ function fixture(t) {
   let definition, handlers, disposed = 0;
   const api = {
     location: { directory: project },
-    session: {},
-    tool: {},
+    session: { hook: async () => ({ dispose: async () => {} }) },
+    tool: { transform: async () => ({ dispose: async () => {} }) },
     rpc: { register: async (contract, implementation) => {
       definition = contract;
       handlers = implementation;

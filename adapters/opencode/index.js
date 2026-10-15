@@ -8,7 +8,7 @@ export default {
   async setup(api) {
     // V1 1.19 also calls setup, but exposes no V2 session/tool/RPC domains.
     if (!api.session && !api.tool && !api.rpc) return;
-    const { registerBrowserRpc } = await import('./src/browser-rpc-server.js');
-    return registerBrowserRpc(api);
+    const { setupServerV2 } = await import('./src/server-v2.js');
+    return setupServerV2(api);
   },
 };

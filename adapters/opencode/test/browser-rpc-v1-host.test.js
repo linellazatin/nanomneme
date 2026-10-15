@@ -4,10 +4,12 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const host = process.env.NMNM_OPENCODE_V1;
+const entry = process.env.NMNM_ADAPTER_ROOT ? pathToFileURL(join(process.env.NMNM_ADAPTER_ROOT, 'index.js')) : new URL('../index.js', import.meta.url);
 
-test('native V1 host keeps the checkout legacy tools and injection with the dual entry', {
+test('native V1 host loads selected adapter legacy tools and injection with the dual entry', {
   skip: host ? false : 'Set NMNM_OPENCODE_V1 to a native V1 executable', timeout: 60000,
 }, t => {
   const root = mkdtempSync(join(tmpdir(), 'nmnm-browser-v1-host-'));
@@ -18,9 +20,9 @@ test('native V1 host keeps the checkout legacy tools and injection with the dual
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const proof = join(root, 'proof.json');
   const fixture = join(root, 'entry.mjs');
-  // This fixture observes the actual checkout entry through the native V1 loader.
+  // Observe the selected checkout or independently installed entry through the native loader.
   writeFileSync(fixture, `
-import plugin from ${JSON.stringify(new URL('../index.js', import.meta.url).href)};
+import plugin from ${JSON.stringify(entry.href)};
 import { writeFileSync } from 'node:fs';
 export default {
   ...plugin,
@@ -38,7 +40,7 @@ export default {
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('OPENCODE_') && !key.startsWith('XDG_')));
   Object.assign(env, { HOME: home, XDG_CONFIG_HOME: join(home, 'config'), XDG_DATA_HOME: join(home, 'data'), XDG_CACHE_HOME: join(home, 'cache'), XDG_STATE_HOME: join(home, 'state') });
   execFileSync(host, ['debug', 'config'], { cwd: project, env, timeout: 45000, stdio: 'pipe' });
-  assert.equal(existsSync(proof), true, 'native V1 loader must invoke the checkout server callback');
+  assert.equal(existsSync(proof), true, 'native V1 loader must invoke the selected server callback');
   const result = JSON.parse(readFileSync(proof, 'utf8'));
   assert.deepEqual(result.tools, ['recall_memory', 'remove_memory', 'retain_memory', 'retrieve_memory']);
   assert.equal(result.source, 'opencode');

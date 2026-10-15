@@ -4,14 +4,15 @@ import { spawn } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
-import { runBridge } from '../src/bridge-client.js';
+const adapter = process.env.NMNM_ADAPTER_ROOT ? pathToFileURL(`${process.env.NMNM_ADAPTER_ROOT}/`) : new URL('../', import.meta.url);
+const { runBridge } = await import(new URL('src/bridge-client.js', adapter));
 
 const host = process.env.NMNM_OPENCODE_V2;
 const liveModel = process.env.NMNM_OPENCODE_LIVE_MODEL;
 
-test('native V2 host routes checkout browser RPC to server stores with authentication and schema validation', {
+test('native V2 host routes selected adapter RPC to server stores with authentication and schema validation', {
   skip: host ? false : 'Set NMNM_OPENCODE_V2 to a native V2 executable', timeout: liveModel ? 240000 : 60000,
 }, async t => {
   const root = mkdtempSync(join(tmpdir(), 'nmnm-browser-rpc-host-'));
@@ -51,7 +52,7 @@ test('native V2 host routes checkout browser RPC to server stores with authentic
     }
   };`);
   writeFileSync(join(home, 'config/opencode/opencode.json'), JSON.stringify({
-    plugins: [fileURLToPath(new URL('../', import.meta.url)), observer],
+    plugins: [fileURLToPath(adapter), observer],
     ...(liveModel ? { providers: { 'amazon-bedrock': { settings: { profile: process.env.AWS_PROFILE, region: process.env.AWS_REGION } } } } : {}),
   }));
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('OPENCODE_') && !key.startsWith('XDG_')));

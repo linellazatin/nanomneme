@@ -12,7 +12,7 @@ import pexpect
 import pyte
 
 
-ADAPTER = Path(__file__).resolve().parents[1]
+ADAPTER = Path(os.environ.get('NMNM_ADAPTER_ROOT', Path(__file__).resolve().parents[1])).resolve()
 
 
 def main():

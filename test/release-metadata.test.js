@@ -36,7 +36,7 @@ test('release metadata aligns the 0.8.3 OpenCode port and every consumer', () =>
   assert.equal(ui.exports, './src/launcher.js');
   assert.equal(ui.engines.node, root.engines.node);
   assert.equal(lock.packages['node_modules/@openlines/nmnm-ui'].resolved, 'packages/nmnm-ui');
-  assert.equal(pi.version, '0.4.3');
+  assert.equal(pi.version, '0.4.4');
   assert.equal(claude.name, '@openlines/nmnm-claude');
   assert.equal(claude.version, '0.2.2');
   assert.equal(claude.dependencies['@modelcontextprotocol/sdk'], '^1.31.0');

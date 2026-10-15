@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.8.3 - OpenCode V2 adapter port
+
+### Updated components
+
+| Component | Version |
+| --- | --- |
+| Repository | 0.8.3 |
+| `@openlines/nmnm-pi` | 0.4.4 |
+
+### Fixed
+
+- Pi adapter `0.4.4` caps memory browser content previews at 10 displayed lines, preserving metadata and actions without changing stored content.
+
 ## 0.8.2 - Pi adapter compatibility release for pi v1.2.0
 
 ### Updated components

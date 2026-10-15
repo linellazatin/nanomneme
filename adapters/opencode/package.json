@@ -27,7 +27,7 @@
     "tui.js",
     "bin",
     "src",
-    "docs",
+    "docs/OPENCODE_ADAPTER_MANUAL.md",
     "docs/img",
     "README.md",
     "LICENSE"

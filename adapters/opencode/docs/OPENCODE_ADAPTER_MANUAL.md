@@ -4,10 +4,16 @@ The OpenCode adapter (`@openlines/nmnm-opencode`) is a native OpenCode **server 
 
 Runtime code and tests are authoritative if this manual disagrees with behavior.
 
+## V2 port checkpoint
+
+This checkout implements the approved browser RPC transport, not the complete V2 adapter. `index.js` preserves the named V1 callback and exposes a dual server definition; V1's limited setup context is skipped, while V2 registers `nmnm-opencode.browser`. `src/browser-rpc.js` defines bounded status/browse/detail/mutate contracts, `src/browser-rpc-server.js` forwards whitelisted inputs through the existing bridge using the server location/home, and `src/browser-rpc-client.js` uses the connected client's RPC with an explicit active location. The client transport has no local bridge fallback, retries, retain, or purge operation. V2 tools/injection and browser UI wiring remain pending; the remainder of this manual describes V1 behavior.
+
+Native regression tests use V1 1.19.0 and V2 2.0.29 with isolated configuration, state, and memory stores. Run `NMNM_OPENCODE_V1=/absolute/path/to/v1/opencode node --test adapters/opencode/test/browser-rpc-v1-host.test.js` and `NMNM_OPENCODE_V2=/absolute/path/to/v2/opencode node --test adapters/opencode/test/browser-rpc-host.test.js`. The V1 test observes the checkout callback through the native loader and exercises retain/index behavior; the V2 test exercises the checkout RPC over authenticated loopback HTTP, including project isolation, schema boundaries, and reversible removal. These are not live-provider, actual remote-machine, rendered-browser, or packed-release validation. RPC cancellation is checked before bridge dispatch; an in-flight synchronous mutation cannot be promised to roll back, and ambiguous failures must not be retried automatically.
+
 ## Requirements and architecture
 
 - Node.js 22.13+ with FTS5 in built-in `node:sqlite` (22.19.0 is tested), available on `PATH` (or set `NMNM_NODE` to its absolute path).
-- An OpenCode version exposing the `@opencode-ai/plugin` server API, native `tool` registration, and `experimental.chat.system.transform`. The host dependency declares `@opencode-ai/plugin >=1.18.15`; the repository lock retains tested 1.18.15. Developed and verified against OpenCode 1.18.31; isolated packed-adapter Bun/Node smoke checks also pass with host package 1.18.35. Fresh installs may resolve a newer host package; the system-transform hook is marked experimental upstream.
+- This checkout's dual server entry has a native V1 baseline of OpenCode 1.19.0, exposing legacy `tool` registration and `experimental.chat.system.transform`. The legacy API dependency remains `@opencode-ai/plugin >=1.18.15` at this checkpoint and the lock retains 1.18.15; that dependency range is not an older-host compatibility promise. Historical pre-port checks used OpenCode 1.18.31 and packed host package 1.18.35. V2 2.0.29 currently verifies only the new RPC transport; tools/injection/browser UI parity remains pending. The legacy system-transform hook is experimental upstream.
 
 OpenCode loads server plugins under **Bun**, and its Bun build provides no `node:sqlite` (only the incompatible `bun:sqlite`). Because `@openlines/nmnm-core` requires `node:sqlite`, the plugin does **not** import core persistence in the Bun host; it can use the sqlite-free logging subpath. Instead:
 

@@ -1,5 +1,7 @@
 # @openlines/nmnm-opencode
 
+V2 port in progress: this checkout includes a server-routed browser RPC contract and client transport, with native-host regression checks against V1 1.19.0 and V2 2.0.29. The V2 memory tools, context injection, and terminal browser UI are not yet ported. The feature and installation instructions below describe the existing V1 integration, not V2 readiness.
+
 <div align="center">
 
 [![nmnm-opencode version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-opencode?label=opencode&logo=opencode&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-opencode) [![nmnm-opencode downloads](https://img.shields.io/npm/dt/@openlines/nmnm-opencode?label=downloads&logo=npm&color=cb3837)](https://www.npmjs.com/package/@openlines/nmnm-opencode)
@@ -23,7 +25,7 @@ OpenCode adapter for [nanomneme](https://github.com/linellazatin/nanomneme): a s
 
 ## Install
 
-Requires Node.js 22.13+ with FTS5 in `node:sqlite` on `PATH` (or set `NMNM_NODE`) for the bridge, and an OpenCode version exposing the `@opencode-ai/plugin` server API. Add the npm plugin to your OpenCode config:
+Requires Node.js 22.13+ with FTS5 in `node:sqlite` on `PATH` (or set `NMNM_NODE`) for the bridge. This checkout's dual server entry is tested against OpenCode V1 1.19.0; do not infer older host compatibility from the legacy API dependency range. V2 feature parity is still pending. Add the npm plugin to your OpenCode config:
 
 ```jsonc
 // opencode.json
@@ -68,6 +70,8 @@ The four memory tools then appear natively to the agent. See the [OpenCode Adapt
 See the [OpenCode Adapter Manual](docs/OPENCODE_ADAPTER_MANUAL.md) for the config schema, tool reference, and injection lifecycle.
 
 ## Develop
+
+The browser RPC transport exposes only status, browse, detail, and pin/unpin/soft-removal operations through the connected OpenCode server. The server owns store routing and the Node bridge; the V2 client transport never falls back to local persistence. Transport failures are not retried automatically, and cancellation does not roll back a mutation already dispatched to the synchronous bridge. Native transport checks are opt-in: set `NMNM_OPENCODE_V1` or `NMNM_OPENCODE_V2` to the corresponding executable and run `node --test adapters/opencode/test/browser-rpc-v1-host.test.js` or `node --test adapters/opencode/test/browser-rpc-host.test.js`. Each creates isolated host state and disposable stores without using the personal background service; without the environment variable, that host check is explicitly skipped.
 
 Core hardening introduced in `0.3.0` and retained in `0.3.1` is covered through the real Node bridge for Unicode search/validation, invalid metadata/range operators, and private project/global first-use storage; direct handlers cover monotonic patch/restore timestamps under frozen/backward clocks. Tool-handler APIs are unchanged. Export/import/verification remain core CLI operations, not adapter tools.
 

@@ -33,6 +33,8 @@ export const nanomnemeTui = async (api) => {
   const cwd = api.state?.path?.directory ?? process.cwd();
   const ctx = storeContext({ directory: cwd });
   const state = { tab: 0, source: 0, offsets: TABS.map(() => 0), last: undefined };
+  let disposed = false;
+  const afterConfirm = callback => queueMicrotask(() => { if (!disposed) callback(); });
 
   const call = (op, args) => {
     const result = runBridge({ op, ctx, ...args });
@@ -109,10 +111,8 @@ export const nanomnemeTui = async (api) => {
       title: listTitle(state.tab, source, offset, result),
       placeholder: 'Filter by content...',
       options,
-      // Restore the highlight by passing the exact option object previously chosen (identity,
-      // not a rebuilt copy). If a live session shows OpenCode does not match this, cache the last
-      // browse result and reuse its item objects so the reference is stable across renders.
-      current: state.last,
+      // The host expects a value from this render, not the previous option object.
+      current: options.find(option => option.value?.record && option.value.record.id === state.last?.value?.record?.id && option.value.record.store === state.last?.value?.record?.store)?.value,
       onSelect: onSelectOption,
     }));
   }
@@ -170,13 +170,14 @@ export const nanomnemeTui = async (api) => {
             onConfirm: () => {
               try {
                 const result = call('mutate', { store: record.store, id: record.id, mutation: 'remove' });
-                if (result.error) return showTab(result.error);
-                return showTab('Memory soft-removed');
+                if (result.error) return afterConfirm(() => showTab(result.error));
+                return afterConfirm(() => showTab('Memory soft-removed'));
               } catch (error) {
-                return showTab(error.message);
+                return afterConfirm(() => showTab(error.message));
               }
             },
-            onCancel: () => showDetail(record),
+            // The native confirm clears its stack after invoking the callback.
+            onCancel: () => afterConfirm(() => showDetail(record)),
           }));
         }
         if (value.action === 'back') return showTab();
@@ -222,7 +223,7 @@ export const nanomnemeTui = async (api) => {
     }],
     bindings: [{ key: 'ctrl+alt+m', cmd: 'nmnm-opencode.browser' }],
   });
-  api.lifecycle?.onDispose?.(disposeLayer);
+  api.lifecycle?.onDispose?.(() => { disposed = true; disposeLayer(); });
 };
 
 export default { id: 'nmnm-opencode-tui', tui: nanomnemeTui };

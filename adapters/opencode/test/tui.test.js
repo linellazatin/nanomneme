@@ -97,7 +97,7 @@ test('viewing a memory exposes pin, soft-remove (confirmed), and back without le
   assert.equal(JSON.parse(runBridge({ op: 'tool', name: 'recall_memory', params: { id: memory.id, store: 'project' }, ctx }).text).content, 'viewable record');
   choose(selectOption('Remove (soft)'));
   assert.equal(last().kind, 'confirm');
-  last().props.onConfirm();
+  await last().props.onConfirm();
   assert.ok(renders.some((r) => r.kind === 'toast' && r.message === 'Memory soft-removed'));
   assert.match(last().props.title, /^All/);
   assert.deepEqual(runBridge({ op: 'browse', store: 'project', ctx }).items, []);
@@ -122,6 +122,20 @@ test('detail view shows selected fields, then returns to the memory action menu'
   assert.ok(!titles.some((title) => title.startsWith('Content')));
   choose(selectOption('Back'));
   assert.equal(last().props.title, 'Nanomneme [project] decision');
+  assert.ok(selectOption('View detail'));
+});
+
+test('V1 confirmation navigation survives the host clearing its completed dialog', async (t) => {
+  const { api, renders, seed, last, selectOption, choose } = await open(t);
+  seed('confirmation lifecycle');
+  api.__layer.commands[0].run();
+  choose(selectOption('All'));
+  choose(last().props.options.find(option => option.value?.record));
+  choose(selectOption('Remove (soft)'));
+  last().props.onCancel();
+  renders.length = 0; // Native confirm clears the stack after invoking its callback.
+  await Promise.resolve();
+  assert.equal(last()?.kind, 'select');
   assert.ok(selectOption('View detail'));
 });
 
@@ -170,7 +184,7 @@ test('returning to the list restores the highlight on the last-selected record',
   choose(target);
   assert.equal(last().props.title, 'Nanomneme [project] note');
   choose(selectOption('Back to list'));
-  assert.equal(last().props.current, target);
+  assert.equal(last().props.current, last().props.options.find(option => option.value?.record?.id === target.value.record.id).value);
 });
 
 test('the highlight resets when switching tabs', async (t) => {
@@ -181,7 +195,7 @@ test('the highlight resets when switching tabs', async (t) => {
   const target = last().props.options.find((o) => o.value?.record);
   choose(target);
   choose(selectOption('Back to list'));
-  assert.equal(last().props.current, target);
+  assert.equal(last().props.current, last().props.options.find(option => option.value?.record?.id === target.value.record.id).value);
   choose(selectOption('Project'));
   assert.equal(last().props.current, undefined);
 });
@@ -195,7 +209,7 @@ test('V1 removal cancellation leaves the selected memory and pin unchanged', asy
   choose(selectOption('Pin'));
   choose(selectOption('Remove (soft)'));
   assert.equal(last().kind, 'confirm');
-  last().props.onCancel();
+  await last().props.onCancel();
   assert.equal(last().kind, 'select');
   assert.ok(selectOption('Unpin'));
   const page = runBridge({ op: 'browse', ctx, store: 'project' });

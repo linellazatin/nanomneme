@@ -178,19 +178,24 @@ Shared `~/.local/share/nanomneme/config.jsonc` defaults logging off; user-level 
 
 ## Pi adapter
 
-**Implemented path:** `adapters/pi/src/tools.js` safely obtains the current host session ID and starts observation. Inside the callback, retain scope is trimmed and validated before selecting a store; other tools use their store selector. Project trust checks, missing-store shortcuts, input conversion, and core calls follow. Invalid scope emits a failed outcome when diagnostics are enabled and never creates a store. New retains add `metadata.source: "pi"`; ID patches preserve source when metadata is omitted. Bounded tool response formatting and future context refresh happen after observation succeeds. Pi tools and session management share a lazy logger from `adapters/pi/src/session.js`.
+**Implemented path:** Pi first validates model arguments against the registered tool schema. Retain schemas expose canonical kinds/scopes, score bounds, slug/UUID/timestamp formats, and create/patch guidance; schema-invalid calls can fail before adapter execution and emit no adapter diagnostic. For calls that reach `adapters/pi/src/tools.js`, the adapter safely obtains the current host session ID and starts observation. Inside the callback, retain scope is trimmed and validated before selecting a store; other tools use their store selector. Project trust checks, missing-store shortcuts, input conversion, and core calls follow. Invalid scope reaching this callback, such as through a direct tool invocation that bypasses host validation, emits a failed outcome when diagnostics are enabled; invalid scope never creates a store. New retains add `metadata.source: "pi"`; ID patches preserve source when metadata is omitted. Bounded tool response formatting and future context refresh happen after observation succeeds. Pi tools and session management share a lazy logger from `adapters/pi/src/session.js`.
 
 ```mermaid
 sequenceDiagram
   autonumber
   actor Model as Pi model
+  participant Host as Pi argument validation
   participant Tool as Pi registered tool
   participant Logger as shared logger
   participant Core as nmnm-core
   participant DB as selected SQLite store
   participant Log as nmnm-pi.jsonl
 
-  Model->>Tool: invoke a 4R tool
+  Model->>Host: invoke a 4R tool
+  alt arguments fail tool schema
+    Host-->>Model: validation error, no adapter execution or diagnostic
+  else arguments pass tool schema
+    Host->>Tool: execute with validated arguments
   Tool->>Tool: safely read host session ID
   Tool->>Logger: run(operation, session_id, callback)
   Logger->>Logger: resolve shared config plus Pi user override once per instance
@@ -218,15 +223,18 @@ sequenceDiagram
   Logger-->>Tool: unchanged result or original error
   Tool->>Tool: queue refresh on successful mutation, format bounded JSON
   Tool-->>Model: bounded response or original operation error
+  end
 ```
 
 ### Pi diagnostic boundary
+
+Host schema validation precedes this boundary. Schema-invalid kinds, scores, scopes, or formats may produce a model-facing error without a `memory.retain_failed` record; adapter logs alone therefore cannot count all attempted tool calls. Core-only checks, including non-whitespace/Unicode content, calendar validity, and record existence, still run after observation starts. Direct runtime invocations retain trimming behavior; the model-facing schema requests canonical unpadded values.
 
 Pi passes normalized correlation from `ctx.sessionManager.getSessionId()` on each action, using null if absent, invalid, or throwing. The shared observer sees the callback result transiently, but emits only the common bounded envelope. Browser Pin/Unpin/Remove and explicit `/memory` Pin/Unpin/Remove use separate `browser_*` and `command_*` operations in the shared catalog. Pin files remain Pi-owned JSON outside SQLite.
 
 Logger construction precedes registration; configuration resolution is lazy on the first eligible invocation. Shared authorization and the user-level `<Pi agent directory>/nmnm.jsonc` override follow the common precedence rules. Enabled outcomes append to `~/.local/share/nanomneme/logs/nmnm-pi.jsonl` through core's generated runtime. Browser Remove preflight emits no record when its target is already inactive, confirmation succeeds, or the user cancels; preflight exceptions can emit a failed outcome. A confirmed mutation starts a separate observation after confirmation, excluding decision time. Notifications and refresh remain outside mutation observation.
 
-Pi’s `session_start`, `session_compact`, and `before_agent_start` hooks separately maintain its bounded transient index. The index reads existing stores/settings/pins without creating them. Automatic context injection and session lifecycle events emit no diagnostics. `/memory` browser navigation, search, back/cancel, read-only commands, and canceled removals also emit no diagnostics.
+Pi’s `session_start`, `session_compact`, and `before_agent_start` hooks separately maintain its bounded transient index. Enabled autoretention rules precede index rows and include minimal creation, original-store patch routing, and no untrusted-project-to-global fallback guidance. The reminder adds 290 characters including its newline within the existing total budget; guidance that exceeds that budget is rejected rather than truncated. The index reads existing stores/settings/pins without creating them. Automatic context injection and session lifecycle events emit no diagnostics. `/memory` browser navigation, search, back/cancel, read-only commands, and canceled removals also emit no diagnostics.
 
 ## Claude Code adapter
 

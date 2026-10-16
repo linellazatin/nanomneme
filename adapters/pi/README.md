@@ -37,7 +37,7 @@ Pi package for the [nanomneme](https://nanomneme.openlines.dev) SQLite memory ad
 ## Quickstart
 
 >
-> Version 0.4.4 targets Pi 0.87.0 or newer, verified through Pi 1.2.0, and Node.js 22.19 or newer. Repository validation accepts stable Pi `~1.2.0` development hosts while retaining the `>=0.87.0` dependency floor. Main CI and release validation use the exact lockfile resolution; a separate blocking CI matrix runs the adapter suite against Pi `0.87.0` and the latest stable patches in `~0.87.0`, `~0.99.0`, and `~1.2.0`.
+> Checkout version 0.4.5 is prepared for publication; its strengthened retain schemas and invocation guidance are not supplied by published 0.4.4. It targets Pi 0.87.0 or newer, with the supported compatibility matrix through Pi 1.2.0, and Node.js 22.19 or newer. The manual records a separate bounded live evaluation on Pi 1.3.0. Repository validation accepts stable Pi `~1.2.0` development hosts while retaining the `>=0.87.0` dependency floor. Main CI and release validation use the exact lockfile resolution; a separate blocking CI matrix runs the adapter suite against Pi `0.87.0` and the latest stable patches in `~0.87.0`, `~0.99.0`, and `~1.2.0`.
 >
 
 Install it globally with Pi:
@@ -59,9 +59,10 @@ pi install -l "$(pwd)/adapters/pi"
 ```
 
 - Settings and pins are adapter-owned files outside SQLite. First load creates neither: `nmnm.jsonc` is optional and user-authored; `nmnm-pi.json` appears after a pin change.
+- Create in one `retain_memory` call with `{"content":"Use SQLite for storage."}`; omit `id` and unnecessary optional fields. Patch only a returned existing ID using its original scope. Retain schemas describe supported kinds, scope, 0–1 scores, slug syntax, and expiry format; successful retention does not require a follow-up recall.
 - New retains record source `"pi"`; ID patches preserve source when metadata is omitted. Omit retain scope for project or use `scope: "global"`; scope is trimmed and validated before routing and trust checks. Metadata and retrieval score filters have explicit tool schemas. Oversized successful tool results return bounded JSON without changing stored content.
 - Untrusted projects use only global settings, pins, and memory for automatic context. Model-facing project operations are rejected; global tools and explicit user `/memory` project commands remain available.
-- Optional autoretention guides the active model's `retain_memory`; disabled-by-default reinjection rebuilds context every five user prompts.
+- Optional autoretention guides the active model's `retain_memory` with a minimal creation example and safe patch/store reminders within the existing injection budget; disabled-by-default reinjection rebuilds context every five user prompts.
 - Run `/memory` or `/memory browse` for the model-free browser. Left/right switches Status, All, Project, and Global tabs; store tabs have search/source controls, and details open in a native action dialog. `/memory status` shows an on-demand card.
 - List, refresh, pin, unpin, and soft removal also have explicit subcommands. Browser and list support all records or Pi-source records. Adapter removal is soft-only; irreversible purge requires CLI or UI workbench action.
 

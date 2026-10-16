@@ -115,6 +115,10 @@ test('buildMemoryIndex merges enabled autoretention rules and validates their se
 
     const enabled = buildMemoryIndex({ cwd: project, home, agentDir, platform: 'darwin' });
     assert.match(enabled.autoretention, /Use retain_memory only when retaining a memory/);
+    assert.match(enabled.autoretention, /New memory: retain_memory\(\{"content":"Use SQLite for storage\."\}\); omit id/);
+    assert.match(enabled.autoretention, /global.*cross-project/);
+    assert.match(enabled.autoretention, /patch.*original.*store.*scope/i);
+    assert.match(enabled.autoretention, /Do not redirect.*untrusted.*global/i);
     assert.match(enabled.autoretention, /Never automatically retain:\n- Global secret\n- Project secret/);
     assert.match(enabled.autoretention, /Ask the user before retaining:\n- Global preference\n- Project preference/);
     assert.match(enabled.autoretention, /Automatically retain when applicable:\n- Global durable fact\n- Shared fact\n- Project durable fact/);
@@ -151,13 +155,20 @@ test('buildMemoryIndex bounds autoretention guidance and index content together'
     mkdirSync(agentDir, { recursive: true });
     runMemory({ cwd: project, store: 'project', operation: 'retain', input: { content: 'Bounded index memory' } });
     writeFileSync(settingsPath({ cwd: project, agentDir, store: 'project' }), JSON.stringify({
-      injection_budget: 300,
       autoretention: { enabled: true, always_persist: ['Keep project decisions.'] },
     }));
 
-    const index = buildMemoryIndex({ cwd: project, home, agentDir, platform: 'darwin' });
-    const injected = [index.total ? index.content : undefined, index.autoretention].filter(Boolean).join('\n\n');
-
+    const options = { cwd: project, home, agentDir, platform: 'darwin' };
+    const full = buildMemoryIndex(options);
+    const guidanceBudget = full.autoretention.length;
+    const exact = buildMemoryIndex({ ...options, budget: guidanceBudget });
+    assert.equal(exact.autoretention, full.autoretention);
+    assert.equal(exact.total, 0);
+    assert.equal(exact.content, '');
+    assert.throws(() => buildMemoryIndex({ ...options, budget: guidanceBudget - 1 }), /guidance exceeds the injection budget/);
+    const index = buildMemoryIndex({ ...options, budget: guidanceBudget + 150 });
+    const injected = [index.autoretention, index.total ? index.content : undefined].filter(Boolean).join('\n\n');
+    assert.equal(index.total, 1);
     assert.ok(injected.length <= index.budget);
   } finally {
     rmSync(project, { recursive: true, force: true });

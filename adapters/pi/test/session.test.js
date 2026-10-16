@@ -245,7 +245,7 @@ test('memory status reports the full next-injection character count without expo
     const ctx = trustedContext(project, { notify: (message) => notices.push(message) });
     const expectedPayload = [
       `Nanomneme memory index:\n- [project] ${retained.id} Status-only secret memory content\n`,
-      '## Nanomneme autoretention\nAutoretention is enabled. Use retain_memory only when retaining a memory. Never automatically retain rules take precedence over all other rules.\nAsk the user before retaining:\n- Ask before retaining status details',
+      '## Nanomneme autoretention\nAutoretention is enabled. Use retain_memory only when retaining a memory. Never automatically retain rules take precedence over all other rules.\nNew memory: retain_memory({"content":"Use SQLite for storage."}); omit id and unnecessary optional fields. Scope defaults to project; use global only for cross-project memories. To patch, use a known ID and its original store as scope. Do not redirect untrusted project memories to global.\nAsk the user before retaining:\n- Ask before retaining status details',
     ].join('\n\n');
 
     await handlers.get('session_start')({}, ctx);

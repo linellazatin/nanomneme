@@ -28,7 +28,7 @@
 </div>
 
 >
-> ### v0.8.4 - Pi memory contract patch (prepared, not published)
+> ### v0.8.4 - Pi memory contract patch
 > - Pi adapter `0.4.5` adds self-describing retain schemas, minimal-call guidance, and explicit create/patch routing. Core storage behavior is unchanged.
 > ### v0.8.3 - OpenCode V2 adapter port + bugfixes
 > - OpenCode adapter `0.3.0` adds V2 tools, transient session context, and server-routed terminal management while retaining tested V1 1.19.0 support. V2 baseline: 2.0.29. Independent installed-package checks pass; publication remains separate.

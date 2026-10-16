@@ -9,7 +9,7 @@ function json(path) {
   return JSON.parse(readFileSync(path, 'utf8'));
 }
 
-test('release metadata aligns the 0.8.3 OpenCode port and every consumer', () => {
+test('release metadata aligns the 0.8.4 Pi memory contract patch and every consumer', () => {
   const root = json(new URL('../package.json', import.meta.url));
   const lock = json(new URL('../package-lock.json', import.meta.url));
   const pi = json(new URL('../adapters/pi/package.json', import.meta.url));
@@ -19,7 +19,7 @@ test('release metadata aligns the 0.8.3 OpenCode port and every consumer', () =>
   const claude = json(new URL('../adapters/claude/package.json', import.meta.url));
   const codex = json(new URL('../adapters/codex/package.json', import.meta.url));
   const opencode = json(new URL('../adapters/opencode/package.json', import.meta.url));
-  assert.equal(root.version, '0.8.3');
+  assert.equal(root.version, '0.8.4');
   assert.equal(lock.version, root.version);
   assert.equal(lock.packages['adapters/codex'].name, '@openlines/nmnm-codex');
   assert.equal(lock.packages['node_modules/@openlines/nmnm-codex'].resolved, 'adapters/codex');
@@ -36,7 +36,7 @@ test('release metadata aligns the 0.8.3 OpenCode port and every consumer', () =>
   assert.equal(ui.exports, './src/launcher.js');
   assert.equal(ui.engines.node, root.engines.node);
   assert.equal(lock.packages['node_modules/@openlines/nmnm-ui'].resolved, 'packages/nmnm-ui');
-  assert.equal(pi.version, '0.4.4');
+  assert.equal(pi.version, '0.4.5');
   assert.equal(claude.name, '@openlines/nmnm-claude');
   assert.equal(claude.version, '0.2.2');
   assert.equal(claude.dependencies['@modelcontextprotocol/sdk'], '^1.31.0');

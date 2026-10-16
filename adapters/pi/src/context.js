@@ -180,6 +180,7 @@ function autoretentionContent(project, global) {
   return [
     '## Nanomneme autoretention',
     'Autoretention is enabled. Use retain_memory only when retaining a memory. Never automatically retain rules take precedence over all other rules.',
+    'New memory: retain_memory({"content":"Use SQLite for storage."}); omit id and unnecessary optional fields. Scope defaults to project; use global only for cross-project memories. To patch, use a known ID and its original store as scope. Do not redirect untrusted project memories to global.',
     ...sections.flatMap(([heading, values]) => [heading, ...values.map((value) => `- ${value}`)]),
   ].join('\n');
 }

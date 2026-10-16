@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.8.4 - Pi adapter memory contracts strengthened
+
+Prepared for publication; no publishing is performed by checkout updates.
+
+### Updated components
+
+| Component | Version |
+| --- | --- |
+| Repository | 0.8.4 |
+| `@openlines/nmnm-pi` | 0.4.5 |
+
+### Changed
+
+- Enabled Pi autoretention guidance includes minimal creation and original-store patch instructions. Additional text shares the existing injection budget; defaults and policy precedence are unchanged.
+
+### Fixed
+
+- Pi adapter retain tool schemas now expose supported kinds/scopes, score bounds, slug and timestamp formats, and create-versus-patch semantics before execution, without changing core storage behavior.
+- Documentation distinguishes host-schema rejection before adapter logging from observed runtime failures and clarifies canonical model inputs, guidance budget cost, and prepared versus published package versions.
+
+### Validation
+
+- Five fresh synthetic Pi 1.3.0 sessions with `amazon-bedrock/global.openai.gpt-6-luna` each succeeded on the first retain call, with no retries or post-write reads. The global patch used one pre-write recall. This single-model sample does not establish universal reliability or semantic categorization.
+
 ## 0.8.3 - OpenCode V2 adapter port
 
 ### Updated components

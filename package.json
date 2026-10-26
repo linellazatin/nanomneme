@@ -38,6 +38,14 @@
     "external:update": "node scripts/external-logslines.js update",
     "test": "node scripts/build-logger.js --check && node --test scripts/*.test.js shared/logger/test/*.test.js packages/*/test/*.test.js adapters/*/test/*.test.js test/*.test.js"
   },
+  "overrides": {
+    "@opencode-ai/plugin": {
+      "zod": "4.6.7",
+      "effect": {
+        "toml": "5.0.1"
+      }
+    }
+  },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": ">=0.87.0",
     "ajv": "8.20.0",

@@ -40,11 +40,11 @@ test('release metadata aligns the 0.8.5 core and CLI safeguard patches and every
   assert.equal(lock.packages['node_modules/@openlines/nmnm-ui'].resolved, 'packages/nmnm-ui');
   assert.equal(pi.version, '0.4.6');
   assert.equal(claude.name, '@openlines/nmnm-claude');
-  assert.equal(claude.version, '0.2.2');
-  assert.equal(claude.dependencies['@modelcontextprotocol/sdk'], '^1.31.0');
+  assert.equal(claude.version, '0.2.3');
+  assert.equal(claude.dependencies['@modelcontextprotocol/sdk'], '^1.32.2');
   assert.equal(lock.packages['adapters/claude'].dependencies['@modelcontextprotocol/sdk'], claude.dependencies['@modelcontextprotocol/sdk']);
   const [sdkMajor, sdkMinor] = lock.packages['node_modules/@modelcontextprotocol/sdk'].version.split('.').map(Number);
-  assert.ok(sdkMajor > 1 || (sdkMajor === 1 && sdkMinor >= 31), 'MCP SDK must include the OAuth advisory fix');
+  assert.ok(sdkMajor > 1 || (sdkMajor === 1 && sdkMinor >= 32), 'MCP SDK must include the current advisory fixes');
   assert.equal(codex.version, '0.2.3');
   assert.equal(opencode.version, '0.3.1');
   for (const [path, pkg] of [['', root], ['packages/nmnm-core', core], ['packages/nmnm-cli', cli], ['packages/nmnm-ui', ui],
@@ -62,8 +62,8 @@ test('release metadata aligns the 0.8.5 core and CLI safeguard patches and every
   for (const path of ['packages/nmnm-cli', 'packages/nmnm-ui', 'adapters/pi', 'adapters/codex', 'adapters/opencode']) {
     assert.equal(lock.packages[path].dependencies['@openlines/nmnm-core'], json(new URL(`../${path}/package.json`, import.meta.url)).dependencies['@openlines/nmnm-core'], `${path} lockfile core range`);
   }
-  assert.equal(claude.dependencies['@openlines/nmnm-core'], '^0.3.0');
-  assert.equal(lock.packages['adapters/claude'].dependencies['@openlines/nmnm-core'], '^0.3.0');
+  assert.equal(claude.dependencies['@openlines/nmnm-core'], undefined);
+  assert.equal(lock.packages['adapters/claude'].dependencies['@openlines/nmnm-core'], undefined);
   assert.equal(json(new URL('../adapters/claude/.claude-plugin/plugin.json', import.meta.url)).version, claude.version);
   assert.equal(json(new URL('../adapters/codex/.codex-plugin/plugin.json', import.meta.url)).version, codex.version);
   assert.equal(root.engines.node, '>=22.19.0');

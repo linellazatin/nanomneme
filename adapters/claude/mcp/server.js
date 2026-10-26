@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Local stdio MCP server: exposes the nanomneme 4Rs as native, observable tools that
-// import nmnm-core directly (no daemon, no network, no CLI-stdout parsing). Claude Code
+// use the bundled core runtime (no daemon, no network, no CLI-stdout parsing). Claude Code
 // spawns this as a child process and sets NMNM_PROJECT_DIR to the project root.
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';

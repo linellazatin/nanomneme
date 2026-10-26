@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { open } from '@openlines/nmnm-core';
+import { open } from '../src/core-runtime.generated.js';
 import { parseArgs, runCli } from '../src/cli.js';
 import { pinsPath, settingsPath, writePins } from '../src/context.js';
 import { databasePath, runMemory } from '../src/store.js';

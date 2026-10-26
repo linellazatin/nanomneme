@@ -128,7 +128,7 @@ export async function runMaintenance(args, dependencies = {}) {
       await validate();
       report('validated');
     } catch (error) {
-      if (updated || error.snapshotUpdated) report('Update files retained for review: external/logslines/, shared/fixtures/logslines-release.json, packages/nmnm-core/src/logging-runtime.generated.js, packages/nmnm-ui/src/ui-logging-runtime.generated.js. The coordinated update failed; these paths may be partially updated.');
+      if (updated || error.snapshotUpdated) report('Update files retained for review: external/logslines/, shared/fixtures/logslines-release.json, packages/nmnm-core/src/logging-runtime.generated.js, packages/nmnm-ui/src/ui-logging-runtime.generated.js, adapters/claude/src/core-runtime.generated.js, adapters/claude/src/logging-runtime.generated.js. The coordinated update failed; these paths may be partially updated.');
       throw error;
     }
     return;

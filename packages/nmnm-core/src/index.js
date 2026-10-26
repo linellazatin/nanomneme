@@ -600,11 +600,11 @@ export function open(path, { create = true, readOnly = false } = {}) {
           : [];
         for (const memory of memories) {
           try {
-            memoryId(memory.id);
-            text(memory.content, 'content');
-            kind(memory.kind);
-            scope(memory.scope);
-            slug(memory.namespace, 'namespace');
+            if (memoryId(memory.id) !== memory.id
+              || text(memory.content, 'content') !== memory.content
+              || kind(memory.kind) !== memory.kind
+              || scope(memory.scope) !== memory.scope
+              || slug(memory.namespace, 'namespace') !== memory.namespace) throw new TypeError('memory fields must already be canonical');
             score(memory.importance, 'importance');
             score(memory.confidence, 'confidence');
             const createdAt = date(memory.created_at, 'created_at');
@@ -619,7 +619,9 @@ export function open(path, { create = true, readOnly = false } = {}) {
         }
         if (hasColumns('memory_tags')) {
           for (const tag of db.prepare('SELECT memory_id, tag FROM memory_tags ORDER BY memory_id, tag').all()) {
-            try { memoryId(tag.memory_id); slug(tag.tag, 'tag'); } catch { report.add('tag_field', tag.memory_id); }
+            try {
+              if (memoryId(tag.memory_id) !== tag.memory_id || slug(tag.tag, 'tag') !== tag.tag) throw new TypeError('tag fields must already be canonical');
+            } catch { report.add('tag_field', tag.memory_id); }
           }
         }
         if (validFts && hasColumns('memories_fts') && hasColumns('memories')) {

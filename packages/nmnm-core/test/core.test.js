@@ -550,6 +550,29 @@ test('verify reports field, tag, and FTS defects without repairing them', async 
   assert.equal(db.prepare('SELECT content FROM memories_fts WHERE rowid = ?').get(removedRow.rowid).content, 'Soft removed FTS content');
 });
 
+test('verify rejects stored fields and tags that require canonical normalization', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-verify-canonical-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  const memory = store.retain({ content: 'Canonical text' });
+  const raw = new DatabaseSync(path);
+  t.after(() => { raw.close(); store.close(); rmSync(directory, { recursive: true, force: true }); });
+  for (const [field, value] of [['id', memory.id], ['content', memory.content], ['kind', memory.kind], ['scope', memory.scope], ['namespace', memory.namespace]]) {
+    raw.prepare(`UPDATE memories SET ${field} = ? WHERE id = ?`).run(` ${value} `, memory.id);
+    if (field === 'content') store.rebuildFts();
+    const before = readFileSync(path);
+    assert.deepEqual(store.verify().issues, [{ code: 'memory_field', count: 1, ids: [field === 'id' ? ` ${value} ` : memory.id] }], field);
+    assert.deepEqual(readFileSync(path), before, 'verification must not repair records');
+    raw.prepare(`UPDATE memories SET ${field} = ?`).run(value);
+    if (field === 'content') store.rebuildFts();
+  }
+  raw.prepare('INSERT INTO memory_tags(memory_id, tag) VALUES (?, ?)').run(memory.id, ' padded-tag ');
+  assert.deepEqual(store.verify().issues, [{ code: 'tag_field', count: 1, ids: [memory.id] }]);
+  assert.equal(raw.prepare('SELECT tag FROM memory_tags').get().tag, ' padded-tag ');
+  raw.prepare('DELETE FROM memory_tags').run();
+  assert.equal(store.verify().ok, true);
+});
+
 test('verify requires an FTS5 virtual table rather than a same-named table', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-verify-schema-'));
   const path = join(directory, 'memory.db');

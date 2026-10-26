@@ -3,6 +3,7 @@ import { open } from '@openlines/nmnm-core';
 import { getCLILogger } from '../src/logslines.js';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
+import { isUtf8 } from 'node:buffer';
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, platform } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -228,7 +229,9 @@ function exportJsonl(records) {
 }
 
 function importJsonl(path) {
-  const lines = readFileSync(path, 'utf8').split(/\r?\n/);
+  const bytes = readFileSync(path);
+  if (!isUtf8(bytes)) throw new TypeError('import file must contain valid UTF-8');
+  const lines = bytes.toString('utf8').split(/\r?\n/);
   if (lines.at(-1) === '') lines.pop();
   if (!lines.length) throw new TypeError('import file is empty');
   let header;

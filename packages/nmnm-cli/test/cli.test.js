@@ -56,6 +56,38 @@ test('CLI rejects malformed Unicode import before creating the destination', asy
   await assert.rejects(access(target));
 });
 
+test('CLI rejects invalid UTF-8 before creating or modifying an import destination', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-import-utf8-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const existing = join(directory, 'existing.db');
+  const missing = join(directory, 'missing', 'memory.db');
+  const source = open(':memory:');
+  const memory = source.retain({ content: 'UTF8MARKER' });
+  source.close();
+  const original = run('retain', 'Keep existing data', '--db', existing, '--scope', 'project', '--json');
+  assert.equal(original.status, 0, original.stderr);
+  const before = await readFile(existing);
+  const file = join(directory, 'memory.jsonl');
+  const prefix = JSON.stringify({ _format: 'nanomneme', _version: 1 }) + '\n';
+  for (const invalid of [[0xff], [0xc0, 0xaf], [0xed, 0xa0, 0x80], [0xe2, 0x82]]) {
+    const line = Buffer.from(prefix + JSON.stringify(memory) + '\n');
+    const index = line.indexOf('UTF8MARKER');
+    await writeFile(file, Buffer.concat([line.subarray(0, index), Buffer.from(invalid), line.subarray(index + 10)]));
+    for (const target of [missing, existing]) {
+      const result = run('import', file, '--db', target);
+      assert.equal(result.status, 1, JSON.stringify(invalid));
+      assert.match(result.stderr, /UTF-8/);
+    }
+    await assert.rejects(access(join(directory, 'missing')));
+    assert.deepEqual(await readFile(existing), before);
+  }
+  const content = 'Valid � 東京 😀';
+  await writeFile(file, prefix + JSON.stringify({ ...memory, content }) + '\n');
+  const result = run('import', file, '--db', missing);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(JSON.parse(run('recall', memory.id, '--db', missing, '--json').stdout).content, content);
+});
+
 test('CLI rejects source sidecars and aliases without replacing WAL data', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-export-sidecars-'));
   const source = join(directory, 'memory.db');

@@ -164,6 +164,25 @@ test('CLI verify reports unsafe permissions without modifying the database', { s
   assert.deepEqual(await readFile(source), before);
 });
 
+test('CLI verify reports unsafe real sidecars through a database symlink', { skip: process.platform === 'win32' }, async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-cli-alias-permissions-'));
+  const db = join(directory, 'memory.db');
+  const store = open(db);
+  const raw = new DatabaseSync(db);
+  t.after(async () => { raw.close(); store.close(); await rm(directory, { recursive: true, force: true }); });
+  raw.exec('PRAGMA journal_mode = WAL');
+  store.retain({ content: 'Private WAL content' });
+  const alias = join(directory, 'alias.db');
+  await symlink(db, alias);
+  await chmod(db + '-wal', 0o644);
+  const before = await readFile(db + '-wal');
+  const result = run('verify', '--db', alias, '--json');
+  assert.equal(result.status, 1, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout).issues, [{ code: 'file_permissions', count: 1, ids: ['wal'] }]);
+  assert.deepEqual(await readFile(db + '-wal'), before);
+  assert.equal((await stat(db + '-wal')).mode & 0o777, 0o644);
+});
+
 test('CLI reports installed cli, core, and ui versions without opening a database', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-version-'));
   const long = runIn(directory, '--version');

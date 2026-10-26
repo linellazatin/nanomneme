@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { closeSync, existsSync, linkSync, mkdirSync, openSync, statSync, unlinkSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
 const DEFAULTS = Object.freeze({ kind: 'note', scope: 'project', namespace: 'default', importance: 0.5, confidence: 1 });
@@ -355,7 +355,7 @@ export function open(path, { create = true, readOnly = false } = {}) {
   text(path, 'path');
   if (typeof create !== 'boolean') throw new TypeError('create must be a boolean');
   if (typeof readOnly !== 'boolean') throw new TypeError('readOnly must be a boolean');
-  const permissionsPath = path === ':memory:' ? null : resolve(path);
+  let permissionsPath = null;
   const fresh = !existsSync(path);
   if (fresh && (!create || readOnly)) throw new Error(`database does not exist: ${path}`);
   if (fresh && path !== ':memory:') {
@@ -363,6 +363,7 @@ export function open(path, { create = true, readOnly = false } = {}) {
   }
   const db = new DatabaseSync(path, { readOnly });
   try {
+    if (path !== ':memory:') permissionsPath = db.prepare('PRAGMA database_list').all().find(({ name }) => name === 'main').file;
     db.exec('PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
     if (!readOnly) {
       db.exec('PRAGMA secure_delete = ON');

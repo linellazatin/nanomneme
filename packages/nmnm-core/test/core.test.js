@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { access, mkdtemp } from 'node:fs/promises';
-import { chmodSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -454,6 +454,31 @@ test('new database rollback journals and WAL files remain private', { skip: proc
     chmodSync(`${path}-wal`, 0o644);
     assert.deepEqual(store.verify().issues, [{ code: 'file_permissions', count: 1, ids: ['wal'] }]);
   } finally { raw?.close(); store?.close(); process.umask(previous); }
+});
+
+test('verify checks real WAL and shared-memory permissions through database aliases', { skip: process.platform === 'win32' }, (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'nmnm-alias-permissions-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  const raw = new DatabaseSync(path);
+  t.after(() => { raw.close(); store.close(); rmSync(directory, { recursive: true, force: true }); });
+  raw.exec('PRAGMA journal_mode = WAL');
+  store.retain({ content: 'Private WAL content' });
+  const fileAlias = join(directory, 'alias.db');
+  const directoryAlias = join(directory, 'directory-alias');
+  symlinkSync(path, fileAlias);
+  symlinkSync(directory, directoryAlias, 'dir');
+  for (const suffix of ['-wal', '-shm']) chmodSync(path + suffix, 0o644);
+  const expected = [{ code: 'file_permissions', count: 2, ids: ['shm', 'wal'] }];
+  assert.deepEqual(store.verify().issues, expected);
+  const before = readFileSync(path + '-wal');
+  for (const alias of [fileAlias, join(directoryAlias, 'memory.db')]) {
+    const reader = open(alias, { readOnly: true });
+    try { assert.deepEqual(reader.verify().issues, expected); }
+    finally { reader.close(); }
+  }
+  assert.deepEqual(readFileSync(path + '-wal'), before);
+  for (const suffix of ['-wal', '-shm']) assert.equal(statSync(path + suffix).mode & 0o777, 0o644);
 });
 
 test('open refuses a missing database when creation is disabled', async () => {

@@ -148,8 +148,21 @@ function retrieveInput(positionals, options) {
   return input;
 }
 
+function unicodeEscape(character) {
+  return `\\u${character.charCodeAt(0).toString(16).padStart(4, '0')}`;
+}
+
+function terminalText(value) {
+  return String(value).replace(/[\u0000-\u001f\u007f-\u009f]/g, unicodeEscape);
+}
+
+function jsonOutput(value, space) {
+  return JSON.stringify(value, null, space).replace(/[\u007f-\u009f]/g, unicodeEscape);
+}
+
 function readable(value) {
   if (value == null) return 'Not found\n';
+  value = Object.fromEntries(Object.entries(value).map(([key, item]) => [key, typeof item === 'string' ? terminalText(item) : item]));
   if (value.imported != null) return `Imported: ${value.imported}\n`;
   if (value.exported != null) return `Exported: ${value.exported}\n`;
   if (value.mode === 'rebuild-fts') {
@@ -158,11 +171,11 @@ function readable(value) {
   }
   if (typeof value.ok === 'boolean' && Array.isArray(value.issues)) {
     if (value.ok) return `OK\nSchema version: ${value.schema_version}\n`;
-    const issues = value.issues.map((issue) => `- ${issue.code}: ${issue.count}${issue.ids.length ? ` (${issue.ids.join(', ')})` : ''}`).join('\n');
+    const issues = value.issues.map((issue) => `- ${terminalText(issue.code)}: ${issue.count}${issue.ids.length ? ` (${issue.ids.map(terminalText).join(', ')})` : ''}`).join('\n');
     return `Issues: ${value.issues.length}\nSchema version: ${value.schema_version}\n${issues}\n`;
   }
   if (Array.isArray(value.items)) {
-    const rows = value.items.map((memory) => `${memory.store}  ${memory.id}  ${memory.kind}  ${memory.content}`).join('\n');
+    const rows = value.items.map((memory) => [memory.store, memory.id, memory.kind, memory.content].map(terminalText).join('  ')).join('\n');
     return `Total: ${value.total}${rows ? `\n${rows}` : ''}\n`;
   }
   if (value.purged_at) return `Purged: ${value.id}\nMode: ${value.mode}\nPurged at: ${value.purged_at}\n`;
@@ -175,11 +188,11 @@ function readable(value) {
     `Namespace: ${value.namespace}`,
     `Importance: ${value.importance}`,
     `Confidence: ${value.confidence}`,
-    `Tags: ${value.tags.join(', ') || 'none'}`,
+    `Tags: ${value.tags.map(terminalText).join(', ') || 'none'}`,
     `Expires: ${value.expires_at ?? 'never'}`,
     `Created: ${value.created_at}`,
     `Updated: ${value.updated_at}`,
-    `Metadata: ${JSON.stringify(value.metadata)}`,
+    `Metadata: ${jsonOutput(value.metadata)}`,
   ].join('\n') + '\n';
 }
 
@@ -225,7 +238,7 @@ function writeFileAtomic(path, contents) {
 }
 
 function exportJsonl(records) {
-  return [JSON.stringify({ _format: 'nanomneme', _version: 1 }), ...records.map((record) => JSON.stringify(record))].join('\n') + '\n';
+  return [jsonOutput({ _format: 'nanomneme', _version: 1 }), ...records.map((record) => jsonOutput(record))].join('\n') + '\n';
 }
 
 function importJsonl(path) {
@@ -349,7 +362,7 @@ export async function executeCli(args = process.argv.slice(2), { stdout = proces
     if (output.failed) observation?.setStatus('failed');
     else if (output.result === null) observation?.setStatus('not_found');
     else if (output.result?.total === 0) observation?.setStatus('empty');
-    const text = output.version ? Object.entries(output.versions).map(([name, version]) => `${name} ${version}\n`).join('') : output.raw ?? (output.help ? `${HELP}\n` : output.json ? `${JSON.stringify(output.result, null, 2)}\n` : readable(output.result));
+    const text = output.version ? Object.entries(output.versions).map(([name, version]) => `${name} ${version}\n`).join('') : output.raw ?? (output.help ? `${HELP}\n` : output.json ? `${jsonOutput(output.result, 2)}\n` : readable(output.result));
     await new Promise((resolve, reject) => {
       const failed = error => reject(error);
       stdout.once('error', failed);
@@ -374,7 +387,7 @@ if (process.argv[1] && existsSync(process.argv[1]) && realpathSync(process.argv[
       if (output.failed) process.exitCode = 1;
     }
   } catch (error) {
-    process.stderr.write(`nmnm: ${error.message}\n`);
+    process.stderr.write(`nmnm: ${terminalText(error.message)}\n`);
     process.exitCode = 1;
   }
 }

@@ -407,6 +407,37 @@ function runIn(directory, ...args) {
   });
 }
 
+test('CLI escapes terminal controls while preserving stored and transferred content', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-terminal-output-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const db = join(directory, 'memory.db');
+  const content = 'Text 東京\x1b[2J\x1b[H\x07\x08\r\n\t\x7f\u009b31m\u009dtitle';
+  const retained = run('retain', content, '--db', db, '--scope', 'project');
+  const store = open(db, { readOnly: true });
+  const [memory] = store.export();
+  store.close();
+  assert.equal(memory.content, content);
+  for (const result of [retained, run('recall', memory.id, '--db', db), run('retrieve', '--db', db)]) {
+    assert.equal(result.status, 0, result.stderr);
+    assert.doesNotMatch(result.stdout, /[\x00-\x09\x0b-\x1f\x7f-\x9f]/);
+    assert.match(result.stdout, /Text 東京\\u001b\[2J/);
+    assert.match(result.stdout, /\\u000d\\u000a\\u0009/);
+  }
+  const json = run('recall', memory.id, '--db', db, '--json');
+  assert.equal(JSON.parse(json.stdout).content, content);
+  assert.doesNotMatch(json.stdout, /[\x00-\x09\x0b-\x1f\x7f-\x9f]/);
+  const exported = run('export', '--db', db);
+  assert.equal(JSON.parse(exported.stdout.trimEnd().split('\n')[1]).content, content);
+  assert.doesNotMatch(exported.stdout, /[\x00-\x09\x0b-\x1f\x7f-\x9f]/);
+  const file = join(directory, 'memory.jsonl');
+  assert.equal(run('export', '--db', db, '--out', file).status, 0);
+  assert.equal(await readFile(file, 'utf8'), exported.stdout);
+  const error = run('retrieve', '--bad\x1b[2J\noption', '--db', db);
+  assert.equal(error.status, 1);
+  assert.doesNotMatch(error.stderr, /[\x00-\x09\x0b-\x1f\x7f-\x9f]/);
+  assert.match(error.stderr, /\\u001b\[2J\\u000aoption/);
+});
+
 test('CLI performs all 4Rs with JSON output', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-cli-'));
   const db = join(directory, 'memory.db');

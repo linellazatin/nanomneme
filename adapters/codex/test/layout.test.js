@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import semver from 'semver';
 import { existsSync, readFileSync } from 'node:fs';
 
 function json(path) {
@@ -15,7 +16,7 @@ test('Codex package uses the legacy compatibility manifest for hook registration
 
   assert.equal(pkg.name, '@openlines/nmnm-codex');
   assert.equal(pkg.version, compatibility.version);
-  assert.equal(pkg.dependencies['@openlines/nmnm-core'], json(new URL('../../../packages/nmnm-core/package.json', import.meta.url)).version);
+  assert(semver.satisfies(json(new URL('../../../packages/nmnm-core/package.json', import.meta.url)).version, pkg.dependencies['@openlines/nmnm-core']));
   assert.deepEqual(pkg.bundleDependencies, ['@openlines/nmnm-core']);
   assert.deepEqual(rootManifest, { name: 'nmnm-codex' });
   assert.equal(compatibility.name, 'nmnm-codex');

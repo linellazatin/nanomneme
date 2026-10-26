@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import semver from 'semver';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
@@ -9,7 +10,7 @@ function json(path) {
   return JSON.parse(readFileSync(path, 'utf8'));
 }
 
-test('release metadata aligns the 0.8.4 Pi memory contract patch and every consumer', () => {
+test('release metadata aligns the 0.8.5 core and CLI safeguard patches and every consumer', () => {
   const root = json(new URL('../package.json', import.meta.url));
   const lock = json(new URL('../package-lock.json', import.meta.url));
   const pi = json(new URL('../adapters/pi/package.json', import.meta.url));
@@ -19,45 +20,50 @@ test('release metadata aligns the 0.8.4 Pi memory contract patch and every consu
   const claude = json(new URL('../adapters/claude/package.json', import.meta.url));
   const codex = json(new URL('../adapters/codex/package.json', import.meta.url));
   const opencode = json(new URL('../adapters/opencode/package.json', import.meta.url));
-  assert.equal(root.version, '0.8.4');
+  assert.equal(root.version, '0.8.5');
   assert.equal(lock.version, root.version);
   assert.equal(lock.packages['adapters/codex'].name, '@openlines/nmnm-codex');
   assert.equal(lock.packages['node_modules/@openlines/nmnm-codex'].resolved, 'adapters/codex');
-  assert.equal(core.version, '0.3.1');
+  assert.equal(core.version, '0.3.2');
   assert.equal(core.exports['./logging'], './src/logslines.js');
   assert(core.files.includes('src/logslines.js'));
   assert(!core.files.includes('src/logging.js'));
-  assert.equal(cli.version, '0.4.1');
+  assert.equal(cli.version, '0.4.2');
   assert.equal(ui.name, '@openlines/nmnm-ui');
-  assert.equal(ui.version, '0.1.1');
+  assert.equal(ui.version, '0.1.2');
   assert.notEqual(ui.private, true);
-  assert.equal(cli.dependencies['@openlines/nmnm-ui'], ui.version);
+  assert(semver.satisfies(ui.version, cli.dependencies['@openlines/nmnm-ui']));
+  assert(semver.subset(cli.dependencies['@openlines/nmnm-ui'], '^0.1.2'));
   assert.equal(cli.engines.node, ui.engines.node);
   assert.equal(ui.exports, './src/launcher.js');
   assert.equal(ui.engines.node, root.engines.node);
   assert.equal(lock.packages['node_modules/@openlines/nmnm-ui'].resolved, 'packages/nmnm-ui');
-  assert.equal(pi.version, '0.4.5');
+  assert.equal(pi.version, '0.4.6');
   assert.equal(claude.name, '@openlines/nmnm-claude');
   assert.equal(claude.version, '0.2.2');
   assert.equal(claude.dependencies['@modelcontextprotocol/sdk'], '^1.31.0');
   assert.equal(lock.packages['adapters/claude'].dependencies['@modelcontextprotocol/sdk'], claude.dependencies['@modelcontextprotocol/sdk']);
   const [sdkMajor, sdkMinor] = lock.packages['node_modules/@modelcontextprotocol/sdk'].version.split('.').map(Number);
   assert.ok(sdkMajor > 1 || (sdkMajor === 1 && sdkMinor >= 31), 'MCP SDK must include the OAuth advisory fix');
-  assert.equal(codex.version, '0.2.2');
-  assert.equal(opencode.version, '0.3.0');
+  assert.equal(codex.version, '0.2.3');
+  assert.equal(opencode.version, '0.3.1');
   for (const [path, pkg] of [['', root], ['packages/nmnm-core', core], ['packages/nmnm-cli', cli], ['packages/nmnm-ui', ui],
     ['adapters/pi', pi], ['adapters/claude', claude], ['adapters/codex', codex], ['adapters/opencode', opencode]]) {
     assert.equal(lock.packages[path].version, pkg.version, `${path || 'root'} lockfile version`);
     assert.deepEqual(lock.packages[path].engines, pkg.engines, `${path || 'root'} lockfile engines`);
+    assert.deepEqual(lock.packages[path].dependencies, pkg.dependencies, `${path || 'root'} lockfile dependencies`);
   }
   for (const pkg of [cli, ui, pi, codex, opencode]) {
-    assert.equal(pkg.dependencies['@openlines/nmnm-core'], core.version, `${pkg.name} must pin the current core`);
+    const range = pkg.dependencies['@openlines/nmnm-core'];
+    assert(range.startsWith('^'), `${pkg.name} must allow compatible core patches`);
+    assert(semver.satisfies(core.version, range), `${pkg.name} must accept checkout core`);
+    assert(semver.subset(range, '^0.3.2'), `${pkg.name} must require patched core and exclude the next minor`);
   }
   for (const path of ['packages/nmnm-cli', 'packages/nmnm-ui', 'adapters/pi', 'adapters/codex', 'adapters/opencode']) {
-    assert.equal(lock.packages[path].dependencies['@openlines/nmnm-core'], core.version, `${path} lockfile core pin`);
+    assert.equal(lock.packages[path].dependencies['@openlines/nmnm-core'], json(new URL(`../${path}/package.json`, import.meta.url)).dependencies['@openlines/nmnm-core'], `${path} lockfile core range`);
   }
   assert.equal(claude.dependencies['@openlines/nmnm-core'], '^0.3.0');
-  assert.equal(lock.packages['adapters/claude'].dependencies['@openlines/nmnm-core'], claude.dependencies['@openlines/nmnm-core']);
+  assert.equal(lock.packages['adapters/claude'].dependencies['@openlines/nmnm-core'], '^0.3.0');
   assert.equal(json(new URL('../adapters/claude/.claude-plugin/plugin.json', import.meta.url)).version, claude.version);
   assert.equal(json(new URL('../adapters/codex/.codex-plugin/plugin.json', import.meta.url)).version, codex.version);
   assert.equal(root.engines.node, '>=22.19.0');

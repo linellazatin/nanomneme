@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
+import semver from 'semver';
 import { execFileSync } from 'node:child_process';
 import { cpSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -35,7 +36,7 @@ export function prepareCodexDependencies({ root = defaultRoot, preparedModules, 
   const core = join(root, 'packages/nmnm-core');
   const corePkg = JSON.parse(readFileSync(join(core, 'package.json'), 'utf8'));
   assert.equal(manifest.version, pkg.version, 'Codex plugin manifest version differs from package version');
-  assert.equal(pkg.dependencies['@openlines/nmnm-core'], corePkg.version, 'Codex core dependency differs from checkout version');
+  assert(semver.satisfies(corePkg.version, pkg.dependencies['@openlines/nmnm-core']), 'Codex core dependency does not accept checkout version');
   let specs;
   if (preparedModules) {
     specs = managedDependencies.map(path => ({ path, source: join(preparedModules, path) }));

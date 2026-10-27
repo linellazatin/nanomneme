@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Package and adapter guides
+    url: https://github.com/linellazatin/nanomneme#readme
+    about: Start with the README and follow the guide for the affected package or adapter.
+  - name: Architecture and shared memory contracts
+    url: https://github.com/linellazatin/nanomneme/blob/main/docs/ARCHITECTURE.md
+    about: Review core, CLI, UI, and adapter responsibilities before proposing a shared behavior change.

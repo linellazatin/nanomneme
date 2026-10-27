@@ -1,0 +1,38 @@
+name: Design discussion
+description: Discuss cross-package contracts, adapter boundaries, or memory architecture.
+title: "[Design] "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: "Use this for decisions involving shared memory contracts, schema/migrations, package ownership, adapter parity, storage/privacy boundaries, or new host integrations. A question and short context are enough; a finished design or test plan is not required. Use synthetic examples and exclude private memories, credentials, and sensitive logs."
+  - type: textarea
+    id: decision
+    attributes:
+      label: Decision or question
+      description: What should maintainers help decide?
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context and affected components
+      description: Name the packages/adapters or new integration involved and explain the motivation. Distinguish observed behavior, source-derived reasoning, proposals, and unknowns.
+    validations:
+      required: true
+  - type: textarea
+    id: boundaries
+    attributes:
+      label: Shared contract and boundaries
+      description: Optional. What should core own versus CLI/UI/adapters? Mention store/scope isolation, canonical records, schema/migration or export compatibility, read-only behavior, hook lifecycle, and network or logging effects where relevant. Leave unknowns explicit.
+  - type: textarea
+    id: options
+    attributes:
+      label: Options and tradeoffs
+      description: Optional approaches, non-goals, host limitations, compatibility concerns, or existing workarounds. One idea is enough.
+  - type: textarea
+    id: verification
+    attributes:
+      label: Success criteria and open questions
+      description: Optional synthetic example, expected result, possible checks, or references. Distinguish package/unit checks from native host loading, cache refresh, hook trust, UI behavior, and live provider evidence when relevant.

@@ -1,0 +1,43 @@
+name: Documentation
+description: Report missing, unclear, or incorrect guides, examples, or tool descriptions.
+title: "[Docs] "
+labels:
+  - documentation
+body:
+  - type: markdown
+    attributes:
+      value: "Report one documentation gap. Include the exact package or adapter and documentation revision when known, especially when installation instructions differ between registry packages, checkouts, and plugin caches. Redact private paths, memory content, credentials, and personal settings."
+  - type: input
+    id: location
+    attributes:
+      label: Documentation location
+      description: Link the README/manual section, command help, skill, or tool description. For missing guidance, identify where you expected to find it.
+      placeholder: adapters/codex/README.md#quick-start
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Component and documentation version
+      description: Name the package/adapter, package or host version, and docs tag/revision if known. State unknown when unavailable.
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and supporting context
+      description: Quote the smallest relevant passage and explain what is missing or misleading. For instructions you followed, list commands in order and the actual result; label steps you did not run.
+    validations:
+      required: true
+  - type: textarea
+    id: correction
+    attributes:
+      label: Expected clarification or correction
+      description: Describe what would help, with a source or known-good example if available. A finished rewrite is not required; distinguish verified behavior from suggestions.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Optional related issues, screenshots, reduced output, or affected installation methods and platforms. Do not attach personal databases, logs, or environment dumps.

@@ -30,7 +30,7 @@ try {
 
 The public API provides `open(path)`, the 4Rs, source-filtered retrieval through `retrieve({ source })`, canonical portability records, integrity verification, and FTS repair. See the [Core and CLI Manual](../../docs/CORE_CLI_MANUAL.md) for the API, complete data contract, and task-based guidance. Imports reject unknown fields, values that require normalization, and `updated_at` values earlier than `created_at`. Public reads and exports return only canonical memory fields, even when verification detects unexpected database columns.
 
-Use `open(path, { readOnly: true })` for diagnostics and exports that must not create, migrate, or modify a database.
+Use `open(path, { readOnly: true })` for diagnostics and exports that must not create, migrate, or modify a database. Verification rejects stored fields and tags requiring normalization, reporting `memory_field` or `tag_field` without repairing them.
 
 Text inputs must contain well-formed Unicode. Retain and import reject unpaired surrogates before writing; valid Unicode pairs round-trip unchanged.
 
@@ -45,6 +45,8 @@ Soft removal retains canonical content and tags for restoration/export; expiry h
 Mutations acquire a write transaction before reading their targets or checking existing import IDs. Patches merge supplied fields with the latest committed record, preserving unrelated changes; the last successfully applied patch wins for the same field. Retain results are captured within their transaction, and record, tag, and FTS changes commit or roll back together. Recall, retrieval, export, and verification each use one database snapshot. SQLite lock waiting is bounded by a five-second busy timeout; contention can still fail, and core does not retry operations.
 
 On POSIX systems, new database files request `0600` before SQLite initialization and newly created directories request `0700`; the caller's umask may restrict these further. Existing files and directories keep their permissions. `verify()` reports `file_permissions` for group/other access on the database or existing journal, WAL, and shared-memory files without changing them. Review intentional sharing before manually restricting existing permissions; POSIX mode checks do not audit ACLs or apply on Windows.
+
+Permission verification uses SQLite's effective database filename, including sidecars reached through file or directory symlink aliases; changing the working directory after opening does not change the checked path.
 
 ## Opt-in diagnostics
 

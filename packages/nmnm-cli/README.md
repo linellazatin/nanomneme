@@ -30,19 +30,19 @@ nmnm retain "Prefer concise operator documentation" --tags preference
 nmnm retrieve "operator documentation" --both
 ```
 
-Checkout CLI `0.4.1` installs core `0.3.1` and patched UI `0.1.1` as regular dependencies. These patch versions are prepared for publication, not published by checkout updates; published CLI `0.4.0` still pins UI `0.1.0`. The CLI defaults to `./.nanomneme/memory.db`. Use `--global` for the standard global database or `--db <path>` for a custom database; custom retains also require `--scope project|global`. Scope is trimmed and validated before opening a database; standard selectors reject scope mismatches. See the [Core and CLI Manual](../../docs/CORE_CLI_MANUAL.md) for commands and recovery workflows. `export --out <file>` replaces its destination atomically after the complete JSONL file is written. `verify` and `export` open their source databases read-only; `repair` remains writable.
+The CLI installs core and UI as regular dependencies. The manifest declares compatible ranges; the root lockfile records checkout resolutions. Publication is a separate maintainer action, so installing from the registry and running a checkout can yield different releases. The CLI defaults to `./.nanomneme/memory.db`. Use `--global` for the standard global database or `--db <path>` for a custom database; custom retains also require `--scope project|global`. Scope is trimmed and validated before opening a database; standard selectors reject scope mismatches. See the [Core and CLI Manual](../../docs/CORE_CLI_MANUAL.md) for commands and recovery workflows. `export --out <file>` replaces its destination atomically after the complete JSONL file is written. `verify` and `export` open their source databases read-only; `repair` remains writable.
 
 On POSIX systems, new database files request `0600` and new store directories request `0700`. File exports request `0600` from temporary-file creation, preserving stricter owner permissions when replacing a destination; the caller's umask may restrict these further. Existing database permissions are unchanged, and `verify` reports group/other access as `file_permissions` with exit status `1`. Review intentional sharing before manually restricting permissions. These checks do not audit ACLs or apply on Windows.
 
+CLI import rejects malformed UTF-8 bytes before opening or creating its destination; valid Unicode content is preserved.
+
+Readable fields and stderr escape terminal controls, including embedded newlines and tabs. JSON/JSONL escape DEL and C1 controls while preserving parsed values; stored content is unchanged.
+
+Dependencies use compatible patch ranges recorded in `package.json`. Fresh resolution can select newer compatible patches; existing lockfiles and installations require explicit updates.
+
 ## Installed versions
 
-`nmnm --version` and `nmnm -v` read the installed package versions without opening storage or starting UI:
-
-```text
-cli 0.4.1
-core 0.3.1
-ui 0.1.1
-```
+`nmnm --version` and `nmnm -v` print separate labeled lines for the installed CLI, core, and UI versions without opening storage or starting UI. Use the command's actual output when reporting an issue.
 
 ## Browser workbench
 

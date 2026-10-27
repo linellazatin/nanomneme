@@ -104,6 +104,14 @@ export async function runMaintenance(args, dependencies = {}) {
     report('validated');
     return;
   }
+  if (command === 'codex:prepare') {
+    if (flags.length) throw new Error('codex:prepare accepts no options');
+    await refreshLogger(build, message => report(`Logger bundles: ${message}`));
+    const preparation = await (dependencies.prepareCodexDependencies ?? prepareCodexDependencies)({ root });
+    report(`Codex dependencies: ${preparation === 'updated' ? 'updated' : 'up-to-date'}`);
+    report('prepared: install or reinstall the plugin through its marketplace; validation is separate');
+    return;
+  }
   if (command === 'codex:update') {
     if (flags.length) throw new Error('codex:update accepts no options');
     await refreshCodex(root, dependencies, build, report);
@@ -133,7 +141,7 @@ export async function runMaintenance(args, dependencies = {}) {
     }
     return;
   }
-  if (command !== 'logslines:build') throw new Error('Unknown command. Usage: node scripts/maintenance.js <logslines:build [--fast]|logslines:update vX.Y.Z|codex:update|validate>');
+  if (command !== 'logslines:build') throw new Error('Unknown command. Usage: node scripts/maintenance.js <logslines:build [--fast]|logslines:update vX.Y.Z|codex:prepare|codex:update|validate>');
   if (flags.some(flag => flag !== '--fast') || flags.length > 1) throw new Error('Unknown options. Usage: logslines:build [--fast]');
   await refreshLogger(build, report);
   if (flags.includes('--fast')) report('validation skipped (--fast)');

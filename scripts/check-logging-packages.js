@@ -14,6 +14,36 @@ const defaultRoot = fileURLToPath(new URL('..', import.meta.url));
 const managedDependencies = ['@openlines/nmnm-core', 'jsonc-parser'];
 const digest = path => createHash('sha256').update(readFileSync(path)).digest('hex');
 
+function safePackagePath(path) {
+  return typeof path === 'string' && path.length > 0 && !isAbsolute(path)
+    && !/[\\\u0000:]/.test(path) && path.split('/').every(part => part && part !== '.' && part !== '..');
+}
+
+export function parseNpmPackOutput(output, expectedPackages) {
+  let parsed;
+  try { parsed = JSON.parse(output); } catch { throw new Error('Invalid npm pack JSON output'); }
+  assert(parsed !== null && typeof parsed === 'object', 'Unexpected npm pack JSON output');
+  const packages = Array.isArray(parsed) ? parsed : Object.values(parsed);
+  assert(packages.length > 0, 'npm pack returned no packages');
+  const names = new Set();
+  for (const pkg of packages) {
+    assert(pkg && typeof pkg === 'object' && typeof pkg.name === 'string' && pkg.name.length > 0, 'Invalid npm pack package metadata');
+    assert(!names.has(pkg.name), `Duplicate npm pack package: ${pkg.name}`);
+    names.add(pkg.name);
+    const expected = expectedPackages.find(item => item.name === pkg.name);
+    assert(expected && pkg.version === expected.version, `Unexpected npm pack package/version: ${pkg.name}@${pkg.version}`);
+    assert(safePackagePath(pkg.filename) && !pkg.filename.includes('/') && pkg.filename.endsWith('.tgz'), 'Invalid npm pack filename');
+    assert(Array.isArray(pkg.files) && pkg.files.length > 0, `Invalid npm pack files: ${pkg.name}`);
+    const paths = pkg.files.map(file => {
+      assert(file && typeof file === 'object' && safePackagePath(file.path), `Invalid npm pack file path: ${pkg.name}`);
+      return file.path;
+    });
+    assert(paths.includes('package.json') && new Set(paths).size === paths.length, `Invalid npm pack file list: ${pkg.name}`);
+  }
+  assert(expectedPackages.every(pkg => names.has(pkg.name)), 'npm pack is missing expected package metadata');
+  return packages;
+}
+
 // A null tree means missing content or a link, not a physical dependency copy.
 export function readPackageTree(root, { exclude = () => false } = {}) {
   const files = {};
@@ -29,7 +59,7 @@ export function readPackageTree(root, { exclude = () => false } = {}) {
   catch (error) { if (['ENOENT', 'ENOTDIR', 'NMNM_LINK'].includes(error.code)) return null; throw error; }
 }
 
-export function prepareCodexDependencies({ root = defaultRoot, preparedModules, packCoreFiles } = {}) {
+export function prepareCodexDependencies({ root = defaultRoot, preparedModules, packCoreFiles, runNpmPack = (args, options) => execFileSync('npm', args, options) } = {}) {
   const adapter = join(root, 'adapters/codex');
   const pkg = JSON.parse(readFileSync(join(adapter, 'package.json'), 'utf8'));
   const manifest = JSON.parse(readFileSync(join(adapter, '.codex-plugin/plugin.json'), 'utf8'));
@@ -41,9 +71,9 @@ export function prepareCodexDependencies({ root = defaultRoot, preparedModules, 
   if (preparedModules) {
     specs = managedDependencies.map(path => ({ path, source: join(preparedModules, path) }));
   } else {
-    const paths = packCoreFiles ? packCoreFiles() : JSON.parse(execFileSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], { cwd: core, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }))[0].files.map(file => file.path);
+    const paths = packCoreFiles ? packCoreFiles() : parseNpmPackOutput(runNpmPack(['pack', '--dry-run', '--json', '--ignore-scripts'], { cwd: core, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }), [corePkg])[0].files.map(file => file.path);
     assert(paths.includes('package.json'), 'Core package contents are unavailable');
-    for (const path of paths) assert(!isAbsolute(path) && resolve(core, path).startsWith(core + sep), 'Invalid core package path');
+    for (const path of paths) assert(safePackagePath(path) && resolve(core, path).startsWith(core + sep), 'Invalid core package path');
     const parser = dirname(createRequire(join(root, 'package.json')).resolve('jsonc-parser/package.json'));
     assert.equal(JSON.parse(readFileSync(join(parser, 'package.json'), 'utf8')).version, corePkg.dependencies['jsonc-parser'], 'Installed jsonc-parser differs from core dependency; reinstall repository dependencies');
     specs = [{ path: managedDependencies[0], source: core, paths }, { path: managedDependencies[1], source: parser }];
@@ -192,8 +222,10 @@ export function checkLoggingPackages({ prepareCodex = false } = {}) {
   const install = ['install', '--ignore-scripts', '--no-audit', '--no-fund', '--no-package-lock'];
   try {
     checkClaudeCache(root, temporary, npm);
-    const packages = JSON.parse(npm(['pack', '--json', '--ignore-scripts', '--pack-destination', temporary,
-      ...['core', 'ui', 'cli', 'pi', 'claude', 'opencode'].flatMap(name => ['--workspace', `@openlines/nmnm-${name}`])], root));
+    const manifests = ['packages/nmnm-core', 'packages/nmnm-ui', 'packages/nmnm-cli', 'adapters/pi', 'adapters/claude', 'adapters/opencode']
+      .map(path => JSON.parse(readFileSync(join(root, path, 'package.json'), 'utf8')));
+    const packages = parseNpmPackOutput(npm(['pack', '--json', '--ignore-scripts', '--pack-destination', temporary,
+      ...manifests.flatMap(pkg => ['--workspace', pkg.name])], root), manifests);
     const core = packages.find(pkg => pkg.name === '@openlines/nmnm-core');
     for (const pkg of packages) assertLoggingContents(pkg.name.replace('@openlines/nmnm-', ''), pkg.files.map(file => file.path));
     const coreTar = join(temporary, core.filename);
@@ -262,7 +294,7 @@ export function checkLoggingPackages({ prepareCodex = false } = {}) {
     const codex = join(temporary, 'codex');
     cpSync(join(root, 'adapters/codex'), codex, { recursive: true, filter: path => basename(path) !== 'node_modules' });
     npm([...install, coreTar], codex);
-    const [plugin] = JSON.parse(npm(['pack', '--json', '--ignore-scripts', '--pack-destination', temporary], codex));
+    const [plugin] = parseNpmPackOutput(npm(['pack', '--json', '--ignore-scripts', '--pack-destination', temporary], codex), [JSON.parse(readFileSync(join(codex, 'package.json'), 'utf8'))]);
     assertLoggingContents('codex', plugin.files.map(file => file.path));
     const pluginConsumer = join(temporary, 'plugin-consumer'); mkdirSync(pluginConsumer);
     writeFileSync(join(pluginConsumer, 'package.json'), '{"private":true,"type":"module"}\n');

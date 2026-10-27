@@ -4,6 +4,26 @@ import { assertLoggingContents } from './check-logging-packages.js';
 import * as checks from './check-logging-packages.js';
 import { readFileSync } from 'node:fs';
 
+test('npm pack accepts array and name-keyed output and selects the expected package', () => {
+  const core = { name: '@openlines/nmnm-core', version: '0.3.2', filename: 'core.tgz', files: [{ path: 'package.json' }, { path: 'src/index.js' }] };
+  for (const output of [[core], { [core.name]: core }]) {
+    assert.deepEqual(checks.parseNpmPackOutput(JSON.stringify(output), [core]), [core]);
+  }
+  const other = { ...core, name: 'other', filename: 'other.tgz' };
+  assert.deepEqual(checks.parseNpmPackOutput(JSON.stringify({ other, [core.name]: core }), [core, other]), [other, core]);
+});
+
+test('npm pack rejects invalid metadata and unsafe file entries before use', () => {
+  const core = { name: '@openlines/nmnm-core', version: '0.3.2', filename: 'core.tgz', files: [{ path: 'package.json' }] };
+  for (const output of ['broken', 'null', '42', '{}', '[]', JSON.stringify([null])]) {
+    assert.throws(() => checks.parseNpmPackOutput(output, [core]), /npm pack/i);
+  }
+  for (const patch of [{ name: 'wrong' }, { version: '0.3.1' }, { filename: '../core.tgz' }, { files: undefined }, { files: [] }, { files: [null] }, { files: [{ path: 1 }] }, { files: [{ path: '' }] }, { files: [{ path: '../outside' }] }, { files: [{ path: '/outside' }] }, { files: [{ path: 'C:\\outside' }] }, { files: [{ path: 'src/index.js' }] }]) {
+    assert.throws(() => checks.parseNpmPackOutput(JSON.stringify([{ ...core, ...patch }]), [core]), /npm pack/i);
+  }
+  assert.throws(() => checks.parseNpmPackOutput(JSON.stringify([core, core]), [core]), /npm pack/i);
+});
+
 test('checked-in Claude cache lock contains only external registry dependencies', () => {
   const manifest = JSON.parse(readFileSync(new URL('../adapters/claude/package.json', import.meta.url)));
   const lock = JSON.parse(readFileSync(new URL('../adapters/claude/package-lock.json', import.meta.url)));

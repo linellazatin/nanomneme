@@ -4,7 +4,7 @@
 
 ## Install
 
-Use Node.js 22.19+ and Pi 0.87.0 or newer, with the supported compatibility matrix through Pi 1.2.0 and a separate bounded live evaluation on Pi 1.3.0. This manual describes checkout `@openlines/nmnm-pi` 0.4.5, prepared but not published. Published 0.4.4 does not include the strengthened retain schemas and invocation guidance below; load the checkout to use them before publication. Install the public package:
+Use Node.js 22.19+ and Pi 0.87.0 or newer, with the supported compatibility matrix through Pi 1.2.0 and a separate bounded live evaluation on Pi 1.3.0. This manual describes the adapter's retain schemas, invocation guidance, and memory workflows. Install the public package:
 
 ```sh
 pi install npm:@openlines/nmnm-pi
@@ -231,7 +231,7 @@ A crash before atomic replacement can also leave an inert same-directory `nmnm-p
 
 ### Pi token overhead
 
-`nmnm-pi` 0.4.x adds four model-visible tool definitions: `retain_memory`, `recall_memory`, `retrieve_memory`, and `remove_memory`. Retain definitions include field descriptions, supported kind/scope values, score bounds, slug/UUID/expiry patterns, and create/patch guidance; metadata and retrieval score filters also have explicit schemas. Their serialized size depends on the adapter and host version. Schema size alone is not a token or cost estimate: Pi adds tool names, descriptions, and provider request structure, while each provider uses its own tokenizer.
+`nmnm-pi` adds four model-visible tool definitions: `retain_memory`, `recall_memory`, `retrieve_memory`, and `remove_memory`. Retain definitions include field descriptions, supported kind/scope values, score bounds, slug/UUID/expiry patterns, and create/patch guidance; metadata and retrieval score filters also have explicit schemas. Their serialized size depends on the adapter and host version. Schema size alone is not a token or cost estimate: Pi adds tool names, descriptions, and provider request structure, while each provider uses its own tokenizer.
 
 The transient memory context is separately bounded. On the first prompt and each queued refresh, Pi appends at most `injection_budget + 2` characters to the system prompt: the configured context plus its two newline separator characters. With the default budget, that is at most 2,002 characters. Autoretention guidance and index rows share that limit. Ordinary prompts without a queued refresh append no memory context unless opt-in periodic `reinjection` queues a rebuild.
 

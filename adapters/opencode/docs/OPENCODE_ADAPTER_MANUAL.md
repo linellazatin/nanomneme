@@ -6,7 +6,7 @@ Runtime code and tests are authoritative if this manual disagrees with behavior.
 
 ## Dual-host compatibility
 
-Adapter 0.3.0 targets native V1 1.19.0 and V2 2.0.29. Unchanged legacy API and Node engine bounds do not certify broader host compatibility. V1 receives compatibility fixes for the tested baseline, not indefinite feature parity. The standalone Node CLI is independent of host APIs. The adapter suite passes on Node 22.19.0 and 26.11.1; the tested stock 22.13.0 binary lacks required FTS5. Independently installed 0.3.0 packages passed native loading, tools, both rendered browsers, and V2 live-provider checks.
+The adapter targets native V1 1.19.0 and V2 2.0.29. Unchanged legacy API and Node engine bounds do not certify broader host compatibility. V1 receives compatibility fixes for the tested baseline, not indefinite feature parity. The standalone Node CLI is independent of host APIs. The adapter suite passes on Node 22.19.0 and 26.11.1; the tested stock 22.13.0 binary lacks required FTS5. Independently installed 0.3.0 packages passed native loading, tools, both rendered browsers, and V2 live-provider checks.
 
 | Surface | V1 1.19.0 | V2 2.0.29 |
 | --- | --- | --- |
@@ -42,9 +42,11 @@ The V1 TUI browser (`tui.js`, exported as `./tui` and forwarding to `src/tui-v1.
 
 ## Install
 
+Registry examples use the published package; use the local development instructions below for unpublished changes. Manifests and lockfiles define dependency requirements. Root-only security overrides do not propagate to independently installed adapters or Bun-managed caches; upstream dependency fixes remain pending.
+
 ### OpenCode V2
 
-Add `{"$schema":"https://opencode.ai/config.json","plugins":["@openlines/nmnm-opencode@0.3.0"]}` to server `opencode.json(c)`. The CLI automatically loads the package's `./tui` component from the connected server's plugin list. Explicit terminal registration belongs in global `${XDG_CONFIG_HOME:-~/.config}/opencode/cli.json`: `{"plugins":["@openlines/nmnm-opencode@0.3.0"]}`. There is no project-local CLI configuration. Press **ctrl+alt+m**, or use the command palette. Publication of 0.3.0 remains separate.
+Add `{"$schema":"https://opencode.ai/config.json","plugins":["@openlines/nmnm-opencode"]}` to server `opencode.json(c)`. The CLI automatically loads the package's `./tui` component from the connected server's plugin list. Explicit terminal registration belongs in global `${XDG_CONFIG_HOME:-~/.config}/opencode/cli.json`: `{"plugins":["@openlines/nmnm-opencode"]}`. There is no project-local CLI configuration. Press **ctrl+alt+m**, or use the command palette.
 
 For development, use the absolute adapter directory in `plugins`, such as `{"plugins":["/absolute/path/to/nanomneme/adapters/opencode"]}`. V2 rejects individual entrypoint file paths; V1 examples below are not V2 examples. The connected server must enable the server plugin and have Node for its bridge. Its home, project directory, settings, and pins own persistence; there is no terminal-local fallback. RPC errors are visible without mutation retries. Changed active locations reject selected actions; reopen the browser in the new location.
 
@@ -62,7 +64,7 @@ Add the package to OpenCode config. OpenCode installs npm plugins and their depe
 }
 ```
 
-Pin a version for reproducibility: `"@openlines/nmnm-opencode@0.2.2"`.
+Use the same adapter version in the server and TUI registrations for reproducibility. Older version pins below are rollback instructions, not the normal installation path.
 
 To also enable the TUI memory browser, register the same package in the **TUI** config; OpenCode resolves its `./tui` export:
 
@@ -111,7 +113,7 @@ Behavior:
 - `retain_memory` trims and validates scope before routing: `global` selects the global store; `project` or omitted scope selects the project store. Invalid scope fails without creating a database. Retain is the **only** operation that creates a missing database.
 - `store: "project" | "global"` selects the physical store for recall/retrieve/remove; a missing selected store returns `null` (or `{ total: 0, items: [] }`) without creating it.
 - `remove_memory` is always soft and reversible; purge is not exposed to the model.
-- Core hardening introduced in `0.3.0` and retained in `0.3.1` passes through unchanged: Unicode/structured search, malformed-text and numeric-range validation, private first-use storage, and monotonic mutation timestamps. Bridge tests cover serialization and project/global creation; handler tests use frozen/backward clocks across reopened stores. Retain still accepts null metadata (new records add the OpenCode source; patches normalize it to `{}`); null rejection applies to core import/verification. Export/import/verification remain `nmnm` CLI operations.
+- Core hardening introduced in `0.3.0` passes through unchanged: Unicode/structured search, malformed-text and numeric-range validation, private first-use storage, and monotonic mutation timestamps. Bridge tests cover serialization and project/global creation; handler tests use frozen/backward clocks across reopened stores. Retain still accepts null metadata (new records add the OpenCode source; patches normalize it to `{}`); null rejection applies to core import/verification. Export/import/verification remain `nmnm` CLI operations.
 
 ## System-prompt injection
 
@@ -141,7 +143,7 @@ There is no model-free OpenCode slash command; the CLI and the TUI browser below
 
 ## TUI memory browser
 
-The optional TUI plugin (`tui.js`, registered via `tui.jsonc` as shown under Install) opens a model-free, dialog-driven browser on **ctrl+alt+m**, mirroring the Pi adapter's `/memory` browser and the openclaude-memory pattern. No LLM turn is involved.
+The TUI plugin (`tui.js`) opens a model-free, dialog-driven browser on **ctrl+alt+m**. V1 requires a separate `tui.jsonc` registration. V2 loads the package's `./tui` entry automatically from the connected server's plugin list, or through explicit global `cli.json` registration; see the version-specific installation steps above. No LLM turn is involved.
 
 - Tabs: **Status**, **All** (project + global), **Project**, **Global**; `‹ / ›` nav rows page between them. The source filter cycles **all → opencode** from a `Source:` row (the same `--source` semantics as the CLI). Pinned rows are prefixed `* `.
 - The **Status** tab shows a compact, label-aligned summary: `Injection budget` (budget, current rendered size, unresolved pins), `Periodic reinjection`, `Autoretention`, `Pins`, and `Memories` (per-store totals).
@@ -234,7 +236,7 @@ Confirmed against OpenCode 1.18.31 with a configured provider:
 2. A turn instructed to call `retain_memory` did so, and reading the project store confirmed a new record with `metadata.source: "opencode"` in the project store.
 3. Reads and soft removal left a missing store absent.
 
-The terminal checks exercise navigation, confirmation, filtering, paging, detail/back, and selection restoration on both hosts. V1 requests `xlarge`; V2 requests `large`. Tabs use navigation rows. Set `NMNM_ADAPTER_ROOT` to the absolute independently installed package directory for both native host tests and the Python terminal checks; the default targets this checkout. Installed 0.3.0 checks passed without workspace dependencies. Remote deployment and V1 in-process deactivation remain unverified. For V1 rollback, pin `@openlines/nmnm-opencode@0.2.2` in both registrations and restart; that release does not support V2. Disabling the plugin does not migrate or delete stores.
+The terminal checks exercise navigation, confirmation, filtering, paging, detail/back, and selection restoration on both hosts. V1 requests `xlarge`; V2 requests `large`. Tabs use navigation rows. Set `NMNM_ADAPTER_ROOT` to the absolute independently installed package directory for both native host tests and the Python terminal checks; the default targets this checkout. Installed 0.3.0 checks passed without workspace dependencies. Remote deployment and V1 in-process deactivation remain unverified. For V1 rollback, select a previously verified compatible release from the changelog and use the same selection in both registrations before restarting. V2 support was introduced in adapter `0.3.0`; earlier releases are not suitable V2 rollback targets. Disabling the plugin does not migrate or delete stores.
 
 ```sh
 npm test

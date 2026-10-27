@@ -37,7 +37,7 @@ Pi package for the [nanomneme](https://nanomneme.openlines.dev) SQLite memory ad
 ## Quickstart
 
 >
-> Checkout version 0.4.5 is prepared for publication; its strengthened retain schemas and invocation guidance are not supplied by published 0.4.4. It targets Pi 0.87.0 or newer, with the supported compatibility matrix through Pi 1.2.0, and Node.js 22.19 or newer. The manual records a separate bounded live evaluation on Pi 1.3.0. Repository validation accepts stable Pi `~1.2.0` development hosts while retaining the `>=0.87.0` dependency floor. Main CI and release validation use the exact lockfile resolution; a separate blocking CI matrix runs the adapter suite against Pi `0.87.0` and the latest stable patches in `~0.87.0`, `~0.99.0`, and `~1.2.0`.
+> The adapter includes self-describing retain schemas and invocation guidance. It targets Pi 0.87.0 or newer, with the supported compatibility matrix through Pi 1.2.0, and Node.js 22.19 or newer. The manual records a separate bounded live evaluation on Pi 1.3.0. Repository validation accepts stable Pi `~1.2.0` development hosts while retaining the `>=0.87.0` dependency floor. Main CI and release validation use the exact lockfile resolution; a separate blocking CI matrix runs the adapter suite against Pi `0.87.0` and the latest stable patches in `~0.87.0`, `~0.99.0`, and `~1.2.0`.
 >
 
 Install it globally with Pi:

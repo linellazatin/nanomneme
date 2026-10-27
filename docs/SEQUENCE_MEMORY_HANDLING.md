@@ -1,6 +1,6 @@
 # End-to-End Memory Handling by Interface
 
-This document follows memory requests, management mutations, and their diagnostic outcomes. SQLite access goes through `@openlines/nmnm-core`. The CLI, UI mutations, and adapters surround eligible explicit actions with `@openlines/nmnm-core/logging`; persistence methods and context reads remain uninstrumented. The observer participants below are the same shared implementation shipped with core, instantiated with each caller's identity and user configuration path.
+This document follows memory requests, management mutations, and their diagnostic outcomes. SQLite access goes through the core API, and eligible explicit actions use its shared logging observer; persistence methods and context reads remain uninstrumented. Claude imports local generated core and logging runtimes built from the same sources, while other clients use `@openlines/nmnm-core` and `@openlines/nmnm-core/logging`. Observer participants share one source implementation, instantiated with each caller's identity and user configuration path.
 
 ## Shared core behavior
 
@@ -247,8 +247,8 @@ sequenceDiagram
   participant Host as Claude Code host
   participant MCP as local stdio MCP server
   participant Ops as Claude operations
-  participant Logger as shared logger
-  participant Core as nmnm-core
+  participant Logger as bundled shared logger
+  participant Core as bundled core
   participant DB as selected SQLite store
   participant Log as nmnm-claude.jsonl
 
@@ -282,7 +282,7 @@ sequenceDiagram
 
 ### Claude-specific boundaries
 
-- The MCP process imports core directly. It does not invoke the CLI, parse CLI output, run a daemon, or send network traffic.
+- The MCP process imports the plugin's generated core and logging runtimes directly, without a registry core dependency. It does not invoke the CLI, parse CLI output, run a daemon, or send network traffic.
 - The `SessionStart` command hook independently builds transient `additionalContext` with optional autoretention guidance before the bounded read-only project/global index. `UserPromptSubmit` resolves settings before any session-state or memory access: disabled policy stops there; enabled policy advances an ephemeral counter and builds context only on cadence. Context failures emit nothing but advance the enabled count; invalid settings leave state untouched.
 - The deterministic `bin/memory.js` management surface and `/nanomneme:memory` command use the same store/context helpers. Pins are Claude-specific files, not canonical SQLite state.
 - Explicit tools append one opt-in terminal record to `nmnm-claude.jsonl` through the shared observer. Management pin/unpin/remove uses `command_*`; ambiguous targets are blocked and missing targets are not_found. Read-only management, schema rejection before dispatch, and context hooks remain unlogged. Current tool/management correlation is null. Restart the MCP process to refresh its cached logging settings.

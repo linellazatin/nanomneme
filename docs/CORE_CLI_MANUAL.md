@@ -12,7 +12,7 @@ Use the developer path to install the workspace packages, open and close stores 
 
 ### Agents and operators
 
-Use the agent path for deterministic CLI calls, stable JSON responses, explicit store selection, ID-based updates, and actionable error handling. Human-readable output is for interactive use; automated callers should request `--json`.
+Use the agent path for deterministic CLI calls, stable JSON responses, explicit store selection, ID-based updates, and actionable error handling. Human-readable output is for interactive use; automated callers should request `--json`. Readable fields and stderr render C0/C1 controls and DEL as literal `\uXXXX` escapes, including embedded newlines and tabs; CLI layout newlines remain. JSON/JSONL also escape DEL and C1 controls without changing parsed values or stored content.
 
 ## Operating contract
 
@@ -326,7 +326,7 @@ Import supports single-entry creation, multi-record transfer, restoration into a
 
 Format validation is not automatic repair or a complete destination integrity audit. Invalid input leaves an existing destination unchanged and does not create a missing destination. Once valid input has passed validation, a later destination-open or write failure can leave a newly initialized empty database; batch rollback concerns records, not removal of the database file. Run `verify` after a successful import to check the resulting store.
 
-Parsing uses Node's UTF-8 text decoding and `JSON.parse`, not a strict byte-level UTF-8 validator or duplicate-key detector. Avoid malformed encoded bytes and repeated JSON property names; decoding may replace invalid bytes, and repeated properties use their last parsed value. The header checks its format/version identifiers but does not reject extra header properties; unknown record fields are rejected.
+CLI import rejects malformed UTF-8 bytes before decoding or opening the destination. Valid Unicode replacement characters remain valid content. Parsing uses `JSON.parse`, without duplicate-key detection; repeated properties use their last parsed value. The header checks its format/version identifiers but does not reject extra header properties; unknown record fields are rejected.
 
 The CLI reads the entire file into memory and performs a validation import before the destination import; it is not a streaming importer and has no explicit file-size or record-count limit. Allow sufficient memory for large transfers. Write-lock contention uses the core's five-second busy timeout and can fail; there is no automatic retry. Transactional import is not a filesystem or device-level power-loss guarantee.
 
@@ -411,9 +411,9 @@ Restore only while the destination is closed, and preserve the current file sepa
 
 ### Verify and repair
 
-Run `verify` before transfer, after import or restore, and whenever direct inspection or an interrupted filesystem operation makes integrity uncertain. Verification is read-only and reports exact schema-column, SQLite integrity, foreign-key, canonical-field and timestamp-ordering, tag, and FTS issues. It skips unsafe table queries when required columns are missing, so malformed schemas remain structured diagnostic results.
+Run `verify` before transfer, after import or restore, and whenever direct inspection or an interrupted filesystem operation makes integrity uncertain. Verification is read-only and reports exact schema-column, SQLite integrity, foreign-key, canonical-field and timestamp-ordering, tag, and FTS issues. Stored fields and tags requiring trimming are reported as `memory_field` or `tag_field`, without normalization or repair. It skips unsafe table queries when required columns are missing, so malformed schemas remain structured diagnostic results.
 
-On POSIX systems, `file_permissions` reports group/other access on the database or existing journal, WAL, and shared-memory files using the labels `database`, `journal`, `wal`, and `shm`. Verification does not change permissions. CLI verification exits with status `1` when these issues are present; inspect intentional sharing and manually restrict the affected files before verifying again. FTS repair does not fix permissions.
+On POSIX systems, `file_permissions` reports group/other access on the database or existing journal, WAL, and shared-memory files using the labels `database`, `journal`, `wal`, and `shm`. Checks use SQLite's effective database filename so file/directory symlink aliases and later working-directory changes do not hide real sidecars. Verification does not change permissions. CLI verification exits with status `1` when these issues are present; inspect intentional sharing and manually restrict the affected files before verifying again. FTS repair does not fix permissions.
 
 Use repair only for derived full-text drift:
 

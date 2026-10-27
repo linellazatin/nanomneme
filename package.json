@@ -1,6 +1,6 @@
 {
   "name": "nanomneme",
-  "version": "0.8.4",
+  "version": "0.8.5",
   "private": true,
   "type": "module",
   "keywords": [
@@ -32,17 +32,27 @@
   "scripts": {
     "logslines:build": "node scripts/maintenance.js logslines:build",
     "logslines:update": "node scripts/maintenance.js logslines:update",
+    "codex:prepare": "node scripts/maintenance.js codex:prepare",
     "codex:update": "node scripts/maintenance.js codex:update",
     "validate": "node scripts/maintenance.js validate",
     "external:check": "node scripts/external-logslines.js check",
     "external:update": "node scripts/external-logslines.js update",
     "test": "node scripts/build-logger.js --check && node --test scripts/*.test.js shared/logger/test/*.test.js packages/*/test/*.test.js adapters/*/test/*.test.js test/*.test.js"
   },
+  "overrides": {
+    "@opencode-ai/plugin": {
+      "zod": "4.6.7",
+      "effect": {
+        "toml": "5.0.1"
+      }
+    }
+  },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": ">=0.87.0",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
     "axe-core": "4.14.0",
-    "esbuild": "0.28.2"
+    "esbuild": "0.28.2",
+    "semver": "7.8.5"
   }
 }

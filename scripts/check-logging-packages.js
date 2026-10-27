@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
+import semver from 'semver';
 import { execFileSync } from 'node:child_process';
-import { cpSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { isDeepStrictEqual } from 'node:util';
@@ -12,6 +13,36 @@ import { fileURLToPath } from 'node:url';
 const defaultRoot = fileURLToPath(new URL('..', import.meta.url));
 const managedDependencies = ['@openlines/nmnm-core', 'jsonc-parser'];
 const digest = path => createHash('sha256').update(readFileSync(path)).digest('hex');
+
+function safePackagePath(path) {
+  return typeof path === 'string' && path.length > 0 && !isAbsolute(path)
+    && !/[\\\u0000:]/.test(path) && path.split('/').every(part => part && part !== '.' && part !== '..');
+}
+
+export function parseNpmPackOutput(output, expectedPackages) {
+  let parsed;
+  try { parsed = JSON.parse(output); } catch { throw new Error('Invalid npm pack JSON output'); }
+  assert(parsed !== null && typeof parsed === 'object', 'Unexpected npm pack JSON output');
+  const packages = Array.isArray(parsed) ? parsed : Object.values(parsed);
+  assert(packages.length > 0, 'npm pack returned no packages');
+  const names = new Set();
+  for (const pkg of packages) {
+    assert(pkg && typeof pkg === 'object' && typeof pkg.name === 'string' && pkg.name.length > 0, 'Invalid npm pack package metadata');
+    assert(!names.has(pkg.name), `Duplicate npm pack package: ${pkg.name}`);
+    names.add(pkg.name);
+    const expected = expectedPackages.find(item => item.name === pkg.name);
+    assert(expected && pkg.version === expected.version, `Unexpected npm pack package/version: ${pkg.name}@${pkg.version}`);
+    assert(safePackagePath(pkg.filename) && !pkg.filename.includes('/') && pkg.filename.endsWith('.tgz'), 'Invalid npm pack filename');
+    assert(Array.isArray(pkg.files) && pkg.files.length > 0, `Invalid npm pack files: ${pkg.name}`);
+    const paths = pkg.files.map(file => {
+      assert(file && typeof file === 'object' && safePackagePath(file.path), `Invalid npm pack file path: ${pkg.name}`);
+      return file.path;
+    });
+    assert(paths.includes('package.json') && new Set(paths).size === paths.length, `Invalid npm pack file list: ${pkg.name}`);
+  }
+  assert(expectedPackages.every(pkg => names.has(pkg.name)), 'npm pack is missing expected package metadata');
+  return packages;
+}
 
 // A null tree means missing content or a link, not a physical dependency copy.
 export function readPackageTree(root, { exclude = () => false } = {}) {
@@ -28,21 +59,21 @@ export function readPackageTree(root, { exclude = () => false } = {}) {
   catch (error) { if (['ENOENT', 'ENOTDIR', 'NMNM_LINK'].includes(error.code)) return null; throw error; }
 }
 
-export function prepareCodexDependencies({ root = defaultRoot, preparedModules, packCoreFiles } = {}) {
+export function prepareCodexDependencies({ root = defaultRoot, preparedModules, packCoreFiles, runNpmPack = (args, options) => execFileSync('npm', args, options) } = {}) {
   const adapter = join(root, 'adapters/codex');
   const pkg = JSON.parse(readFileSync(join(adapter, 'package.json'), 'utf8'));
   const manifest = JSON.parse(readFileSync(join(adapter, '.codex-plugin/plugin.json'), 'utf8'));
   const core = join(root, 'packages/nmnm-core');
   const corePkg = JSON.parse(readFileSync(join(core, 'package.json'), 'utf8'));
   assert.equal(manifest.version, pkg.version, 'Codex plugin manifest version differs from package version');
-  assert.equal(pkg.dependencies['@openlines/nmnm-core'], corePkg.version, 'Codex core dependency differs from checkout version');
+  assert(semver.satisfies(corePkg.version, pkg.dependencies['@openlines/nmnm-core']), 'Codex core dependency does not accept checkout version');
   let specs;
   if (preparedModules) {
     specs = managedDependencies.map(path => ({ path, source: join(preparedModules, path) }));
   } else {
-    const paths = packCoreFiles ? packCoreFiles() : JSON.parse(execFileSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], { cwd: core, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }))[0].files.map(file => file.path);
+    const paths = packCoreFiles ? packCoreFiles() : parseNpmPackOutput(runNpmPack(['pack', '--dry-run', '--json', '--ignore-scripts'], { cwd: core, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }), [corePkg])[0].files.map(file => file.path);
     assert(paths.includes('package.json'), 'Core package contents are unavailable');
-    for (const path of paths) assert(!isAbsolute(path) && resolve(core, path).startsWith(core + sep), 'Invalid core package path');
+    for (const path of paths) assert(safePackagePath(path) && resolve(core, path).startsWith(core + sep), 'Invalid core package path');
     const parser = dirname(createRequire(join(root, 'package.json')).resolve('jsonc-parser/package.json'));
     assert.equal(JSON.parse(readFileSync(join(parser, 'package.json'), 'utf8')).version, corePkg.dependencies['jsonc-parser'], 'Installed jsonc-parser differs from core dependency; reinstall repository dependencies');
     specs = [{ path: managedDependencies[0], source: core, paths }, { path: managedDependencies[1], source: parser }];
@@ -85,6 +116,7 @@ export function assertLoggingContents(kind, files) {
   assert.ok(!files.some(path => path.split('/').at(-1) === 'logslines-release.json'), `${kind} package must exclude the repository release fixture`);
   const required = kind === 'core' ? ['src/logslines.js', 'src/logging-runtime.generated.js', 'src/index.js']
     : kind === 'ui' ? ['src/launcher.js', 'src/server.js', 'src/logslines.js', 'src/ui-logging-runtime.generated.js']
+    : kind === 'claude' ? ['src/logslines.js', 'src/core-runtime.generated.js', 'src/logging-runtime.generated.js']
     : kind === 'codex' ? ['node_modules/@openlines/nmnm-core/src/logslines.js', 'node_modules/@openlines/nmnm-core/src/logging-runtime.generated.js']
     : ['src/logslines.js'];
   for (const path of required) assert(files.includes(path), `missing ${path}`);
@@ -93,6 +125,7 @@ export function assertLoggingContents(kind, files) {
 }
 
 export function assertClaudeLock(manifest, lock) {
+  assert(!manifest.dependencies?.['@openlines/nmnm-core'], 'Claude must use its generated core runtime, not a registry core dependency');
   assert(manifest.overrides === undefined, 'Claude automatic npm installation does not support overrides');
   assert([2, 3].includes(lock.lockfileVersion), 'Claude requires npm lockfile version 2 or 3');
   const root = lock.packages?.[''];
@@ -102,10 +135,14 @@ export function assertClaudeLock(manifest, lock) {
   for (const name of Object.keys(manifest.dependencies)) assert(lock.packages[`node_modules/${name}`], `Claude lockfile is missing ${name}`);
   for (const [path, pkg] of Object.entries(lock.packages)) {
     if (!path) continue;
+    assert(!path.endsWith('node_modules/@openlines/nmnm-core'), 'Claude lockfile must exclude registry core');
     assert(!pkg.link, `Claude lockfile contains a link: ${path}`);
     assert(/^\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?$/.test(pkg.version ?? ''), `Claude lockfile lacks an exact version: ${path}`);
     assert(typeof pkg.resolved === 'string' && pkg.resolved.startsWith('https://registry.npmjs.org/'), `Claude lockfile requires an HTTPS npm registry URL: ${path}`);
     assert(/^sha512-[A-Za-z0-9+/]{86}==$/.test(pkg.integrity ?? ''), `Claude lockfile lacks SHA-512 integrity: ${path}`);
+  }
+  for (const [name, range] of Object.entries(manifest.dependencies)) {
+    assert(semver.satisfies(lock.packages[`node_modules/${name}`].version, range), `Claude locked ${name} does not satisfy ${range}; refresh the external dependency lock`);
   }
 }
 
@@ -125,6 +162,18 @@ function checkClaudeCache(root, temporary, npm) {
   assert(readFileSync(join(installation, 'package-lock.json')).equals(lockBytes), 'Claude frozen install changed the lockfile');
   npm(['audit', '--audit-level=high', '--omit=dev', '--cache', join(temporary, 'claude-npm-cache')], installation);
   renameSync(join(installation, 'node_modules'), join(plugin, 'node_modules'));
+  assert(!existsSync(join(plugin, 'node_modules/@openlines/nmnm-core')), 'Claude copied install unexpectedly resolves registry core');
+  for (const runtime of ['core-runtime.generated.js', 'logging-runtime.generated.js']) {
+    assert.equal(digest(join(plugin, 'src', runtime)), digest(join(source, 'src', runtime)), `Claude copied runtime differs: ${runtime}`);
+  }
+  // Run the complete core contract against the deployed bundle, not the source package.
+  const coreContract = join(temporary, 'claude-core-contract');
+  mkdirSync(join(coreContract, 'src'), { recursive: true });
+  mkdirSync(join(coreContract, 'test'));
+  writeFileSync(join(coreContract, 'package.json'), '{"type":"module"}\n');
+  cpSync(join(plugin, 'src/core-runtime.generated.js'), join(coreContract, 'src/index.js'));
+  cpSync(join(root, 'packages/nmnm-core/test/core.test.js'), join(coreContract, 'test/core.test.js'));
+  execFileSync(process.execPath, ['--test', 'test/core.test.js'], { cwd: coreContract, env: { ...process.env, HOME: temporary }, stdio: 'pipe' });
   const tests = readdirSync(join(plugin, 'test')).filter(path => path.endsWith('.test.js')).map(path => `test/${path}`);
   execFileSync(process.execPath, ['--test', ...tests], { cwd: plugin, env: { ...process.env, HOME: temporary }, stdio: 'pipe' });
   writeFileSync(join(plugin, 'verify.mjs'), `
@@ -134,8 +183,8 @@ function checkClaudeCache(root, temporary, npm) {
     import { join } from 'node:path';
     import { Client } from '@modelcontextprotocol/sdk/client/index.js';
     import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-    const core = JSON.parse(readFileSync('node_modules/@openlines/nmnm-core/package.json', 'utf8'));
-    assert.equal(core.version, ${JSON.stringify(lock.packages['node_modules/@openlines/nmnm-core'].version)});
+    const runtime = readFileSync('src/core-runtime.generated.js', 'utf8');
+    assert(runtime.includes(${JSON.stringify('@openlines/nmnm-core@' + JSON.parse(readFileSync(join(root, 'packages/nmnm-core/package.json'), 'utf8')).version)}));
     const client = new Client({ name: 'nmnm-cache-check', version: '1.0.0' });
     const project = join(process.env.HOME, 'claude-project');
     const transport = new StdioClientTransport({ command: process.execPath, args: ['mcp/server.js'], cwd: process.cwd(),
@@ -149,9 +198,13 @@ function checkClaudeCache(root, temporary, npm) {
         assert(!result.isError, JSON.stringify(result));
         return JSON.parse(result.content[0].text);
       };
-      const retained = await call('retain_memory', { content: 'Frozen cache sentinel' });
-      assert.equal((await call('recall_memory', { id: retained.id })).content, retained.content);
-      assert.equal((await call('retrieve_memory', { query: 'sentinel' })).items[0].id, retained.id);
+      const retained = await call('retain_memory', { content: 'Frozen cache sentinel 東京', metadata: { nested: { checked: true } }, tags: ['copied'], importance: 0.8 });
+      const recalled = await call('recall_memory', { id: retained.id });
+      assert.equal(recalled.content, retained.content);
+      assert.deepEqual(recalled.metadata.nested, { checked: true });
+      assert.equal(recalled.metadata.source, 'claude-code');
+      assert.deepEqual(recalled.tags, ['copied']);
+      assert.equal((await call('retrieve_memory', { query: 'sentinel', tags: ['copied'], importance: { gte: 0.7 } })).items[0].id, retained.id);
       const env = { ...process.env, NMNM_PROJECT_DIR: project, CLAUDE_PLUGIN_DATA: join(process.env.HOME, 'claude-data') };
       assert.match(execFileSync(process.execPath, ['bin/memory.js', 'show', retained.id], { env, encoding: 'utf8' }), /Frozen cache sentinel/);
       assert.equal((await call('remove_memory', { id: retained.id })).mode, 'soft');
@@ -163,13 +216,16 @@ function checkClaudeCache(root, temporary, npm) {
 
 export function checkLoggingPackages({ prepareCodex = false } = {}) {
   const root = fileURLToPath(new URL('..', import.meta.url));
+  execFileSync(process.execPath, [join(root, 'scripts/build-logger.js'), '--check'], { cwd: root, stdio: 'pipe' });
   const temporary = mkdtempSync(join(tmpdir(), 'nmnm-logging-packages-'));
   const npm = (args, cwd) => execFileSync('npm', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, HOME: temporary } });
   const install = ['install', '--ignore-scripts', '--no-audit', '--no-fund', '--no-package-lock'];
   try {
     checkClaudeCache(root, temporary, npm);
-    const packages = JSON.parse(npm(['pack', '--json', '--ignore-scripts', '--pack-destination', temporary,
-      ...['core', 'ui', 'cli', 'pi', 'claude', 'opencode'].flatMap(name => ['--workspace', `@openlines/nmnm-${name}`])], root));
+    const manifests = ['packages/nmnm-core', 'packages/nmnm-ui', 'packages/nmnm-cli', 'adapters/pi', 'adapters/claude', 'adapters/opencode']
+      .map(path => JSON.parse(readFileSync(join(root, path, 'package.json'), 'utf8')));
+    const packages = parseNpmPackOutput(npm(['pack', '--json', '--ignore-scripts', '--pack-destination', temporary,
+      ...manifests.flatMap(pkg => ['--workspace', pkg.name])], root), manifests);
     const core = packages.find(pkg => pkg.name === '@openlines/nmnm-core');
     for (const pkg of packages) assertLoggingContents(pkg.name.replace('@openlines/nmnm-', ''), pkg.files.map(file => file.path));
     const coreTar = join(temporary, core.filename);
@@ -238,7 +294,7 @@ export function checkLoggingPackages({ prepareCodex = false } = {}) {
     const codex = join(temporary, 'codex');
     cpSync(join(root, 'adapters/codex'), codex, { recursive: true, filter: path => basename(path) !== 'node_modules' });
     npm([...install, coreTar], codex);
-    const [plugin] = JSON.parse(npm(['pack', '--json', '--ignore-scripts', '--pack-destination', temporary], codex));
+    const [plugin] = parseNpmPackOutput(npm(['pack', '--json', '--ignore-scripts', '--pack-destination', temporary], codex), [JSON.parse(readFileSync(join(codex, 'package.json'), 'utf8'))]);
     assertLoggingContents('codex', plugin.files.map(file => file.path));
     const pluginConsumer = join(temporary, 'plugin-consumer'); mkdirSync(pluginConsumer);
     writeFileSync(join(pluginConsumer, 'package.json'), '{"private":true,"type":"module"}\n');
@@ -266,5 +322,5 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     console.log(`Standalone logging packages verified: ${checkLoggingPackages({ prepareCodex }).join(', ')}`);
     if (prepareCodex) console.log('Codex local plugin dependencies prepared in adapters/codex/node_modules; reinstall through its marketplace.');
   }
-  catch (error) { console.error(error.message); if (error.stderr) console.error(error.stderr.toString()); process.exitCode = 1; }
+  catch (error) { console.error(error.message); if (error.stdout) console.error(error.stdout.toString()); if (error.stderr) console.error(error.stderr.toString()); process.exitCode = 1; }
 }

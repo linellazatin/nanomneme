@@ -1,13 +1,12 @@
 {
   "name": "@openlines/nmnm-claude",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "private": true,
   "type": "module",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.31.0",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "jsonc-parser": "3.3.1",
-    "@openlines/nmnm-core": "^0.3.0",
-    "zod": "^3.25.0"
+    "zod": "^4.6.7"
   },
   "engines": {
     "node": ">=22.13.0"

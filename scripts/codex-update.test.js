@@ -42,6 +42,55 @@ test('preparation is content-aware, replaces obsolete managed files, and preserv
   } finally { f.cleanup(); }
 });
 
+test('preparation consumes raw npm pack output in both supported shapes', () => {
+  for (const keyed of [false, true]) {
+    const f = fixture();
+    try {
+      const core = { name: '@openlines/nmnm-core', version: '1.0.0', filename: 'core.tgz', files: f.packCoreFiles().map(path => ({ path })) };
+      const options = { root: f.root, runNpmPack: () => JSON.stringify(keyed ? { [core.name]: core } : [core]) };
+      assert.equal(prepareCodexDependencies(options), 'updated');
+      assert.equal(prepareCodexDependencies(options), 'current');
+      assert.equal(readFileSync(join(f.root, 'adapters/codex/node_modules/@openlines/nmnm-core/src/index.js'), 'utf8'), 'current core');
+      assert.throws(() => prepareCodexDependencies({ ...options, runNpmPack: () => JSON.stringify({ unrelated: { ...core, name: 'wrong' } }) }), /npm pack/i);
+      assert.equal(readFileSync(join(f.root, 'adapters/codex/node_modules/@openlines/nmnm-core/src/index.js'), 'utf8'), 'current core');
+    } finally { f.cleanup(); }
+  }
+});
+
+test('codex:prepare works before registration, is repeatable, and never invokes Codex', async () => {
+  const f = fixture(); const messages = [];
+  try {
+    const dependencies = {
+      root: f.root, buildLogger: async () => [{ status: 'current' }],
+      prepareCodexDependencies: () => prepareCodexDependencies(f), report: message => messages.push(message),
+      runCodex: () => { throw new Error('must not invoke Codex'); },
+      checkLoggingPackages: () => { throw new Error('validation is separate'); },
+    };
+    await runMaintenance(['codex:prepare'], dependencies);
+    assert.equal(readFileSync(join(f.root, 'adapters/codex/node_modules/@openlines/nmnm-core/src/index.js'), 'utf8'), 'current core');
+    await runMaintenance(['codex:prepare'], dependencies);
+    assert.ok(messages.includes('Codex dependencies: updated'));
+    assert.ok(messages.includes('Codex dependencies: up-to-date'));
+    await assert.rejects(runMaintenance(['codex:prepare', '--fast'], dependencies), /accepts no options/);
+    await assert.rejects(runMaintenance(['codex:prepare'], { ...dependencies, prepareCodexDependencies: () => { throw new Error('preparation failed'); } }), /preparation failed/);
+  } finally { f.cleanup(); }
+});
+
+test('codex:prepare rebuilds stale runtimes before preparing and stops on build failure', async () => {
+  const calls = [];
+  const dependencies = {
+    buildLogger: async ({ check }) => { calls.push(check ? 'check' : 'build'); return [{ status: calls.length === 1 ? 'stale' : 'current' }]; },
+    prepareCodexDependencies: () => { calls.push('prepare'); return 'updated'; }, report: () => {},
+  };
+  await runMaintenance(['codex:prepare'], dependencies);
+  assert.deepEqual(calls, ['check', 'build', 'check', 'prepare']);
+  calls.length = 0;
+  await assert.rejects(runMaintenance(['codex:prepare'], {
+    ...dependencies, buildLogger: async () => [{ name: 'core', status: 'failed', error: new Error('build failed') }],
+  }), /build failed/);
+  assert.deepEqual(calls, []);
+});
+
 test('preparation rejects linked parents and mismatched parser before replacing dependencies', () => {
   const f = fixture();
   try {

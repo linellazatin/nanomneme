@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { access, mkdtemp } from 'node:fs/promises';
-import { chmodSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -456,6 +456,31 @@ test('new database rollback journals and WAL files remain private', { skip: proc
   } finally { raw?.close(); store?.close(); process.umask(previous); }
 });
 
+test('verify checks real WAL and shared-memory permissions through database aliases', { skip: process.platform === 'win32' }, (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'nmnm-alias-permissions-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  const raw = new DatabaseSync(path);
+  t.after(() => { raw.close(); store.close(); rmSync(directory, { recursive: true, force: true }); });
+  raw.exec('PRAGMA journal_mode = WAL');
+  store.retain({ content: 'Private WAL content' });
+  const fileAlias = join(directory, 'alias.db');
+  const directoryAlias = join(directory, 'directory-alias');
+  symlinkSync(path, fileAlias);
+  symlinkSync(directory, directoryAlias, 'dir');
+  for (const suffix of ['-wal', '-shm']) chmodSync(path + suffix, 0o644);
+  const expected = [{ code: 'file_permissions', count: 2, ids: ['shm', 'wal'] }];
+  assert.deepEqual(store.verify().issues, expected);
+  const before = readFileSync(path + '-wal');
+  for (const alias of [fileAlias, join(directoryAlias, 'memory.db')]) {
+    const reader = open(alias, { readOnly: true });
+    try { assert.deepEqual(reader.verify().issues, expected); }
+    finally { reader.close(); }
+  }
+  assert.deepEqual(readFileSync(path + '-wal'), before);
+  for (const suffix of ['-wal', '-shm']) assert.equal(statSync(path + suffix).mode & 0o777, 0o644);
+});
+
 test('open refuses a missing database when creation is disabled', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-open-'));
   const path = join(directory, 'missing.db');
@@ -548,6 +573,29 @@ test('verify reports field, tag, and FTS defects without repairing them', async 
   assert.equal(result.ok, false);
   assert.deepEqual(result.issues.map(({ code }) => code), ['fts_mismatch', 'fts_orphan', 'fts_removed', 'memory_field', 'tag_field']);
   assert.equal(db.prepare('SELECT content FROM memories_fts WHERE rowid = ?').get(removedRow.rowid).content, 'Soft removed FTS content');
+});
+
+test('verify rejects stored fields and tags that require canonical normalization', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-verify-canonical-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  const memory = store.retain({ content: 'Canonical text' });
+  const raw = new DatabaseSync(path);
+  t.after(() => { raw.close(); store.close(); rmSync(directory, { recursive: true, force: true }); });
+  for (const [field, value] of [['id', memory.id], ['content', memory.content], ['kind', memory.kind], ['scope', memory.scope], ['namespace', memory.namespace]]) {
+    raw.prepare(`UPDATE memories SET ${field} = ? WHERE id = ?`).run(` ${value} `, memory.id);
+    if (field === 'content') store.rebuildFts();
+    const before = readFileSync(path);
+    assert.deepEqual(store.verify().issues, [{ code: 'memory_field', count: 1, ids: [field === 'id' ? ` ${value} ` : memory.id] }], field);
+    assert.deepEqual(readFileSync(path), before, 'verification must not repair records');
+    raw.prepare(`UPDATE memories SET ${field} = ?`).run(value);
+    if (field === 'content') store.rebuildFts();
+  }
+  raw.prepare('INSERT INTO memory_tags(memory_id, tag) VALUES (?, ?)').run(memory.id, ' padded-tag ');
+  assert.deepEqual(store.verify().issues, [{ code: 'tag_field', count: 1, ids: [memory.id] }]);
+  assert.equal(raw.prepare('SELECT tag FROM memory_tags').get().tag, ' padded-tag ');
+  raw.prepare('DELETE FROM memory_tags').run();
+  assert.equal(store.verify().ok, true);
 });
 
 test('verify requires an FTS5 virtual table rather than a same-named table', async (t) => {

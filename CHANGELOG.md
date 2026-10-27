@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.8.5 - Core and CLI storage safeguards
+
+### Updated components
+
+| Component | Version |
+| --- | --- |
+| Repository | 0.8.5 |
+| `@openlines/nmnm-core` | 0.3.2 |
+| `@openlines/nmnm-cli` | 0.4.2 |
+| `@openlines/nmnm-ui` | 0.1.2 |
+| `@openlines/nmnm-pi` | 0.4.6 |
+| `@openlines/nmnm-opencode` | 0.3.1 |
+| `@openlines/nmnm-codex` | 0.2.3 |
+| `@openlines/nmnm-claude` | 0.2.3 |
+
+Registry core consumers use `^0.3.2`; CLI uses UI `^0.1.2`. Claude `0.2.3` instead ships checked generated core/logging runtimes, removing the unpublished-core dependency from PR validation and copied installs. Its external-only registry lock is regenerated with MCP SDK `^1.32.2` and Zod `^4.6.7`.
+
+### Changed
+
+- `nmnm-claude` runtime generator now checks/builds four artifacts, including core and self-contained logging with version/license stamps.
+  - Copied plugin validation runs the full core contract against the deployed bundle, Claude tests, and stdio MCP/management smoke without registry core.
+- `nmnm-codex` added `npm run codex:prepare` for first-time setup: refresh stale runtimes and copy physical core/parser dependencies without an installed Codex plugin.
+  - README/manual now distinguish preparation, first installation, and existing-installation refresh; validation remains a separate command.
+- Made active guides version-neutral: manifests, locks, and this changelog own release versions and pins. Feature introductions, significant/breaking changes, runtime/host requirements, and version-qualified test evidence retain meaningful version labels. Updated Claude runtime/pin guidance and OpenCode V1/V2 browser registration.
+  - Architecture and sequence diagrams now include Claude adapter's generated runtime paths
+
+### Fixed
+
+- `nmnm-cli` import rejects malformed UTF-8 bytes before opening the destination, preventing silent replacement of corrupted text.
+- `nmnm-cli` readable fields and stderr escape terminal controls; JSON/JSONL escape C1 controls while preserving parsed content and canonical stored values.
+- `nmnm-core` verification reports stored IDs, content, kinds, scopes, namespaces, and tags that require normalization instead of approving noncanonical records.
+- `nmnm-core` permission verification uses SQLite's effective database filename, detecting unsafe WAL/journal/shared-memory permissions through file and directory symlink aliases.
+- Fixed `nmnm-codex` `npm run codex:update` failing with `Cannot read properties of undefined (reading 'files')` for package name-keyed `npm pack --json` output, per raised [issue#30](https://github.com/linellazatin/nanomneme/issues/30) (fix commit `7342ae0`).
+  - All three pack paths normalize array/keyed output and reject invalid JSON, missing/duplicate packages, version mismatches, and malformed/unsafe filenames or file lists before use.
+- Refreshed compatible root resolutions for body-parser `2.4.0`, fast-uri `3.1.9`, Hono `4.13.14`, ip-address `10.7.5`, and required qs `6.16.1`.
+  - `nmnm-claude` separate frozen lock already contains the patched dependencies and audits clean.
+- Added temporary root-only overrides for OpenCode's Zod `4.6.7` and Effect's TOML `5.0.1`. Independently installed adapters do not inherit them; an upstream dependency fix remains required for those installations. Host dependency floors are unchanged.
+
 ## 0.8.4 - Pi adapter memory contracts strengthened
 
 Prepared for publication; no publishing is performed by checkout updates.

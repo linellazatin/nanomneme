@@ -1,5 +1,5 @@
 import pkg from '../package.json' with { type: 'json' };
-import { createMemoryLogger } from '@openlines/nmnm-core/logging';
+import { createMemoryLogger } from './logging-runtime.generated.js';
 import { claudeGlobalDir, settingsPath } from './context.js';
 
 export function getMemoryLogger({ home, globalDir } = {}) {

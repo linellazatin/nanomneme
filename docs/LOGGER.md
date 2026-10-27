@@ -1,12 +1,12 @@
 # Logger and Logslines Developer Manual
 
-This manual is for maintainers of nanomneme’s opt-in diagnostic logging. It covers the checked-in external Logslines source, the shared logger implementation, two generated runtimes, validation, and release checks. It does not describe normal memory operations or adapter configuration in full; see [Architecture](ARCHITECTURE.md) and [Memory handling sequence](SEQUENCE_MEMORY_HANDLING.md) for those boundaries.
+This manual is for maintainers of nanomneme’s opt-in diagnostic logging. It covers the checked-in external Logslines source, the shared logger implementation, four generated runtimes, validation, and release checks. It does not describe normal memory operations or adapter configuration in full; see [Architecture](ARCHITECTURE.md) and [Memory handling sequence](SEQUENCE_MEMORY_HANDLING.md) for those boundaries.
 
 ## Purpose and boundaries
 
 Nanomneme diagnostics are opt-in and append privacy-bounded `logslines/v1` JSONL records for selected explicit actions. The shared logger classifies an action’s result, resolves logging configuration, validates and serializes the record through Logslines, and writes it to the component log. It must remain subordinate to the action it observes: disabled, invalid, or failed diagnostics never change the action’s result or error.
 
-The logger is intentionally shipped with `@openlines/nmnm-core/logging`, rather than fetched or installed at runtime. This lets the CLI and every adapter use one reviewed implementation and one pinned Logslines release. The observer does not serialize memory payload fields or stack traces; failed records preserve the thrown error's message and class name in `error`. Error messages are not redacted and may expose sensitive input, memory IDs, queries, or paths. Review logs before sharing.
+The logger is intentionally shipped with `@openlines/nmnm-core/logging`, rather than fetched at runtime; Claude ships a self-contained generated copy of the same shared implementation. This lets the CLI and every adapter use one reviewed implementation and one pinned Logslines release. The observer does not serialize memory payload fields or stack traces; failed records preserve the thrown error's message and class name in `error`. Error messages are not redacted and may expose sensitive input, memory IDs, queries, or paths. Review logs before sharing.
 
 ## Source and artifact map
 
@@ -21,16 +21,19 @@ The logger is intentionally shipped with `@openlines/nmnm-core/logging`, rather 
 | `external/logslines/src/logger.js` | Generic Logslines envelope validation and emission; no Nanomneme operation policy. | Through `logslines:update` or focused `external:update`. |
 | `external/logslines/src/sinks/stderr.js` | Upstream stderr sink; Nanomneme uses its own file sink instead. | Through `logslines:update` or focused `external:update`. |
 | `external/logslines/spec/v1/schema.json`, `PROVENANCE.json`, `LICENSE` | Schema, pinned release/hashes, and attribution. | Through `logslines:update` or focused `external:update`. |
-| `scripts/build-logger.js` | Builds separate core observer and UI error bundles from the pinned Logslines source. | Yes, when changing the build contract. |
+| `scripts/build-logger.js` | Builds core/UI loggers and Claude core/logging runtimes from reviewed sources. | Yes, when changing the build contract. |
 | `packages/nmnm-core/src/logging-runtime.generated.js` | Generated, self-contained runtime included in published core packages. | No. Regenerate it. |
 | `packages/nmnm-ui/src/ui-logging-runtime.generated.js` | Generated UI-only error runtime, including bundled JSONC and license. | No. Regenerate it. |
+| `adapters/claude/src/core-runtime.generated.js` | Generated memory core from checkout source, with version/license stamp; no registry core dependency. | No. Regenerate it. |
+| `adapters/claude/src/logging-runtime.generated.js` | Generated shared observer with bundled JSONC, Logslines and license notices. | No. Regenerate it. |
 | `packages/nmnm-core/src/logslines.js` | Public core logging entry point that imports the generated runtime. | Yes. It is not itself a generator input. |
 | `adapters/*/src/logslines.js` | Component bindings: adapter identity, user configuration, and host correlation helpers. | Yes. |
 | `packages/nmnm-cli/src/logslines.js` | CLI identity/configuration binding; command observation remains in the executable. | Yes. |
 | `packages/nmnm-ui/src/logslines.js` | UI mutation binding and deduplication of general errors. | Yes. |
 | `packages/nmnm-ui/src/ui-logger.js` | Build-only general-error emitter; excluded from the UI npm package. | Yes. |
 | `shared/fixtures/logslines-release.json` | Independent reviewed release metadata and SHA-256 pin; repository-only, excluded from runtime packages. | Updated by `logslines:update`; review the diff. |
-| `test/external-logslines.test.js` | Offline fixture/provenance/source checks and both generated license banners. | Only when the validation contract changes. |
+| `scripts/external-logslines.test.js` | Offline fixture/provenance/source checks and core/UI license banners. | Only when the validation contract changes. |
+| `scripts/maintenance.test.js` | Generator checks, including Claude core/version/logger staleness and bundled license notices. | Only when the validation contract changes. |
 | `scripts/maintenance.js` | Coordinates read-only validation, logger builds, deliberate upstream release updates, and existing Codex installation refreshes. | Yes, when maintenance workflows change. |
 | `scripts/check-logging-packages.js` | Installed-tarball checks, fixture/build-source exclusion, and reusable physical Codex dependency preparation. | Yes, when distribution checks change. |
 | `scripts/external-logslines.js` | Maintainer-only snapshot check/update command. | Yes, when maintenance tooling changes. |
@@ -39,13 +42,13 @@ The logger is intentionally shipped with `@openlines/nmnm-core/logging`, rather 
 
 `src/logslines.js` consistently means a component binding. Core uses the same internal filename while preserving its public `@openlines/nmnm-core/logging` export; upstream filenames remain unchanged.
 
-`npm install`, package runtime, and CI do not fetch Logslines. `npm test` does not regenerate the runtime; it runs `node scripts/build-logger.js --check` and fails if either checked-in artifact is stale.
+`npm install`, package runtime, and CI do not fetch Logslines. `npm test` does not regenerate the runtime; it runs `node scripts/build-logger.js --check` and fails if any checked-in artifact is stale.
 
 ## Read-only repository validation
 
 Run `npm run validate` before shipping. It runs `npm test` (generated-output check and full suite), `npm audit --audit-level=high --omit=dev`, then standalone package validation. Each step must pass before the next runs. npm registry access is required for audit and may be required for package dependencies; Codex is not required. Validation never regenerates tracked bundles, fetches upstream Logslines, prepares dependencies in the adapter, or reinstalls plugins.
 
-Standalone validation also checks Claude's plugin-local registry lock and performs a frozen copied-plugin install, separate audit, adapter suite, and stdio MCP/management smoke. That copy currently resolves core `0.3.0` under `^0.3.0`; workspace and packed checkout checks use `0.3.1`. The logging import is compatible across both releases. Publishing core does not update Claude's lock; follow the [Claude refresh procedure](../adapters/claude/docs/CLAUDE_ADAPTER_MANUAL.md#refresh-the-locked-core) after publication.
+Standalone validation checks Claude's external-only registry lock and performs a frozen copied-plugin install, separate audit, full core contract against the deployed generated runtime, Claude adapter suite, and stdio MCP/management smoke. It checks copied runtime hashes and rejects registry core dependencies. No core publication is needed; see the [Claude refresh procedure](../adapters/claude/docs/CLAUDE_ADAPTER_MANUAL.md#refresh-bundled-runtimes-and-external-dependencies).
 
 CI and release use this command as a blocking validation gate and retain the informational full-tree audit. Both separately run rendered Chromium checks; those are not part of `npm run validate`. Tagged publishing requires repository validation and rendered UI success on the tagged checkout. Release validation checks the root tag and extracts nonempty changelog notes before publication; validated notes become the GitHub Release body. See [UI validation](../packages/nmnm-ui/README.md#validation) for browser setup and artifacts.
 
@@ -74,24 +77,25 @@ Memory fields, IDs, queries, filters, paths, prompts, and stack traces are not a
 
 ## When regeneration is required
 
-Use `npm run logslines:build` for routine maintenance. It checks both bundles, regenerates only stale outputs, rechecks, and validates standalone installed packages even when the bundles were already current. Node 22.19+, npm, and installed repository dependencies are required; package validation may need npm registry access. It does not fetch upstream Logslines or prepare/reinstall Codex.
+Use `npm run logslines:build` for routine maintenance. It checks all four runtimes, regenerates only stale outputs, rechecks, and validates standalone installed packages even when the bundles were already current. Node 22.19+, npm, and installed repository dependencies are required; package validation may need npm registry access. It does not fetch upstream Logslines or prepare/reinstall Codex.
 
-- `up-to-date`: both bundles already match current inputs.
+- `up-to-date`: all runtimes already match current inputs.
 - `updated`: stale bundles were regenerated and rechecked.
 - `validated`: standalone package logging checks passed.
 - `failed`: generation, filesystem access, rechecking, or package validation failed; the command exits nonzero.
 - `npm run logslines:build -- --fast`: skip package validation for the edit loop; prints `validation skipped (--fast)`.
 
-The focused `node scripts/build-logger.js --check` remains read-only: exit `0` means current, `2` means stale/missing, and `1` means failure. Direct `node scripts/build-logger.js` regenerates stale outputs without package validation. Both targets are compiled before any writes; build/read failures prevent writes. Generated output is independent of the caller's working directory. Review generated changes and run `npm test` before shipping.
+The focused `node scripts/build-logger.js --check` remains read-only: exit `0` means current, `2` means stale/missing, and `1` means failure. Direct `node scripts/build-logger.js` regenerates stale outputs without package validation. All targets are compiled before any writes; build/read failures prevent writes. Generated output is independent of the caller's working directory. Review generated changes and run `npm test` before shipping.
 
 Run `node scripts/build-logger.js` before shipping when a change affects the generated runtime’s inputs:
 
 - Production source under `shared/logger/` (tests alone do not require regeneration).
+- Core storage source, core package version, or core license changes require rebuilding Claude's bundled core; its logging banner also tracks the core version/license.
 - UI general-error source `packages/nmnm-ui/src/ui-logger.js`, or the bundled JSONC parser version/license.
 - The Logslines snapshot, its provenance, or its license under `external/logslines/`.
 - `scripts/build-logger.js`.
 
-**Do not regenerate solely because ordinary core storage, CLI, UI, adapter, documentation, or logger-test files changed**. A change to `packages/nmnm-core/src/logslines.js` alone also does not make the generated runtime stale. Run the generator whenever uncertain; `node scripts/build-logger.js --check` is the authoritative staleness test.
+**Do not regenerate solely because CLI, ordinary UI/adapter bindings, documentation, or logger-test files changed**. Core storage changes do require regenerating Claude's bundled core. A change to `packages/nmnm-core/src/logslines.js` alone also does not make the generated runtime stale. Run the generator whenever uncertain; `node scripts/build-logger.js --check` is the authoritative staleness test.
 
 ## Workflow: change the shared logger
 
@@ -111,7 +115,7 @@ node scripts/build-logger.js --check
 npm test
 ```
 
-4. Include handwritten source and every affected generated bundle in the same change. Review both artifacts; the generator preserves bytes for unaffected targets.
+4. Include handwritten source and every affected generated bundle in the same change. Review affected artifacts; the generator preserves bytes for unaffected targets.
 
 If you skipped package validation with `--fast`, run it before a release or package-distribution change:
 
@@ -125,7 +129,7 @@ This packs core, CLI, UI, and adapters, installs them outside the workspace, and
 
 - Source: `packages/nmnm-ui/src/ui-logger.js`; generated runtime: `packages/nmnm-ui/src/ui-logging-runtime.generated.js`. The source is build-only and excluded from the npm package; `src/logslines.js` imports the generated runtime.
 - Regenerate with `node scripts/build-logger.js`; verify with `node scripts/build-logger.js --check`.
-- `npm test` checks both generated runtimes. The single command builds/checks both targets and reports each stale artifact. UI-only changes preserve core output bytes; core keeps JSONC external, while UI bundles its ESM entry and license. Shared configuration/sink or upstream snapshot changes affect both targets.
+- `npm test` checks all four generated runtimes and reports stale artifacts. UI-only changes preserve other outputs; core logging keeps JSONC external, while UI and Claude logging bundle it with its license. Shared logger or upstream changes affect all logging targets; core persistence changes affect the Claude core artifact.
 - Browser reports are authenticated, bounded to 600 message characters, and best effort; server unavailability prevents delivery. Raw error messages are not redacted.
 
 ## Workflow: update the upstream Logslines release
@@ -133,26 +137,28 @@ This packs core, CLI, UI, and adapters, installs them outside the workspace, and
 Use an exact published semantic-version tag. The command requires installed repository dependencies, GitHub access for the release snapshot, and npm registry access as needed for standalone package validation.
 
 ```sh
-npm run logslines:update -- v0.1.0
+npm run logslines:update -- <reviewed-release-tag>
 ```
 
-- Replace the example with the intended published `v<major>.<minor>.<patch>` tag; no automatic latest-version lookup.
+- Replace `<reviewed-release-tag>` with the intended published semantic-version tag; no automatic latest-version lookup. Use the fixture/provenance tag when checking the current snapshot.
 - Fetch and validate all required files before replacing the snapshot. Snapshot directory replacement and fixture file replacement are individually atomic, not one transaction.
 - Update `external/logslines/PROVENANCE.json` and the independent `shared/fixtures/logslines-release.json` from the validated release. The fixture is a reviewed release pin, not runtime state; it is excluded from published packages.
-- Check the offline pin, refresh stale core/UI bundles, run `npm test`, then validate standalone packages once.
+- Check the offline pin, refresh stale core/UI/Claude bundles, run `npm test`, then validate standalone packages once.
 - Review the source, provenance, fixture, and generated diffs. If a later step fails, updated files remain for review; the command names the paths that may be partially updated and exits nonzero. Correct the failure and rerun the coordinated command.
 - Tests compare the checked-in fixture against provenance, actual source hashes, and both generated banners without fetching upstream or regenerating expectations.
 
 Focused commands remain available:
 
 ```sh
-npm run external:check -- v0.1.0
-npm run external:update -- v0.1.0
+npm run external:check -- <reviewed-release-tag>
+npm run external:update -- <reviewed-release-tag>
 ```
 
 `external:check` compares local source/provenance with the selected upstream release. `external:update` replaces only the snapshot/provenance; it leaves the shared fixture and generated bundles unchanged and does not run tests. It does not complete a coordinated release update. All three upstream commands require network access and are maintainer-only; CI, installation, and package runtime do not fetch Logslines.
 
 ## Workflow: refresh Codex after logging updates
+
+For first-time setup, run `npm ci`, `npm run validate`, then `npm run codex:prepare` before registering the local marketplace and installing the plugin. Preparation refreshes stale generated runtimes and copies physical dependencies without invoking Codex or validation. See the [Codex quick start](../adapters/codex/README.md#quick-start).
 
 For an existing enabled local marketplace installation:
 
@@ -171,7 +177,7 @@ npm run codex:update
 
 ## What not to do
 
-- Do not hand-edit either `*.generated.js` logging runtime.
+- Do not hand-edit generated runtime files.
 - Do not add Logslines as an npm dependency, a workspace dependency, or a runtime download.
 - Do not replace the external snapshot by copying files manually. Use `logslines:update` for the complete validated snapshot, fixture, generation, and testing workflow.
 - Do not omit the generated runtime from a shared-logger or external-source change.

@@ -1,0 +1,62 @@
+name: Feature request
+description: Propose a focused memory, package, adapter, or workflow improvement.
+title: "[Feature] "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: "Describe one problem and the outcome you want. Short proposals and open questions are welcome; code, measurements, and a finished design are not required. Keep examples synthetic and exclude private memory content, credentials, and sensitive configuration."
+  - type: checkboxes
+    id: before-submitting
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and pull requests for a related proposal.
+          required: true
+  - type: dropdown
+    id: components
+    attributes:
+      label: Affected components
+      multiple: true
+      options:
+        - Core (@openlines/nmnm-core)
+        - CLI (@openlines/nmnm-cli)
+        - Workbench UI (@openlines/nmnm-ui)
+        - Pi adapter (@openlines/nmnm-pi)
+        - OpenCode adapter (@openlines/nmnm-opencode)
+        - Claude Code adapter (@openlines/nmnm-claude)
+        - Codex adapter (@openlines/nmnm-codex)
+        - Shared logging or repository tooling / CI
+        - New integration / not sure yet
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Current limitation
+      description: What are you trying to do, and what is difficult today? Name the current command, memory operation, host workflow, or missing integration when known.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: Describe useful behavior with a small example. If this spans adapters, explain which should share it and any host-specific differences. Separate proposed behavior from what already exists.
+    validations:
+      required: true
+  - type: textarea
+    id: data-boundaries
+    attributes:
+      label: Storage, privacy, and compatibility considerations
+      description: Optional. Mention effects on project/global isolation, existing records/schema, exports, deletion/recovery, logging, network access, or older packages/hosts. Unknowns are welcome; a security analysis is not required.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and workarounds
+      description: Optional existing commands, settings, or other approaches you considered and why they do not meet the need.
+  - type: textarea
+    id: verification
+    attributes:
+      label: Success criteria or supporting context
+      description: Optional expected output, synthetic example, possible check, references, or related issues. Label proposed checks and unmeasured benefits clearly.

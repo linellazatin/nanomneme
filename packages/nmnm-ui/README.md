@@ -2,8 +2,8 @@
 
 Local browser workbench for reviewing and cleaning memories captured by coding-agent harnesses.
 
-- Package: `@openlines/nmnm-ui` `0.1.1`; introduced in repository `0.8.0`, patched in `0.8.1`.
-- Status: experimental; UI `0.1.0` is published on npm. This checkout prepares `0.1.1`; installed users receive these fixes only after publication.
+- Package: `@openlines/nmnm-ui`; introduced in repository `0.8.0`.
+- Status: experimental. Checkout changes reach registry installations only after publication; use the installed version command and changelog to identify available behavior.
 - Runtime: Node foreground process, loopback HTTP, existing `nmnm-core` API.
 - Frontend: plain HTML/CSS/JavaScript; local Inter fonts, Nanomneme logo, Openlines light/dark themes.
 - No persistent daemon, framework, build step, model calls, or external runtime assets.
@@ -42,7 +42,7 @@ Initial launch before registering a store; screenshots use disposable sample mem
 Requirements:
 
 - Node.js `22.19.0` or newer with built-in `node:sqlite` and FTS5.
-- CLI `>= 0.4.1` with patched UI after publication, or repository checkout with workspace dependencies installed through `npm install`. Published CLI `0.4.0` bundles the earlier UI `0.1.0`.
+- The CLI with its UI dependency, or a repository checkout with workspace dependencies installed through `npm install`. Dependency requirements are recorded in the package manifests.
 - Existing compatible Nanomneme database; adding a store never creates it.
 - Browser with JavaScript and tab-session storage enabled.
 
@@ -92,12 +92,12 @@ node packages/nmnm-ui/bin/nmnm-ui.js --port 8080 --no-auto
 
 ## CLI bundling and release preparation
 
-- Checkout CLI `0.4.1` declares core `0.3.1` and UI `0.1.1` as regular dependencies. Both packages use the same core version.
+- CLI declares core and UI as regular dependencies; UI also depends on core. Manifests define compatible ranges, and the root lockfile records checkout resolutions. Independent installations may resolve later compatible patches.
 - UI imports dynamically only for `nmnm ui`. Installing it does not start a daemon, server, or browser; terminal memory commands do not load UI.
 - UI exports `launchWorkbench(args, { command })` from its package root; standalone and CLI launch share flags, browser dispatch, and shutdown.
 - npm package contents include `bin/`, four explicitly listed runtime files in `src/`, `public/`, the web standards guide, README, and licenses. Tests, README screenshots, and build-only `src/ui-logger.js` are excluded; screenshots are available in the repository.
 - CLI/UI require Node `22.19.0` or newer; independently installed core retains its own runtime requirement.
-- Core `0.3.1`, UI `0.1.0`, and CLI `0.4.0` are published. UI `0.1.1` and CLI `0.4.1` are prepared for the repository `0.8.1` release; publication remains a separate maintainer action.
+- Package manifests and the changelog record releases; publication remains a separate maintainer action. Use installed version output to distinguish a registry installation from a checkout.
 - For subsequent releases, publish any new core version first, then UI, then CLI. Validate tarballs before publishing; do not republish an existing version.
 - Existing tagged-release workflow also publishes UI before CLI. Publication remains a separate maintainer action.
 

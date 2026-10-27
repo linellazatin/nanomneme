@@ -1,4 +1,4 @@
-import { open } from '@openlines/nmnm-core';
+import { open } from './core-runtime.generated.js';
 import { homedir, platform as currentPlatform } from 'node:os';
 import { join, resolve } from 'node:path';
 

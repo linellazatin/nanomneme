@@ -2,6 +2,8 @@
 
 Nanomneme is a local, deterministic memory system. `nmnm-core` owns persistence and all SQLite access; the CLI, local review UI, and harness adapters call its public interface. Its separate `@openlines/nmnm-core/logging` export observes caller-owned explicit actions. Persistence methods and context reads do not automatically emit diagnostics; the UI binds the observer for mutations and a UI-only Logslines emitter for general errors.
 
+Core and observer nodes below represent shared runtime contracts. `nmnm-claude` ships generated copies of both from the same sources and imports those local files; other clients use the core package exports.
+
 ## System architecture
 
 ```mermaid
@@ -18,9 +20,9 @@ flowchart TB
     CALLBACK["Action callback\ntrust, input conversion, store resolution\nmemory or pin mutation, required output"]
   end
 
-  subgraph core[Core package exports]
-    API["@openlines/nmnm-core\nSQLite persistence and maintenance"]
-    LOGGER["@openlines/nmnm-core/logging\ncreateMemoryLogger and run\nshared catalog, config, observer, sink\nLogslines validation"]
+  subgraph core[Shared runtime contracts]
+    API["Core persistence API\npackage or nmnm-claude generated copy"]
+    LOGGER["Shared memory observer\ncore logging export or nmnm-claude generated copy\ncatalog, config, observer, sink, Logslines"]
   end
 
   subgraph uilogging[UI package general-error logging]
@@ -40,11 +42,12 @@ flowchart TB
     SETTINGS["Pi, Claude, OpenCode context settings\nproject and user nmnm.jsonc"]
   end
 
-  subgraph build[Checked-in logging build]
+  subgraph build[Checked-in runtime build]
     SHARED["shared/logger/\none maintained Nanomneme implementation"]
     EXTERNAL["external/logslines/\npinned source, schema, provenance"]
     UISOURCE["UI src/ui-logger.js\nbuild-only general-error source"]
-    BUNDLE["scripts/build-logger.js\ncore and UI targets"]
+    CORESOURCE["packages/nmnm-core/src/index.js\nnmnm-claude core input"]
+    BUNDLE["scripts/build-logger.js\nfour generated runtimes"]
   end
 
   UI -->|unobserved successful reads| API
@@ -70,11 +73,14 @@ flowchart TB
   API --> GLOBAL
   API --> CUSTOM
   LOGGER -->|one bounded outcome when enabled| JSONL
+  CORESOURCE --> BUNDLE
   SHARED --> BUNDLE
   EXTERNAL --> BUNDLE
   UISOURCE --> BUNDLE
   BUNDLE -.->|UI ui-logging-runtime.generated.js| UIERROR
   BUNDLE -.->|core logging-runtime.generated.js| LOGGER
+  BUNDLE -.->|nmnm-claude core-runtime.generated.js| API
+  BUNDLE -.->|nmnm-claude logging-runtime.generated.js| LOGGER
 ```
 
 ### Ownership and runtime boundaries
@@ -85,8 +91,10 @@ flowchart TB
 - **Adapter state:** Pi, Claude, and OpenCode own their context settings and per-adapter pin JSON files, rendering enabled autoretention guidance before bounded memory indexes. Claude prompt-submit resolves policy first; disabled reinjection accesses no memory or session state, while enabled reinjection persists an ephemeral counter and builds context only on cadence. Pin/unpin actions use adapter file helpers without modifying SQLite. Pi serializes pin read-modify-replace updates with an exclusive same-directory lock; it never reclaims locks automatically, so a crash-left lock requires explicit operator removal after all writers stop. Codex has no pin or context settings; its user `nmnm.jsonc` is logging-only. Shared `~/.local/share/nanomneme/config.jsonc` sets the logging default; user-level adapter settings override it. Project settings cannot authorize logging.
 - **Shared diagnostics:** `shared/logger/` owns the catalog, JSONC resolution, logical-action observer, and file sink. Core ships this implementation and the pinned Logslines emitter together as one deployed logging module in `logging-runtime.generated.js`, exposed through `@openlines/nmnm-core/logging`. Caller bindings supply identity, user settings location, and normalized host correlation. `run` executes its callback exactly once, observes its result or exception when enabled, and preserves synchronous values, original promises, and original errors. Raw `open()` calls do not log.
 - **Process routing:** Pi invokes core and logging directly. Claude's Node MCP server observes tools before MCP response formatting; its hooks and Node management CLI are separate processes. OpenCode's Bun plugins invoke a Node bridge for persistence and diagnostics; the management CLI runs directly under Node. Codex invokes its cached package-relative Node runner, whose core and parser dependencies must be physically included through local plugin preparation.
-- **Claude distribution:** copied marketplace plugins install registry dependencies from the adapter-local npm lockfile, currently core `0.3.0` under a `^0.3.0` manifest range. Local in-place loading uses root workspace dependencies and checkout core `0.3.1`. A later core publication requires an explicit reviewed plugin-lock refresh and plugin version increase; it does not alter frozen cached installations.
-- **External source lifecycle:** `external/logslines/` is a checked-in snapshot selected by upstream release tag, with per-file SHA-256 provenance. `shared/fixtures/logslines-release.json` independently pins the reviewed release and is excluded from runtime packages. `npm run logslines:update -- <tag>` validates and replaces the snapshot/provenance and fixture, refreshes stale core/UI runtimes, runs the suite, and checks standalone packages. Later failures retain updates for review. Focused `external:check` compares against upstream; `external:update` replaces only snapshot/provenance. Offline fixture checks run through `npm test`; CI, package installation, and package runtime do not fetch Logslines.
+- **`nmnm-claude` distribution:** the plugin ships generated core and logging runtimes from the checkout, stamped with core version and license notices. Its registry-only lock covers external dependencies. CI checks generated bytes; a disposable copied install audits dependencies, exercises the full core contract against the deployed bundle, runs Claude tests, and checks stdio MCP/management operations without installing registry core. Native cache installation and provider behavior remain separate.
+- **External source lifecycle:** `external/logslines/` is a checked-in snapshot selected by upstream release tag, with per-file SHA-256 provenance. `shared/fixtures/logslines-release.json` independently pins the reviewed release and is excluded from runtime packages. `npm run logslines:update -- <tag>` validates and replaces the snapshot/provenance and fixture, refreshes stale core/UI/Claude runtimes, runs the suite, and checks standalone packages. Later failures retain updates for review. Focused `external:check` compares against upstream; `external:update` replaces only snapshot/provenance. Offline fixture checks run through `npm test`; CI, package installation, and package runtime do not fetch Logslines.
+
+Registry core consumers and CLI's UI dependency use compatible patch ranges recorded in their manifests. Use the first release containing required fixes as the floor; Claude instead ships a checked generated runtime. Release metadata checks enforce compatible patched floors, and Codex preparation verifies the exact checkout core and parser contents. Lockfiles and installed plugin bundles require explicit refreshes even when manifests use ranges.
 
 ## Local review UI
 

@@ -1,0 +1,106 @@
+name: Bug report
+description: Report incorrect behavior in a package, adapter, or installation workflow.
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: "Report one primary behavior. Distinguish what you observed from source-only findings or suspected causes. Unknown details and intermittent failures are welcome; say what is missing. Use synthetic memories and redact credentials, private paths, prompts, and personal data. Do not upload memory databases, backups, or unredacted diagnostic logs. For suspected vulnerabilities, use private reporting on the Security tab if available; otherwise request a private contact without posting exploit details."
+  - type: checkboxes
+    id: before-submitting
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues for a related report.
+          required: true
+        - label: I removed private memory content, credentials, and sensitive diagnostic data.
+          required: true
+  - type: dropdown
+    id: components
+    attributes:
+      label: Affected components
+      description: Select all observed components. Use Unknown if the responsible component is unclear.
+      multiple: true
+      options:
+        - Core (@openlines/nmnm-core)
+        - CLI (@openlines/nmnm-cli)
+        - Workbench UI (@openlines/nmnm-ui)
+        - Pi adapter (@openlines/nmnm-pi)
+        - OpenCode adapter (@openlines/nmnm-opencode)
+        - Claude Code adapter (@openlines/nmnm-claude)
+        - Codex adapter (@openlines/nmnm-codex)
+        - Shared logging or repository tooling / CI
+        - Unknown / other
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Primary operation or failure area
+      options:
+        - Installation, preparation, upgrade, or plugin cache
+        - Retain, patch, or restore memory
+        - Recall, retrieve, search, or filtering
+        - Remove, purge, or retention / expiry
+        - Import, export, backup, or verification
+        - Store selection, scope, migration, or permissions
+        - Session context, hooks, skills, pins, or autoretention
+        - Workbench UI or terminal browser
+        - Logging, configuration, or validation / CI
+        - Unknown / other
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed behavior and impact
+      description: What happened, how often, and at what point? State any observed data loss, incorrect results, startup failure, or cross-store effects without guessing severity. Label source-only findings clearly.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction or available evidence
+      description: Give the shortest steps actually run, exact command or tool request, and synthetic input. Include reduced output or a source file/revision. If reproduction is unavailable, describe your observations and missing evidence; do not run destructive operations on a personal store.
+      placeholder: "1. Starting state / installation steps:\n2. Command or tool request and synthetic input:\n3. Result or exact error:\n4. Frequency / remaining uncertainty:"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: Describe the expected result, with a documentation reference or known-good version if available. Mark assumptions explicitly.
+    validations:
+      required: true
+  - type: textarea
+    id: versions
+    attributes:
+      label: Package and host versions
+      description: List affected package versions separately from Pi, OpenCode, Claude Code, or Codex versions. For a checkout, add its revision/tag and local changes. For cache issues, distinguish checkout and installed plugin versions. Use nmnm --version if the CLI is available; it does not identify adapter or host versions.
+      placeholder: "Nanomneme package(s) and version(s):\nCheckout revision/tag, if applicable:\nHost application and version, if applicable:\nInstalled plugin/cache version, if known:"
+    validations:
+      required: true
+  - type: textarea
+    id: runtime
+    attributes:
+      label: Runtime and platform
+      description: Include OS/architecture, Node.js version, package manager/version, and Bun when relevant. For UI issues, add browser/version and how it was launched. For a remote host, distinguish client and server environments. State unknown or not applicable where needed.
+      placeholder: "OS / architecture:\nNode.js:\nnpm / Bun / other package manager:\nBrowser or remote-server details, if applicable:"
+    validations:
+      required: true
+  - type: textarea
+    id: installation
+    attributes:
+      label: Installation and lifecycle context
+      description: State registry install, repository checkout, local tarball, marketplace, or copied plugin cache. For setup/update problems, list commands and their order, first install versus refresh, and whether a fresh host session and hook trust were checked. Do not paste environment dumps or personal configuration files.
+  - type: textarea
+    id: store-context
+    attributes:
+      label: Store and retrieval context
+      description: If relevant, identify project/global/custom store selection, scope, and whether the store was fresh or existing. For search issues, share a synthetic record/query, filters, expected matches, and actual matches. For imports, include a minimal synthetic JSONL sample. For adapter issues, distinguish direct runner/tool execution from automatic host invocation.
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Optional redacted output, screenshots, related issues, suspected cause, or last known good version. Diagnostics default off and raw error messages can contain private data; do not enable or upload logging just to complete this report.

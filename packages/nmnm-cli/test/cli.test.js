@@ -25,7 +25,7 @@ test('CLI forwards ui help/version aliases and rejects unsupported UI flags', ()
   for (const flag of ['--version', '-v']) {
     const version = run('ui', flag);
     assert.equal(version.status, 0, version.stderr);
-    assert.equal(version.stdout.trim(), '0.1.1');
+    assert.equal(version.stdout.trim(), '0.1.2');
   }
   for (const args of [['ui', '--db', 'memory.db'], ['ui', '-p', '65536'], ['ui', '--unknown'], ['--web'], ['web']]) {
     const output = run(...args); assert.equal(output.status, 1);
@@ -54,6 +54,38 @@ test('CLI rejects malformed Unicode import before creating the destination', asy
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Unicode/);
   await assert.rejects(access(target));
+});
+
+test('CLI rejects invalid UTF-8 before creating or modifying an import destination', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-import-utf8-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const existing = join(directory, 'existing.db');
+  const missing = join(directory, 'missing', 'memory.db');
+  const source = open(':memory:');
+  const memory = source.retain({ content: 'UTF8MARKER' });
+  source.close();
+  const original = run('retain', 'Keep existing data', '--db', existing, '--scope', 'project', '--json');
+  assert.equal(original.status, 0, original.stderr);
+  const before = await readFile(existing);
+  const file = join(directory, 'memory.jsonl');
+  const prefix = JSON.stringify({ _format: 'nanomneme', _version: 1 }) + '\n';
+  for (const invalid of [[0xff], [0xc0, 0xaf], [0xed, 0xa0, 0x80], [0xe2, 0x82]]) {
+    const line = Buffer.from(prefix + JSON.stringify(memory) + '\n');
+    const index = line.indexOf('UTF8MARKER');
+    await writeFile(file, Buffer.concat([line.subarray(0, index), Buffer.from(invalid), line.subarray(index + 10)]));
+    for (const target of [missing, existing]) {
+      const result = run('import', file, '--db', target);
+      assert.equal(result.status, 1, JSON.stringify(invalid));
+      assert.match(result.stderr, /UTF-8/);
+    }
+    await assert.rejects(access(join(directory, 'missing')));
+    assert.deepEqual(await readFile(existing), before);
+  }
+  const content = 'Valid � 東京 😀';
+  await writeFile(file, prefix + JSON.stringify({ ...memory, content }) + '\n');
+  const result = run('import', file, '--db', missing);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(JSON.parse(run('recall', memory.id, '--db', missing, '--json').stdout).content, content);
 });
 
 test('CLI rejects source sidecars and aliases without replacing WAL data', async (t) => {
@@ -130,6 +162,25 @@ test('CLI verify reports unsafe permissions without modifying the database', { s
   assert.deepEqual(JSON.parse(result.stdout).issues, [{ code: 'file_permissions', count: 1, ids: ['database'] }]);
   assert.equal((await stat(source)).mode & 0o777, 0o644);
   assert.deepEqual(await readFile(source), before);
+});
+
+test('CLI verify reports unsafe real sidecars through a database symlink', { skip: process.platform === 'win32' }, async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-cli-alias-permissions-'));
+  const db = join(directory, 'memory.db');
+  const store = open(db);
+  const raw = new DatabaseSync(db);
+  t.after(async () => { raw.close(); store.close(); await rm(directory, { recursive: true, force: true }); });
+  raw.exec('PRAGMA journal_mode = WAL');
+  store.retain({ content: 'Private WAL content' });
+  const alias = join(directory, 'alias.db');
+  await symlink(db, alias);
+  await chmod(db + '-wal', 0o644);
+  const before = await readFile(db + '-wal');
+  const result = run('verify', '--db', alias, '--json');
+  assert.equal(result.status, 1, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout).issues, [{ code: 'file_permissions', count: 1, ids: ['wal'] }]);
+  assert.deepEqual(await readFile(db + '-wal'), before);
+  assert.equal((await stat(db + '-wal')).mode & 0o777, 0o644);
 });
 
 test('CLI reports installed cli, core, and ui versions without opening a database', async () => {
@@ -374,6 +425,37 @@ function runIn(directory, ...args) {
     env: { ...process.env, HOME: directory },
   });
 }
+
+test('CLI escapes terminal controls while preserving stored and transferred content', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-terminal-output-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const db = join(directory, 'memory.db');
+  const content = 'Text 東京\x1b[2J\x1b[H\x07\x08\r\n\t\x7f\u009b31m\u009dtitle';
+  const retained = run('retain', content, '--db', db, '--scope', 'project');
+  const store = open(db, { readOnly: true });
+  const [memory] = store.export();
+  store.close();
+  assert.equal(memory.content, content);
+  for (const result of [retained, run('recall', memory.id, '--db', db), run('retrieve', '--db', db)]) {
+    assert.equal(result.status, 0, result.stderr);
+    assert.doesNotMatch(result.stdout, /[\x00-\x09\x0b-\x1f\x7f-\x9f]/);
+    assert.match(result.stdout, /Text 東京\\u001b\[2J/);
+    assert.match(result.stdout, /\\u000d\\u000a\\u0009/);
+  }
+  const json = run('recall', memory.id, '--db', db, '--json');
+  assert.equal(JSON.parse(json.stdout).content, content);
+  assert.doesNotMatch(json.stdout, /[\x00-\x09\x0b-\x1f\x7f-\x9f]/);
+  const exported = run('export', '--db', db);
+  assert.equal(JSON.parse(exported.stdout.trimEnd().split('\n')[1]).content, content);
+  assert.doesNotMatch(exported.stdout, /[\x00-\x09\x0b-\x1f\x7f-\x9f]/);
+  const file = join(directory, 'memory.jsonl');
+  assert.equal(run('export', '--db', db, '--out', file).status, 0);
+  assert.equal(await readFile(file, 'utf8'), exported.stdout);
+  const error = run('retrieve', '--bad\x1b[2J\noption', '--db', db);
+  assert.equal(error.status, 1);
+  assert.doesNotMatch(error.stderr, /[\x00-\x09\x0b-\x1f\x7f-\x9f]/);
+  assert.match(error.stderr, /\\u001b\[2J\\u000aoption/);
+});
 
 test('CLI performs all 4Rs with JSON output', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-cli-'));

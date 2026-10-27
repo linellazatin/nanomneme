@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { closeSync, existsSync, linkSync, mkdirSync, openSync, statSync, unlinkSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
 const DEFAULTS = Object.freeze({ kind: 'note', scope: 'project', namespace: 'default', importance: 0.5, confidence: 1 });
@@ -355,7 +355,7 @@ export function open(path, { create = true, readOnly = false } = {}) {
   text(path, 'path');
   if (typeof create !== 'boolean') throw new TypeError('create must be a boolean');
   if (typeof readOnly !== 'boolean') throw new TypeError('readOnly must be a boolean');
-  const permissionsPath = path === ':memory:' ? null : resolve(path);
+  let permissionsPath = null;
   const fresh = !existsSync(path);
   if (fresh && (!create || readOnly)) throw new Error(`database does not exist: ${path}`);
   if (fresh && path !== ':memory:') {
@@ -363,6 +363,7 @@ export function open(path, { create = true, readOnly = false } = {}) {
   }
   const db = new DatabaseSync(path, { readOnly });
   try {
+    if (path !== ':memory:') permissionsPath = db.prepare('PRAGMA database_list').all().find(({ name }) => name === 'main').file;
     db.exec('PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
     if (!readOnly) {
       db.exec('PRAGMA secure_delete = ON');
@@ -600,11 +601,11 @@ export function open(path, { create = true, readOnly = false } = {}) {
           : [];
         for (const memory of memories) {
           try {
-            memoryId(memory.id);
-            text(memory.content, 'content');
-            kind(memory.kind);
-            scope(memory.scope);
-            slug(memory.namespace, 'namespace');
+            if (memoryId(memory.id) !== memory.id
+              || text(memory.content, 'content') !== memory.content
+              || kind(memory.kind) !== memory.kind
+              || scope(memory.scope) !== memory.scope
+              || slug(memory.namespace, 'namespace') !== memory.namespace) throw new TypeError('memory fields must already be canonical');
             score(memory.importance, 'importance');
             score(memory.confidence, 'confidence');
             const createdAt = date(memory.created_at, 'created_at');
@@ -619,7 +620,9 @@ export function open(path, { create = true, readOnly = false } = {}) {
         }
         if (hasColumns('memory_tags')) {
           for (const tag of db.prepare('SELECT memory_id, tag FROM memory_tags ORDER BY memory_id, tag').all()) {
-            try { memoryId(tag.memory_id); slug(tag.tag, 'tag'); } catch { report.add('tag_field', tag.memory_id); }
+            try {
+              if (memoryId(tag.memory_id) !== tag.memory_id || slug(tag.tag, 'tag') !== tag.tag) throw new TypeError('tag fields must already be canonical');
+            } catch { report.add('tag_field', tag.memory_id); }
           }
         }
         if (validFts && hasColumns('memories_fts') && hasColumns('memories')) {

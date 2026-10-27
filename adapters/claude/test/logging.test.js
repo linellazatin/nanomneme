@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { handleTool } from '../src/operations.js';
-import { open } from '@openlines/nmnm-core';
+import { open } from '../src/core-runtime.generated.js';
 import { runCli } from '../src/cli.js';
 
 test('shared diagnostics cover tools and management, inherit and override without payloads', () => {

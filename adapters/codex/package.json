@@ -23,13 +23,15 @@
     "LICENSE"
   ],
   "dependencies": {
-    "@openlines/nmnm-core": "^0.3.2"
+    "@modelcontextprotocol/server": "^2.4.0",
+    "@openlines/nmnm-core": "^0.3.2",
+    "zod": "^4.6.7"
   },
   "bundleDependencies": [
     "@openlines/nmnm-core"
   ],
   "engines": {
-    "node": ">=22.13.0"
+    "node": ">=22.19.0"
   },
   "license": "MIT",
   "author": "Linel Lazatin",
@@ -37,5 +39,8 @@
     "type": "git",
     "url": "git+https://github.com/linellazatin/nanomneme.git",
     "directory": "adapters/codex"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "^2.4.0"
   }
 }

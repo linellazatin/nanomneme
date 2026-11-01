@@ -1,7 +1,7 @@
 {
   "name": "nmnm-codex",
-  "version": "0.2.3",
-  "description": "MCP-free, local SQLite memory for Codex.",
+  "version": "0.3.0",
+  "description": "Local SQLite memory through stdio MCP for Codex.",
   "author": {
     "name": "Linel Lazatin",
     "url": "https://github.com/linellazatin"
@@ -11,11 +11,11 @@
   "license": "MIT",
   "keywords": ["codex", "memory", "sqlite"],
   "skills": "./skills/",
-  "hooks": "./hooks/hooks.json",
+  "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "Nanomneme for Codex",
     "shortDescription": "Local, bounded Codex memory.",
-    "longDescription": "Use a bundled direct-core runner and a bounded session memory index without MCP.",
+    "longDescription": "Use native MCP tools for bounded local memory with explicit project binding.",
     "developerName": "Linel Lazatin",
     "category": "Productivity",
     "capabilities": ["Read", "Write"],

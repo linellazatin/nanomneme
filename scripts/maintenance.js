@@ -7,7 +7,7 @@ import { homedir } from 'node:os';
 import { isDeepStrictEqual } from 'node:util';
 import { updateExternalLogslines, checkPinnedLogslines } from './external-logslines.js';
 import { buildLogger } from './build-logger.js';
-import { checkLoggingPackages, prepareCodexDependencies, readPackageTree } from './check-logging-packages.js';
+import { checkLoggingPackages, prepareCodexDependencies, readPackageTree, readCodexRuntime } from './check-logging-packages.js';
 
 function samePath(left, right) {
   if (typeof left !== 'string' || typeof right !== 'string') return false;
@@ -21,11 +21,7 @@ function pluginContents(root) {
   }
   const files = readPackageTree(root, { exclude: path => path.split('/').some(part => ['node_modules', '.git', '.package-lock.json'].includes(part)) });
   if (!files) return null;
-  for (const dependency of ['@openlines/nmnm-core', 'jsonc-parser']) {
-    const tree = readPackageTree(join(root, 'node_modules', dependency));
-    if (!tree) return null;
-    for (const [path, hash] of Object.entries(tree)) files[`node_modules/${dependency}/${path}`] = hash;
-  }
+  try { Object.assign(files, readCodexRuntime(root)); } catch { return null; }
   return files;
 }
 
@@ -63,7 +59,7 @@ async function refreshCodex(root, dependencies, build, report) {
   const cache = plugin => join(home, 'plugins/cache/nanomneme-local/nmnm-codex', plugin.version);
   if (before.version === pkg.version && isDeepStrictEqual(pluginContents(cache(before)), expected)) { report('up-to-date'); return; }
   await json(['plugin', 'add', 'nmnm-codex@nanomneme-local', '--json']);
-  report('reload-required: start a new Codex session and review hook trust prompts');
+  report('reload-required: restart Codex with an explicit NMNM_PROJECT_DIR binding');
   const after = await installedPlugin();
   if (after.enabled !== before.enabled) throw new Error('Codex refresh changed plugin enablement unexpectedly');
   if (after.version !== pkg.version || !isDeepStrictEqual(pluginContents(cache(after)), expected)) throw new Error('Codex cache verification failed after refresh');

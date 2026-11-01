@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { handleRequest } from '../src/runner.js';
-import { buildMemoryIndex } from '../src/context.js';
+import { createMemoryOperations } from '../src/operations.js';
+import { codexSessionId } from '../src/logslines.js';
 
-test('Codex explicit operations inherit and override while context reads remain unlogged', () => {
+test('Codex operations inherit and override logging between connections', () => {
   const home = mkdtempSync(join(tmpdir(), 'nmnm-codex-logging-'));
   const base = join(home, '.local/share/nanomneme');
   const agent = join(home, 'agent');
@@ -14,9 +14,9 @@ test('Codex explicit operations inherit and override while context reads remain 
   try {
     mkdirSync(base, { recursive: true }); mkdirSync(agent);
     writeFileSync(join(base, 'config.jsonc'), '{"logging":{"enabled":true}}');
-    handleRequest({ operation: 'retrieve', input: {}, session_id: 'untrusted' }, ctx);
-    const memory = handleRequest({ operation: 'retain', input: { content: 'PRIVATE' } }, ctx);
-    buildMemoryIndex(ctx);
+    const call = createMemoryOperations(ctx);
+    call('retrieve_memory', {});
+    const memory = JSON.parse(call('retain_memory', { content: 'PRIVATE' }).content[0].text);
     const path = join(base, 'logs/nmnm-codex.jsonl');
     let records = readFileSync(path, 'utf8').trim().split('\n').map(JSON.parse);
     assert.deepEqual(records.map(r => [r.operation,r.status]), [['retrieve','empty'],['retain','ok']]);
@@ -24,7 +24,7 @@ test('Codex explicit operations inherit and override while context reads remain 
     assert.equal(JSON.stringify(records).includes(memory.id), false);
     assert.equal(JSON.stringify(records).includes('PRIVATE'), false);
     writeFileSync(join(agent, 'nmnm.jsonc'), '{"logging":{"enabled":false}}');
-    handleRequest({ operation: 'retrieve', input: {} }, ctx);
+    createMemoryOperations(ctx)('retrieve_memory', {});
     assert.equal(readFileSync(path, 'utf8').trim().split('\n').length, 2);
   } finally { rmSync(home, { recursive: true, force: true }); }
 });
@@ -45,11 +45,11 @@ test('Codex records host correlation with precedence and fallback instead of req
   try {
     mkdirSync(base, { recursive: true });
     writeFileSync(join(base, 'config.jsonc'), '{"logging":{"enabled":true}}');
-    for (const [host] of cases) {
+    for (const [host, expected] of cases) {
       const env = Object.defineProperties({ CODEX_HOME: join(home, 'agent') }, Object.getOwnPropertyDescriptors(host));
-      const result = handleRequest({ operation: 'retrieve', input: {}, session_id: 'request-spoof',
-        context: { session_id: 'nested-request-spoof' } }, { cwd: home, home, env });
-      assert.deepEqual(result, { total: 0, items: [] });
+      const session_id = codexSessionId(env);
+      assert.equal(session_id, expected);
+      createMemoryOperations({ cwd: home, home, env: { CODEX_HOME: env.CODEX_HOME, CODEX_SESSION_ID: session_id } })('retrieve_memory', {});
     }
     const records = readFileSync(join(base, 'logs/nmnm-codex.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
     assert.deepEqual(records.map(record => record.context.session_id), cases.map(([, expected]) => expected));

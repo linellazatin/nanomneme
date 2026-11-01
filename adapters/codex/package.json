@@ -1,8 +1,8 @@
 {
   "name": "@openlines/nmnm-codex",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "private": true,
-  "description": "MCP-free Codex adapter for nanomneme local SQLite memory",
+  "description": "Stdio MCP Codex adapter for nanomneme local SQLite memory",
   "type": "module",
   "keywords": [
     "codex",
@@ -13,12 +13,11 @@
   ],
   "files": [
     ".codex-plugin",
-    "hooks",
-    "scripts",
+    ".mcp.json",
+    "mcp",
     "skills",
     "src",
     "docs",
-    "plugin.json",
     "README.md",
     "LICENSE"
   ],
@@ -28,7 +27,9 @@
     "zod": "^4.6.7"
   },
   "bundleDependencies": [
-    "@openlines/nmnm-core"
+    "@openlines/nmnm-core",
+    "@modelcontextprotocol/server",
+    "zod"
   ],
   "engines": {
     "node": ">=22.19.0"

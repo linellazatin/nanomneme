@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { prepareCodexDependencies } from './check-logging-packages.js';
 import { runMaintenance } from './maintenance.js';
+import { execFileSync } from 'node:child_process';
 
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'nmnm-codex-update-'));
@@ -15,6 +16,7 @@ function fixture() {
   put('packages/nmnm-core/src/logging-runtime.generated.js', 'current runtime');
   put('node_modules/jsonc-parser/package.json', { name: 'jsonc-parser', version: '3.3.1' });
   put('node_modules/jsonc-parser/lib/main.js', 'current parser');
+  put('package-lock.json', { packages: { 'node_modules/jsonc-parser': { name: 'jsonc-parser', version: '3.3.1' } } });
   put('adapters/codex/package.json', { version: '0.2.2', dependencies: { '@openlines/nmnm-core': '1.0.0' } });
   put('adapters/codex/.codex-plugin/plugin.json', { name: 'nmnm-codex', version: '0.2.2' });
   put('adapters/codex/scripts/runner.js', 'current runner');
@@ -39,6 +41,29 @@ test('preparation is content-aware, replaces obsolete managed files, and preserv
     assert.equal(prepareCodexDependencies(f), 'current');
     f.put('adapters/codex/.codex-plugin/plugin.json', { version: '0.0.0' });
     assert.throws(() => prepareCodexDependencies(f), /manifest/);
+  } finally { f.cleanup(); }
+});
+
+test('preparation copies and verifies the complete runtime closure without shipping the development client', () => {
+  const f = fixture();
+  try {
+    f.put('adapters/codex/package.json', { version: '0.2.2', dependencies: { '@openlines/nmnm-core': '1.0.0', '@modelcontextprotocol/server': '^2.4.0' }, devDependencies: { '@modelcontextprotocol/client': '^2.4.0' } });
+    f.put('node_modules/@modelcontextprotocol/server/package.json', { name: '@modelcontextprotocol/server', version: '2.4.0', dependencies: { '@modelcontextprotocol/core': '2.4.0' } });
+    f.put('node_modules/@modelcontextprotocol/server/index.js', 'server');
+    f.put('node_modules/@modelcontextprotocol/core/package.json', { name: '@modelcontextprotocol/core', version: '2.4.0' });
+    f.put('node_modules/@modelcontextprotocol/core/index.js', 'protocol core');
+    f.put('node_modules/@modelcontextprotocol/client/package.json', { name: '@modelcontextprotocol/client', version: '2.4.0' });
+    f.put('package-lock.json', { packages: Object.fromEntries([['jsonc-parser', '3.3.1'], ['@modelcontextprotocol/server', '2.4.0'], ['@modelcontextprotocol/core', '2.4.0']].map(([name, version]) => [`node_modules/${name}`, { version }])) });
+    prepareCodexDependencies(f);
+    const sdk = join(f.root, 'adapters/codex/node_modules/@modelcontextprotocol/core/index.js');
+    assert.equal(readFileSync(sdk, 'utf8'), 'protocol core');
+    assert.equal(existsSync(join(f.root, 'adapters/codex/node_modules/@modelcontextprotocol/client')), false);
+    f.put('node_modules/@modelcontextprotocol/core/index.js', 'same-version update');
+    assert.equal(prepareCodexDependencies(f), 'updated');
+    assert.equal(readFileSync(sdk, 'utf8'), 'same-version update');
+    f.put('node_modules/@modelcontextprotocol/core/package.json', { name: '@modelcontextprotocol/core', version: '2.3.0' });
+    assert.throws(() => prepareCodexDependencies(f), /version|differs/);
+    assert.equal(readFileSync(sdk, 'utf8'), 'same-version update');
   } finally { f.cleanup(); }
 });
 
@@ -99,9 +124,27 @@ test('preparation rejects linked parents and mismatched parser before replacing 
     assert.throws(() => prepareCodexDependencies(f), /linked dependency parent/);
     assert.equal(readFileSync(join(f.root, 'outside/keep'), 'utf8'), 'preserve');
     rmSync(join(f.root, 'adapters/codex/node_modules'));
-    f.put('node_modules/jsonc-parser/package.json', { version: '0.0.0' });
+    f.put('node_modules/jsonc-parser/package.json', { name: 'jsonc-parser', version: '0.0.0' });
     assert.throws(() => prepareCodexDependencies(f), /jsonc-parser differs/);
     assert.equal(existsSync(join(f.root, 'adapters/codex/node_modules')), false);
+  } finally { f.cleanup(); }
+});
+
+test('preparation preserves nested runtime conflicts when replacing a parent package', () => {
+  const f = fixture();
+  try {
+    f.put('adapters/codex/package.json', { version: '0.2.2', dependencies: { '@openlines/nmnm-core': '1.0.0', extra: '1.0.0' } });
+    f.put('node_modules/extra/package.json', { name: 'extra', version: '1.0.0', dependencies: { 'jsonc-parser': '2.0.0' } });
+    f.put('node_modules/extra/index.js', 'extra');
+    f.put('node_modules/extra/node_modules/jsonc-parser/package.json', { name: 'jsonc-parser', version: '2.0.0' });
+    f.put('node_modules/extra/node_modules/jsonc-parser/index.js', 'nested');
+    f.put('package-lock.json', { packages: { 'node_modules/jsonc-parser': { version: '3.3.1' }, 'node_modules/extra': { version: '1.0.0' }, 'node_modules/extra/node_modules/jsonc-parser': { version: '2.0.0' } } });
+    prepareCodexDependencies(f);
+    const nested = join(f.root, 'adapters/codex/node_modules/extra/node_modules/jsonc-parser/index.js');
+    assert.equal(readFileSync(nested, 'utf8'), 'nested');
+    f.put('node_modules/extra/index.js', 'changed parent');
+    prepareCodexDependencies(f);
+    assert.equal(readFileSync(nested, 'utf8'), 'nested');
   } finally { f.cleanup(); }
 });
 
@@ -130,7 +173,7 @@ test('Codex refresh verifies a custom-home cache and catches same-version change
   const f = fixture(); const h = harness(f);
   try {
     await runMaintenance(['codex:update'], h.dependencies);
-    assert.ok(h.messages.includes('updated')); assert.ok(h.messages.includes('reload-required: start a new Codex session and review hook trust prompts'));
+    assert.ok(h.messages.includes('updated')); assert.ok(h.messages.includes('reload-required: restart Codex with an explicit NMNM_PROJECT_DIR binding'));
     assert.ok(h.calls.indexOf('prepare') < h.calls.indexOf('plugin add nmnm-codex@nanomneme-local --json'));
     h.calls.length = 0; h.messages.length = 0;
     await runMaintenance(['codex:update'], h.dependencies);
@@ -141,6 +184,119 @@ test('Codex refresh verifies a custom-home cache and catches same-version change
     writeFileSync(join(h.cache, 'node_modules/@openlines/nmnm-core/src/index.js'), 'stale cached core');
     await runMaintenance(['codex:update'], h.dependencies);
     assert.equal(readFileSync(join(h.cache, 'node_modules/@openlines/nmnm-core/src/index.js'), 'utf8'), 'current core');
+  } finally { f.cleanup(); }
+});
+
+test('Codex refresh fingerprints all runtime dependencies and removes obsolete interface files', async () => {
+  const f = fixture(); const h = harness(f);
+  try {
+    f.put('adapters/codex/package.json', { version: '0.2.2', dependencies: { '@openlines/nmnm-core': '1.0.0', extra: '1.0.0' } });
+    f.put('node_modules/extra/package.json', { name: 'extra', version: '1.0.0' });
+    f.put('node_modules/extra/index.js', 'current SDK');
+    f.put('package-lock.json', { packages: { 'node_modules/jsonc-parser': { version: '3.3.1' }, 'node_modules/extra': { version: '1.0.0' } } });
+    await runMaintenance(['codex:update'], h.dependencies);
+    writeFileSync(join(h.cache, 'node_modules/extra/index.js'), 'stale SDK');
+    await runMaintenance(['codex:update'], h.dependencies);
+    assert.equal(readFileSync(join(h.cache, 'node_modules/extra/index.js'), 'utf8'), 'current SDK');
+    rmSync(join(f.root, 'adapters/codex/scripts/runner.js'));
+    await runMaintenance(['codex:update'], h.dependencies);
+    assert.equal(existsSync(join(h.cache, 'scripts/runner.js')), false);
+  } finally { f.cleanup(); }
+});
+
+test('obsolete dependency cleanup rejects linked parents without touching outside content', () => {
+  const f = fixture();
+  try {
+    prepareCodexDependencies(f);
+    f.put('outside/old/keep', 'preserve');
+    symlinkSync(join(f.root, 'outside'), join(f.root, 'adapters/codex/node_modules/@obsolete'), 'dir');
+    f.put('adapters/codex/node_modules/.nmnm-codex-deps.json', ['@openlines/nmnm-core', 'jsonc-parser', '@obsolete/old']);
+    assert.throws(() => prepareCodexDependencies(f), /linked/i);
+    assert.equal(readFileSync(join(f.root, 'outside/old/keep'), 'utf8'), 'preserve');
+  } finally { f.cleanup(); }
+});
+
+test('preparation refuses a linked ownership file without overwriting its target', () => {
+  const f = fixture();
+  try {
+    prepareCodexDependencies(f);
+    const state = join(f.root, 'adapters/codex/node_modules/.nmnm-codex-deps.json');
+    f.put('outside/state.json', []);
+    rmSync(state); symlinkSync(join(f.root, 'outside/state.json'), state);
+    f.put('packages/nmnm-core/src/index.js', 'changed core');
+    assert.throws(() => prepareCodexDependencies(f), /linked/i);
+    assert.equal(readFileSync(join(f.root, 'outside/state.json'), 'utf8'), '[]');
+  } finally { f.cleanup(); }
+});
+
+test('preparation removes only previous managed dependencies and rejects unsafe state paths', () => {
+  const f = fixture();
+  try {
+    prepareCodexDependencies(f);
+    f.put('adapters/codex/node_modules/retired/index.js', 'old managed dependency');
+    f.put('adapters/codex/node_modules/unrelated/keep', 'keep');
+    f.put('adapters/codex/node_modules/.nmnm-codex-deps.json', ['@openlines/nmnm-core', 'jsonc-parser', 'retired']);
+    prepareCodexDependencies(f);
+    assert.equal(existsSync(join(f.root, 'adapters/codex/node_modules/retired')), false);
+    assert.equal(readFileSync(join(f.root, 'adapters/codex/node_modules/unrelated/keep'), 'utf8'), 'keep');
+    f.put('adapters/codex/node_modules/.nmnm-codex-deps.json', ['../../outside']);
+    assert.throws(() => prepareCodexDependencies(f), /Invalid managed/);
+  } finally { f.cleanup(); }
+});
+
+test('preparation rejects linked packaged core files before overwriting prepared dependencies', () => {
+  const f = fixture();
+  try {
+    prepareCodexDependencies(f);
+    f.put('outside/index.js', 'outside');
+    rmSync(join(f.root, 'packages/nmnm-core/src/index.js'));
+    symlinkSync(join(f.root, 'outside/index.js'), join(f.root, 'packages/nmnm-core/src/index.js'));
+    assert.throws(() => prepareCodexDependencies(f), /physical|link|Staged dependency differs/i);
+    assert.equal(readFileSync(join(f.root, 'adapters/codex/node_modules/@openlines/nmnm-core/src/index.js'), 'utf8'), 'current core');
+  } finally { f.cleanup(); }
+});
+
+test('prepared artifact dependencies must match package identity as well as version', () => {
+  const f = fixture();
+  try {
+    prepareCodexDependencies(f);
+    const preparedModules = join(f.root, 'validated/node_modules');
+    cpSync(join(f.root, 'adapters/codex/node_modules'), preparedModules, { recursive: true });
+    f.put('validated/node_modules/jsonc-parser/package.json', { name: 'wrong-package', version: '3.3.1' });
+    assert.throws(() => prepareCodexDependencies({ ...f, preparedModules }), /name|identity/);
+    assert.equal(JSON.parse(readFileSync(join(f.root, 'adapters/codex/node_modules/jsonc-parser/package.json'))).name, 'jsonc-parser');
+  } finally { f.cleanup(); }
+});
+
+test('standalone artifact preparation copies locked checkout dependencies into a disposable destination only', () => {
+  const f = fixture();
+  try {
+    const destination = join(f.root, 'standalone');
+    mkdirSync(destination);
+    prepareCodexDependencies({ ...f, destination });
+    assert.equal(readFileSync(join(destination, 'node_modules/@openlines/nmnm-core/src/index.js'), 'utf8'), 'current core');
+    assert.equal(existsSync(join(f.root, 'adapters/codex/node_modules')), false);
+    assert.equal(prepareCodexDependencies({ ...f, destination }), 'current');
+  } finally { f.cleanup(); }
+});
+
+test('nested cyclic runtime dependencies reuse their nearest installed ancestor', () => {
+  const f = fixture();
+  try {
+    f.put('adapters/codex/package.json', { version: '0.2.2', dependencies: { '@openlines/nmnm-core': '1.0.0', a: '1.0.0', b: '1.0.0', holder: '1.0.0' } });
+    const entries = { 'node_modules/jsonc-parser': { version: '3.3.1' } };
+    for (const [path, name, version, dependencies] of [
+      ['node_modules/a','a','1.0.0',{}], ['node_modules/b','b','1.0.0',{}],
+      ['node_modules/holder','holder','1.0.0',{a:'2.0.0',b:'2.0.0'}],
+      ['node_modules/holder/node_modules/a','a','2.0.0',{b:'2.0.0'}],
+      ['node_modules/holder/node_modules/b','b','2.0.0',{a:'2.0.0'}],
+    ]) { f.put(`${path}/package.json`, { name, version, dependencies }); entries[path] = { version }; }
+    f.put('package-lock.json', { packages: entries });
+    const code = `import {prepareCodexDependencies} from ${JSON.stringify(new URL('./check-logging-packages.js', import.meta.url).href)}; prepareCodexDependencies({root:${JSON.stringify(f.root)},packCoreFiles:()=>${JSON.stringify(f.packCoreFiles())}});`;
+    execFileSync(process.execPath, ['--input-type=module', '-e', code], { timeout: 3000, stdio: 'pipe' });
+    assert.equal(prepareCodexDependencies(f), 'current');
+    const names = JSON.parse(readFileSync(join(f.root, 'adapters/codex/node_modules/.nmnm-codex-deps.json')));
+    assert.equal(names.length, 7);
   } finally { f.cleanup(); }
 });
 

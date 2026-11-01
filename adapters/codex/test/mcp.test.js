@@ -95,19 +95,21 @@ test('stdio logging honors schema boundary, restart settings, sink failures and 
 test('raw stdio negotiates supported revisions, preserves protocol stdout and closes on EOF/signals', { timeout: 15000 }, async t => {
   const home = mkdtempSync(join(tmpdir(), 'nmnm-wire-'));
   t.after(() => rmSync(home, { recursive: true, force: true }));
-  for (const [version, signal] of [['2025-06-18', null], ['2025-11-25', 'SIGTERM'], ['2026-07-28', 'SIGINT']]) {
-    const child = spawn(process.execPath, [server], { env: { ...process.env, HOME: home, CODEX_HOME: join(home, 'codex'), NMNM_PROJECT_DIR: home }, stdio: ['pipe', 'pipe', 'pipe'] });
-    t.after(() => { if (child.exitCode === null) child.kill('SIGKILL'); });
-    const lines = createInterface({ input: child.stdout });
-    const reader = lines[Symbol.asyncIterator]();
-    child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: version, clientInfo: { name: 'wire', version: '1' }, capabilities: {} } }) + '\n');
-    const message = JSON.parse((await reader.next()).value);
-    assert.equal(message.result.protocolVersion, version === '2026-07-28' ? '2025-11-25' : version);
-    assert.match(message.result.instructions, /project store/);
-    const exit = once(child, 'exit');
-    if (signal) child.kill(signal); else child.stdin.end();
-    const [code] = await exit; assert.equal(code, 0);
-    lines.close();
+  for (const entry of [server, fileURLToPath(new URL('../mcp/launch.js', import.meta.url))]) {
+    for (const [version, signal] of [['2025-06-18', null], ['2025-11-25', 'SIGTERM'], ['2026-07-28', 'SIGINT']]) {
+      const child = spawn(process.execPath, [entry], { cwd: home, env: { ...process.env, HOME: home, CODEX_HOME: join(home, 'codex'), NMNM_PROJECT_DIR: home }, stdio: ['pipe', 'pipe', 'pipe'] });
+      t.after(() => { if (child.exitCode === null) child.kill('SIGKILL'); });
+      const lines = createInterface({ input: child.stdout });
+      const reader = lines[Symbol.asyncIterator]();
+      child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: version, clientInfo: { name: 'wire', version: '1' }, capabilities: {} } }) + '\n');
+      const message = JSON.parse((await reader.next()).value);
+      assert.equal(message.result.protocolVersion, version === '2026-07-28' ? '2025-11-25' : version);
+      assert.match(message.result.instructions, /project store/);
+      const exit = once(child, 'exit');
+      if (signal) child.kill(signal); else child.stdin.end();
+      const [code] = await exit; assert.equal(code, 0);
+      lines.close();
+    }
   }
 });
 

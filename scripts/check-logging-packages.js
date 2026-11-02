@@ -390,7 +390,8 @@ export function checkLoggingPackages({ prepareCodex = false } = {}) {
     // The verifier client lives outside both deployed artifacts; neither ships it.
     writeFileSync(join(consumer, 'verify-codex.mjs'), `
       import assert from 'node:assert/strict';
-      import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
+      import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, readdirSync } from 'node:fs';
+      import { execFileSync } from 'node:child_process';
       import { join } from 'node:path';
       import { Client } from '@modelcontextprotocol/sdk/client/index.js';
       import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
@@ -424,6 +425,41 @@ export function checkLoggingPackages({ prepareCodex = false } = {}) {
           if(mode==='off') assert.equal(count(),before);
         } finally { await client.close(); await transport.close(); }
       }
+      const codexHome=join(home,'codex'); mkdirSync(codexHome);
+      writeFileSync(join(codexHome,'nmnm.jsonc'), JSON.stringify({
+        injection_budget:10000, logging:{enabled:false}, reinjection:{enabled:true,every_n_prompts:2},
+        autoretention:{enabled:true,never_persist:['ARTIFACT_NEVER'],always_ask:['ARTIFACT_ASK'],always_persist:['ARTIFACT_AUTO']},
+      }));
+      writeFileSync(join(project,'.nanomneme/nmnm.jsonc'), JSON.stringify({autoretention:{always_persist:['ARTIFACT_PROJECT']}}));
+      const contextClient=new Client({name:'codex-context-artifact-check',version:'1.0.0'});
+      const contextTransport=new StdioClientTransport({command:process.execPath,args:[join(artifact,'mcp/launch.js')],cwd:project,
+        env:{HOME:home,CODEX_HOME:codexHome},stderr:'pipe'});
+      contextTransport.stderr.on('data',()=>{});
+      try {
+        await contextClient.connect(contextTransport);
+        const retained=await contextClient.callTool({name:'retain_memory',arguments:{content:'ARTIFACT_CONTEXT_RECORD'}});
+        assert(!retained.isError,JSON.stringify(retained));
+        const id=JSON.parse(retained.content[0].text).id;
+        const hook=event=>execFileSync(process.execPath,[join(artifact,'hooks/context.js')],{cwd:artifact,
+          input:JSON.stringify({hook_event_name:event,cwd:project,session_id:'artifact-session',prompt:'PRIVATE_ARTIFACT_PROMPT'}),encoding:'utf8',
+          env:{...process.env,HOME:home,CODEX_HOME:codexHome,TMPDIR:home,NMNM_PROJECT_DIR:artifact},timeout:10000});
+        const startup=JSON.parse(hook('SessionStart')).hookSpecificOutput.additionalContext;
+        assert(startup.length<=10000);
+        for(const rule of ['ARTIFACT_NEVER','ARTIFACT_ASK','ARTIFACT_AUTO','ARTIFACT_PROJECT']) assert(startup.includes(rule));
+        assert(startup.indexOf('ARTIFACT_NEVER')<startup.indexOf('ARTIFACT_ASK'));
+        assert(startup.indexOf('ARTIFACT_ASK')<startup.indexOf('ARTIFACT_AUTO'));
+        assert(startup.includes('ARTIFACT_PROJECT') && startup.includes('ARTIFACT_CONTEXT_RECORD'));
+        assert.equal(hook('UserPromptSubmit'),'');
+        assert.equal(JSON.parse(hook('UserPromptSubmit')).hookSpecificOutput.additionalContext,startup);
+        const state=join(home,'nmnm-codex-'+(process.getuid?.()??'user'));
+        assert.equal(readdirSync(state).filter(name=>name.endsWith('.json')).length,1);
+        assert.equal(hook('SessionEnd'),'');
+        assert.equal(readdirSync(state).length,0);
+        writeFileSync(join(codexHome,'nmnm.jsonc'),'{broken');
+        assert.equal(hook('SessionStart'),'');
+        const removed=await contextClient.callTool({name:'remove_memory',arguments:{id}});
+        assert(!removed.isError,JSON.stringify(removed));
+      } finally { await contextClient.close(); await contextTransport.close(); }
     `);
     for (const [index, artifact] of [installed, copiedCache].entries()) {
       assertLoggingContents('codex', Object.keys(readPackageTree(artifact)));

@@ -240,9 +240,3 @@ Estimated complexity: moderate, subject to a native-host feasibility gate. Reche
 - Prove the approval route before implementation. Current hook documentation does not support `PreToolUse`'s `permissionDecision: "ask"`; do not rely on it. Test denial, missing/expired approval, changed content and policy precedence without exposing memory payloads in logs.
 
 Estimated complexity: moderate for deterministic restrictions, moderate to high for selective verified approval. Pattern checks cannot perfectly classify broad concepts such as personal data or secrets, and `always_persist` cannot guarantee that the model notices every eligible fact. These controls would govern Nanomneme MCP writes, not native Codex memory generation, other adapters or separate CLI/UI writes.
-
-### Validation and handoff
-
-- The final live pass executed 42 MCP calls with 42 matching operation logs, exercised both stores, Unicode paging, selectors, provenance, invalid requests and cleanup; all 26 focused adapter tests passed. Temporary entries were soft-removed. This establishes the tested operations, not exhaustive model-policy compliance.
-- Lifecycle coverage remains deferred by user choice for ongoing session testing. Earlier isolated lifecycle evidence remains valid within its recorded scope; the final live pass did not restart, compact, resume or fork this connection.
-- Resume with correlation feasibility first, then agree on structured policy predicates and approval semantics. Use TDD, reassess each completed phase, request approval, and commit only approved source/test files while leaving documentation out of those commits. The maintainer must preserve the local working plan separately because `.your/` is ignored.

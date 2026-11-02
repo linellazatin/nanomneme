@@ -6,15 +6,13 @@
   "type": "module",
   "keywords": [
     "codex",
-    "plugin",
     "coding-agent",
     "memory",
     "adapter"
   ],
   "files": [
-    ".codex-plugin",
-    ".mcp.json",
     "mcp",
+    "hooks",
     "skills",
     "src",
     "docs",
@@ -24,12 +22,14 @@
   "dependencies": {
     "@modelcontextprotocol/server": "^2.4.0",
     "@openlines/nmnm-core": "^0.3.2",
+    "jsonc-parser": "^3.3.1",
     "zod": "^4.6.7"
   },
   "bundleDependencies": [
     "@openlines/nmnm-core",
     "@modelcontextprotocol/server",
-    "zod"
+    "zod",
+    "jsonc-parser"
   ],
   "engines": {
     "node": ">=22.19.0"

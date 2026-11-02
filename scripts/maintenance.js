@@ -1,70 +1,11 @@
 #!/usr/bin/env node
 import { fileURLToPath } from 'node:url';
-import { lstatSync, readFileSync, realpathSync } from 'node:fs';
+import { realpathSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { join, resolve } from 'node:path';
-import { homedir } from 'node:os';
-import { isDeepStrictEqual } from 'node:util';
+import { join } from 'node:path';
 import { updateExternalLogslines, checkPinnedLogslines } from './external-logslines.js';
 import { buildLogger } from './build-logger.js';
-import { checkLoggingPackages, prepareCodexDependencies, readPackageTree, readCodexRuntime } from './check-logging-packages.js';
-
-function samePath(left, right) {
-  if (typeof left !== 'string' || typeof right !== 'string') return false;
-  try { return realpathSync(left) === realpathSync(right); } catch { return resolve(left) === resolve(right); }
-}
-
-function pluginContents(root) {
-  for (const parent of [join(root, 'node_modules'), join(root, 'node_modules/@openlines')]) {
-    try { if (lstatSync(parent).isSymbolicLink()) return null; }
-    catch (error) { if (error.code !== 'ENOENT') throw error; }
-  }
-  const files = readPackageTree(root, { exclude: path => path.split('/').some(part => ['node_modules', '.git', '.package-lock.json'].includes(part)) });
-  if (!files) return null;
-  try { Object.assign(files, readCodexRuntime(root)); } catch { return null; }
-  return files;
-}
-
-async function refreshCodex(root, dependencies, build, report) {
-  const env = dependencies.env ?? process.env;
-  const execute = dependencies.runCodex ?? (args => execFileSync('codex', args, { env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
-  const json = async args => {
-    const output = await execute(args);
-    try { return JSON.parse(output); } catch { throw new Error('Unsupported Codex CLI output: expected JSON'); }
-  };
-  const marketplaces = (await json(['plugin', 'marketplace', 'list', '--json'])).marketplaces;
-  if (!Array.isArray(marketplaces)) throw new Error('Unsupported Codex marketplace list');
-  const marketplace = marketplaces.find(item => item.name === 'nanomneme-local');
-  if (!marketplace) throw new Error(`Local marketplace is missing; register it first: codex plugin marketplace add ${JSON.stringify(root)}`);
-  if (marketplace.marketplaceSource?.sourceType !== 'local' || !samePath(marketplace.root, root) || !samePath(marketplace.marketplaceSource.source, root)) throw new Error('nanomneme-local points elsewhere; correct the marketplace registration before refreshing');
-  const installedPlugin = async () => {
-    const installed = (await json(['plugin', 'list', '--marketplace', 'nanomneme-local', '--json'])).installed;
-    if (!Array.isArray(installed)) throw new Error('Unsupported Codex plugin list');
-    const plugin = installed.find(item => item.name === 'nmnm-codex' && item.marketplaceName === 'nanomneme-local');
-    if (!plugin?.installed) throw new Error('Plugin is missing; install it first: codex plugin add nmnm-codex@nanomneme-local --json');
-    if (typeof plugin.enabled !== 'boolean' || typeof plugin.version !== 'string' || !/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(plugin.version)) throw new Error('Unsupported Codex plugin metadata');
-    if (plugin.source?.source !== 'local' || !samePath(plugin.source.path, join(root, 'adapters/codex'))) throw new Error('Installed plugin source does not match this checkout');
-    return plugin;
-  };
-  const before = await installedPlugin();
-  if (!before.enabled) throw new Error('Plugin is disabled; left unchanged to preserve enablement. Refresh manually or enable it before using codex:update');
-  await refreshLogger(build, message => report(`Logger bundles: ${message}`));
-  const preparation = await (dependencies.prepareCodexDependencies ?? prepareCodexDependencies)({ root });
-  report(`Codex dependencies: ${preparation === 'updated' ? 'updated' : 'up-to-date'}`);
-  const adapter = join(root, 'adapters/codex');
-  const expected = pluginContents(adapter);
-  if (!expected) throw new Error('Prepared Codex plugin contains missing or linked files');
-  const pkg = JSON.parse(readFileSync(join(adapter, 'package.json'), 'utf8'));
-  const home = resolve(env.CODEX_HOME || join(env.HOME || homedir(), '.codex'));
-  const cache = plugin => join(home, 'plugins/cache/nanomneme-local/nmnm-codex', plugin.version);
-  if (before.version === pkg.version && isDeepStrictEqual(pluginContents(cache(before)), expected)) { report('up-to-date'); return; }
-  await json(['plugin', 'add', 'nmnm-codex@nanomneme-local', '--json']);
-  report('reload-required: restart Codex with an explicit NMNM_PROJECT_DIR binding');
-  const after = await installedPlugin();
-  if (after.enabled !== before.enabled) throw new Error('Codex refresh changed plugin enablement unexpectedly');
-  if (after.version !== pkg.version || !isDeepStrictEqual(pluginContents(cache(after)), expected)) throw new Error('Codex cache verification failed after refresh');
-  report('updated');
-}
+import { checkLoggingPackages, prepareCodexDependencies } from './check-logging-packages.js';
 
 function assertBuildSucceeded(results) {
   const failed = results.find(result => result.status === 'failed');
@@ -100,17 +41,12 @@ export async function runMaintenance(args, dependencies = {}) {
     report('validated');
     return;
   }
-  if (command === 'codex:prepare') {
-    if (flags.length) throw new Error('codex:prepare accepts no options');
+  if (command === 'codex:prepare' || command === 'codex:update') {
+    if (flags.length) throw new Error(`${command} accepts no options`);
     await refreshLogger(build, message => report(`Logger bundles: ${message}`));
     const preparation = await (dependencies.prepareCodexDependencies ?? prepareCodexDependencies)({ root });
     report(`Codex dependencies: ${preparation === 'updated' ? 'updated' : 'up-to-date'}`);
-    report('prepared: install or reinstall the plugin through its marketplace; validation is separate');
-    return;
-  }
-  if (command === 'codex:update') {
-    if (flags.length) throw new Error('codex:update accepts no options');
-    await refreshCodex(root, dependencies, build, report);
+    report(command === 'codex:update' ? 'restart-required: restart Codex to reload direct MCP and context hooks' : 'prepared: register the stable direct MCP entrypoint and context hooks; validation is separate');
     return;
   }
   if (command === 'logslines:update') {

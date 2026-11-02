@@ -65,7 +65,6 @@ test('release metadata aligns the Codex MCP minor release and every unchanged co
   assert.equal(claude.dependencies['@openlines/nmnm-core'], undefined);
   assert.equal(lock.packages['adapters/claude'].dependencies['@openlines/nmnm-core'], undefined);
   assert.equal(json(new URL('../adapters/claude/.claude-plugin/plugin.json', import.meta.url)).version, claude.version);
-  assert.equal(json(new URL('../adapters/codex/.codex-plugin/plugin.json', import.meta.url)).version, codex.version);
   assert.equal(root.engines.node, '>=22.19.0');
   assert.equal(pi.engines.node, '>=22.19.0');
   assert.equal(root.devDependencies['@earendil-works/pi-coding-agent'], '>=0.87.0');
@@ -84,7 +83,7 @@ test('release metadata aligns the Codex MCP minor release and every unchanged co
   assert.equal(lock.packages['packages/logger'], undefined);
 });
 
-test('Codex prototype remains marketplace-local and is not released to npm', () => {
+test('Codex direct adapter remains private and is not released to npm', () => {
   const codex = json(new URL('../adapters/codex/package.json', import.meta.url));
   const ci = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
   const release = readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');

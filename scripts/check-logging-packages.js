@@ -103,10 +103,8 @@ export function prepareCodexDependencies({ root = defaultRoot, destination, prep
   root = resolve(root);
   const adapter = join(root, 'adapters/codex');
   const pkg = JSON.parse(readFileSync(join(adapter, 'package.json'), 'utf8'));
-  const manifest = JSON.parse(readFileSync(join(adapter, '.codex-plugin/plugin.json'), 'utf8'));
   const core = join(root, 'packages/nmnm-core');
   const corePkg = JSON.parse(readFileSync(join(core, 'package.json'), 'utf8'));
-  assert.equal(manifest.version, pkg.version, 'Codex plugin manifest version differs from package version');
   assert(semver.satisfies(corePkg.version, pkg.dependencies['@openlines/nmnm-core']), 'Codex core dependency does not accept checkout version');
   const lock = JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8'));
   const specs = [], placements = new Map();
@@ -205,8 +203,8 @@ export function assertLoggingContents(kind, files) {
   if (kind === 'ui') assert(!files.includes('src/ui-logger.js') && !files.includes('build/ui-logger.js'), 'UI package includes build-only logger source');
   if (kind === 'codex') {
     assert(files.some(path => path.includes('node_modules/jsonc-parser/') && path.endsWith('package.json')), 'missing bundled jsonc-parser');
-    for (const path of ['mcp/server.js', '.mcp.json', '.codex-plugin/plugin.json', 'node_modules/@modelcontextprotocol/server/package.json', 'node_modules/@modelcontextprotocol/core/package.json', 'node_modules/zod/package.json']) assert(files.includes(path), `missing ${path}`);
-    assert(!files.some(path => /^(?:hooks\/|scripts\/|test\/|plugin\.json$|src\/(?:runner|context|hooks)\.js$|skills\/memory\/runner\.js$)/.test(path)), 'Codex package contains obsolete or development files');
+    for (const path of ['mcp/launch.js', 'mcp/server.js', 'hooks/context.js', 'src/config.js', 'src/context.js', 'src/hooks.js', 'node_modules/@modelcontextprotocol/server/package.json', 'node_modules/@modelcontextprotocol/core/package.json', 'node_modules/zod/package.json']) assert(files.includes(path), `missing ${path}`);
+    assert(!files.some(path => /^(?:\.mcp\.json$|\.codex-plugin\/|hooks\/(?!context\.js$)|scripts\/|test\/|plugin\.json$|src\/runner\.js$|skills\/memory\/runner\.js$)/.test(path)), 'Codex package contains obsolete or development files');
     assert(!files.some(path => path.includes('node_modules/@modelcontextprotocol/client/')), 'Codex package contains development MCP client');
   }
 }
@@ -407,8 +405,8 @@ export function checkLoggingPackages({ prepareCodex = false } = {}) {
         writeFileSync(config,JSON.stringify({logging:{enabled:mode!=='off'}}));
         if (mode==='failed-sink') { rmSync(join(settings,'logs'),{recursive:true,force:true}); writeFileSync(join(settings,'logs'),'blocked'); }
         const client = new Client({name:'codex-artifact-check',version:'1.0.0'});
-        const transport = new StdioClientTransport({command:process.execPath,args:['mcp/server.js'],cwd:artifact,
-          env:{HOME:home,NMNM_PROJECT_DIR:project,CODEX_HOME:join(home,'codex')},stderr:'pipe'});
+        const transport = new StdioClientTransport({command:process.execPath,args:[join(artifact,'mcp/launch.js')],cwd:project,
+          env:{HOME:home,NMNM_PROJECT_DIR:artifact,CODEX_HOME:join(home,'codex')},stderr:'pipe'});
         transport.stderr.on('data',()=>{});
         try {
           await client.connect(transport);
@@ -442,7 +440,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   try {
     const prepareCodex = process.argv.includes('--prepare-codex');
     console.log(`Standalone logging packages verified: ${checkLoggingPackages({ prepareCodex }).join(', ')}`);
-    if (prepareCodex) console.log('Codex local plugin dependencies prepared in adapters/codex/node_modules; reinstall through its marketplace.');
+    if (prepareCodex) console.log('Codex dependencies prepared in adapters/codex/node_modules; restart direct MCP connections.');
   }
   catch (error) { console.error(error.message); if (error.stdout) console.error(error.stdout.toString()); if (error.stderr) console.error(error.stderr.toString()); process.exitCode = 1; }
 }

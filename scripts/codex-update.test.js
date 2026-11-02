@@ -18,11 +18,27 @@ function fixture() {
   put('node_modules/jsonc-parser/lib/main.js', 'current parser');
   put('package-lock.json', { packages: { 'node_modules/jsonc-parser': { name: 'jsonc-parser', version: '3.3.1' } } });
   put('adapters/codex/package.json', { version: '0.2.2', dependencies: { '@openlines/nmnm-core': '1.0.0' } });
-  put('adapters/codex/.codex-plugin/plugin.json', { name: 'nmnm-codex', version: '0.2.2' });
-  put('adapters/codex/scripts/runner.js', 'current runner');
+  put('adapters/codex/mcp/launch.js', 'current launcher');
   const packCoreFiles = () => ['package.json', 'src/index.js', 'src/logging-runtime.generated.js'];
   return { root, put, packCoreFiles, cleanup: () => rmSync(root, { recursive: true, force: true }) };
 }
+
+test('direct update prepares stable runtime without inspecting or mutating Codex registrations', async () => {
+  const f = fixture();
+  const messages = [];
+  try {
+    const dependencies = { root: f.root, buildLogger: async () => [{ status: 'current' }],
+      prepareCodexDependencies: () => prepareCodexDependencies(f), report: message => messages.push(message),
+      runCodex: () => { throw new Error('direct update must not call Codex'); } };
+    await runMaintenance(['codex:update'], dependencies);
+    await runMaintenance(['codex:update'], dependencies);
+    assert.ok(messages.includes('Codex dependencies: updated'));
+    assert.ok(messages.includes('Codex dependencies: up-to-date'));
+    assert.ok(messages.includes('restart-required: restart Codex to reload direct MCP and context hooks'));
+    await assert.rejects(runMaintenance(['codex:update', '--fast'], dependencies), /accepts no options/);
+    await assert.rejects(runMaintenance(['codex:update'], { ...dependencies, prepareCodexDependencies: () => { throw new Error('preparation failed'); } }), /preparation failed/);
+  } finally { f.cleanup(); }
+});
 
 test('preparation is content-aware, replaces obsolete managed files, and preserves unrelated dependencies', () => {
   const f = fixture();
@@ -39,8 +55,6 @@ test('preparation is content-aware, replaces obsolete managed files, and preserv
     rmSync(target, { recursive: true }); symlinkSync(join(f.root, 'node_modules/jsonc-parser'), target, 'dir');
     assert.equal(prepareCodexDependencies(f), 'updated');
     assert.equal(prepareCodexDependencies(f), 'current');
-    f.put('adapters/codex/.codex-plugin/plugin.json', { version: '0.0.0' });
-    assert.throws(() => prepareCodexDependencies(f), /manifest/);
   } finally { f.cleanup(); }
 });
 
@@ -148,61 +162,6 @@ test('preparation preserves nested runtime conflicts when replacing a parent pac
   } finally { f.cleanup(); }
 });
 
-function harness(f) {
-  const env = { ...process.env, CODEX_HOME: join(f.root, 'custom-codex-home') };
-  const cache = join(env.CODEX_HOME, 'plugins/cache/nanomneme-local/nmnm-codex/0.2.2');
-  const plugin = { name: 'nmnm-codex', marketplaceName: 'nanomneme-local', version: '0.2.2', installed: true, enabled: true, source: { source: 'local', path: join(f.root, 'adapters/codex') } };
-  const marketplace = { name: 'nanomneme-local', root: f.root, marketplaceSource: { sourceType: 'local', source: f.root } };
-  const calls = []; const messages = [];
-  const dependencies = {
-    root: f.root, env, report: message => messages.push(message),
-    buildLogger: async () => { calls.push('build-check'); return [{ status: 'current' }]; },
-    prepareCodexDependencies: () => { calls.push('prepare'); return prepareCodexDependencies(f); },
-    runCodex: args => {
-      calls.push(args.join(' '));
-      if (args[1] === 'marketplace') return JSON.stringify({ marketplaces: [marketplace] });
-      if (args[1] === 'list') return JSON.stringify({ installed: [plugin] });
-      if (args[1] === 'add') { rmSync(cache, { recursive: true, force: true }); cpSync(join(f.root, 'adapters/codex'), cache, { recursive: true }); return '{}'; }
-      throw new Error('unexpected command');
-    },
-  };
-  return { dependencies, calls, messages, cache, plugin, marketplace };
-}
-
-test('Codex refresh verifies a custom-home cache and catches same-version changes', async () => {
-  const f = fixture(); const h = harness(f);
-  try {
-    await runMaintenance(['codex:update'], h.dependencies);
-    assert.ok(h.messages.includes('updated')); assert.ok(h.messages.includes('reload-required: restart Codex with an explicit NMNM_PROJECT_DIR binding'));
-    assert.ok(h.calls.indexOf('prepare') < h.calls.indexOf('plugin add nmnm-codex@nanomneme-local --json'));
-    h.calls.length = 0; h.messages.length = 0;
-    await runMaintenance(['codex:update'], h.dependencies);
-    assert.equal(h.calls.some(call => call.startsWith('plugin add')), false); assert.ok(h.messages.includes('up-to-date'));
-    f.put('adapters/codex/scripts/runner.js', 'changed runner');
-    await runMaintenance(['codex:update'], h.dependencies);
-    assert.equal(readFileSync(join(h.cache, 'scripts/runner.js'), 'utf8'), 'changed runner');
-    writeFileSync(join(h.cache, 'node_modules/@openlines/nmnm-core/src/index.js'), 'stale cached core');
-    await runMaintenance(['codex:update'], h.dependencies);
-    assert.equal(readFileSync(join(h.cache, 'node_modules/@openlines/nmnm-core/src/index.js'), 'utf8'), 'current core');
-  } finally { f.cleanup(); }
-});
-
-test('Codex refresh fingerprints all runtime dependencies and removes obsolete interface files', async () => {
-  const f = fixture(); const h = harness(f);
-  try {
-    f.put('adapters/codex/package.json', { version: '0.2.2', dependencies: { '@openlines/nmnm-core': '1.0.0', extra: '1.0.0' } });
-    f.put('node_modules/extra/package.json', { name: 'extra', version: '1.0.0' });
-    f.put('node_modules/extra/index.js', 'current SDK');
-    f.put('package-lock.json', { packages: { 'node_modules/jsonc-parser': { version: '3.3.1' }, 'node_modules/extra': { version: '1.0.0' } } });
-    await runMaintenance(['codex:update'], h.dependencies);
-    writeFileSync(join(h.cache, 'node_modules/extra/index.js'), 'stale SDK');
-    await runMaintenance(['codex:update'], h.dependencies);
-    assert.equal(readFileSync(join(h.cache, 'node_modules/extra/index.js'), 'utf8'), 'current SDK');
-    rmSync(join(f.root, 'adapters/codex/scripts/runner.js'));
-    await runMaintenance(['codex:update'], h.dependencies);
-    assert.equal(existsSync(join(h.cache, 'scripts/runner.js')), false);
-  } finally { f.cleanup(); }
-});
 
 test('obsolete dependency cleanup rejects linked parents without touching outside content', () => {
   const f = fixture();
@@ -298,34 +257,4 @@ test('nested cyclic runtime dependencies reuse their nearest installed ancestor'
     const names = JSON.parse(readFileSync(join(f.root, 'adapters/codex/node_modules/.nmnm-codex-deps.json')));
     assert.equal(names.length, 7);
   } finally { f.cleanup(); }
-});
-
-test('Codex refresh stops before preparation on missing/wrong/disabled installation or malformed CLI output', async () => {
-  for (const scenario of ['missing-marketplace', 'wrong-marketplace', 'missing-plugin', 'disabled', 'malformed']) {
-    const f = fixture(); const h = harness(f);
-    try {
-      const run = h.dependencies.runCodex;
-      h.dependencies.runCodex = args => {
-        if (scenario === 'malformed') return '{';
-        if (args[1] === 'marketplace' && scenario === 'missing-marketplace') return '{"marketplaces":[]}';
-        if (args[1] === 'list' && scenario === 'missing-plugin') return '{"installed":[]}';
-        return run(args);
-      };
-      if (scenario === 'wrong-marketplace') h.marketplace.root = tmpdir();
-      if (scenario === 'disabled') h.plugin.enabled = false;
-      await assert.rejects(runMaintenance(['codex:update'], h.dependencies));
-      assert.equal(h.calls.includes('prepare'), false); assert.equal(h.calls.includes('build-check'), false);
-    } finally { f.cleanup(); }
-  }
-});
-
-test('Codex refresh propagates install failures and rejects stale post-install cache', async () => {
-  for (const installFailure of [true, false]) {
-    const f = fixture(); const h = harness(f);
-    try {
-      const run = h.dependencies.runCodex;
-      h.dependencies.runCodex = args => args[1] === 'add' ? (installFailure ? (() => { throw new Error('install failed'); })() : '{}') : run(args);
-      await assert.rejects(runMaintenance(['codex:update'], h.dependencies), installFailure ? /install failed/ : /cache/);
-    } finally { f.cleanup(); }
-  }
 });

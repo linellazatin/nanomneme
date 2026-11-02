@@ -216,3 +216,33 @@ From the repository root:
 - Run `npm run validate` for generated checks, the full suite, production audit and independent package validation.
 
 Validation executes MCP operations and context hooks from independently installed/copied artifacts. Native CLI 0.166.0 on macOS loaded the packed artifact from a spaced installation path after normal /hooks trust review. A local deterministic provider fixture verified startup context, actual prompt cadence, configuration reload/budget boundaries, session cleanup and 14 project/global MCP calls. Concurrent native sessions verified store isolation; default removal rejection preceded adapter logging. This establishes bounded host delivery and adapter semantics, not real-model compliance, desktop/IDE, Windows or other-provider behavior.
+
+## Developer notes
+
+These are current limitations and proposed future updates, not installed features or an approved implementation plan. Keep follow-up work within the Codex adapter and supporting tests/documentation unless a wider change is separately reviewed.
+
+### Session correlation
+
+The live MCP connection logged operations correctly but received no launch-provided session ID, leaving `context.session_id: null`. Forwarding environment variables does not make Codex populate them. Pi obtains identity from its session manager; OpenCode's server tools receive the host tool-context session ID. Codex's stdio process currently lacks an equivalent verified per-call binding. Existing hooks receive a host session ID, but that does not automatically associate it with an MCP request.
+
+- Prototype a trusted per-invocation bridge from a Nanomneme `PreToolUse` hook to the MCP handler. [Codex hooks](https://learn.chatgpt.com/docs/hooks#pretooluse) document replacement MCP arguments through `updatedInput`; using that transport for correlation remains unproven.
+- Authenticate and bind any internal envelope to the exact invocation, validate it before accepting identity, and remove it before normal argument validation. Never trust a model-supplied session ID or use a shared latest-session value keyed only by workspace.
+- Verify concurrent identical calls, multiple sessions in one workspace, stale/replayed envelopes, hook absence and failure handling. Preserve one canonical operation log and `null` when trusted identity is unavailable; do not derive identity from cwd, PID or a generated UUID.
+
+Estimated complexity: moderate, subject to a native-host feasibility gate. Recheck current host metadata support before introducing a bridge; do not promise this mechanism until transport, validation order and concurrency are demonstrated.
+
+### Autoretention enforcement
+
+`always_persist`, `never_persist` and `always_ask` are prose guidance delivered to the active model, with never/ask/automatic precedence. The MCP write handler does not classify content or verify consent. Pi likewise documents model-guided retention; its native controls do not establish deterministic enforcement of these prose rules. Hard enforcement is a proposed capability, not an existing parity guarantee.
+
+- Keep existing prose rules as guidance. Consider a separate optional structured write policy for explicit predicates such as namespaces, fields or defined patterns; enforce it inside the MCP handler for creates and patches, including the effective updated record.
+- Require verifiable user approval for writes covered by an approval rule. A model-supplied approval flag is insufficient. [Codex MCP approval controls](https://learn.chatgpt.com/docs/extend/mcp) can prompt for non-read-only tools, but blanket write approval is different from selective content-based approval.
+- Prove the approval route before implementation. Current hook documentation does not support `PreToolUse`'s `permissionDecision: "ask"`; do not rely on it. Test denial, missing/expired approval, changed content and policy precedence without exposing memory payloads in logs.
+
+Estimated complexity: moderate for deterministic restrictions, moderate to high for selective verified approval. Pattern checks cannot perfectly classify broad concepts such as personal data or secrets, and `always_persist` cannot guarantee that the model notices every eligible fact. These controls would govern Nanomneme MCP writes, not native Codex memory generation, other adapters or separate CLI/UI writes.
+
+### Validation and handoff
+
+- The final live pass executed 42 MCP calls with 42 matching operation logs, exercised both stores, Unicode paging, selectors, provenance, invalid requests and cleanup; all 26 focused adapter tests passed. Temporary entries were soft-removed. This establishes the tested operations, not exhaustive model-policy compliance.
+- Lifecycle coverage remains deferred by user choice for ongoing session testing. Earlier isolated lifecycle evidence remains valid within its recorded scope; the final live pass did not restart, compact, resume or fork this connection.
+- Resume with correlation feasibility first, then agree on structured policy predicates and approval semantics. Use TDD, reassess each completed phase, request approval, and commit only approved source/test files while leaving documentation out of those commits. The maintainer must preserve the local working plan separately because `.your/` is ignored.

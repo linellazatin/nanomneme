@@ -84,6 +84,13 @@ test('package checks reject missing runtime and Codex bundled parser', () => {
   assert.throws(() => assertLoggingContents('codex', ['node_modules/@openlines/nmnm-core/src/logslines.js', 'node_modules/@openlines/nmnm-core/src/logging-runtime.generated.js']), /jsonc-parser/);
 });
 
+test('Codex artifact requires MCP runtime closure and rejects legacy/development files', () => {
+  const files = ['mcp/launch.js', 'mcp/server.js', 'hooks/context.js', 'src/config.js', 'src/context.js', 'src/hooks.js', 'node_modules/@openlines/nmnm-core/src/logslines.js', 'node_modules/@openlines/nmnm-core/src/logging-runtime.generated.js', 'node_modules/jsonc-parser/package.json', 'node_modules/@modelcontextprotocol/server/package.json', 'node_modules/@modelcontextprotocol/core/package.json', 'node_modules/zod/package.json'];
+  assert.doesNotThrow(() => assertLoggingContents('codex', files));
+  for (const path of ['mcp/launch.js', 'hooks/context.js', 'src/config.js', 'mcp/server.js', 'node_modules/@modelcontextprotocol/server/package.json', 'node_modules/@modelcontextprotocol/core/package.json', 'node_modules/zod/package.json']) assert.throws(() => assertLoggingContents('codex', files.filter(file => file !== path)), /missing/);
+  for (const path of ['.mcp.json', '.codex-plugin/plugin.json', 'src/runner.js', 'hooks/session-start.js', 'skills/memory/runner.js', 'plugin.json', 'test/mcp.test.js', 'node_modules/@modelcontextprotocol/client/package.json']) assert.throws(() => assertLoggingContents('codex', [...files, path]), /obsolete|development/);
+});
+
 test('UI package requires runtime files and excludes repository-relative build inputs', () => {
   const files = ['src/launcher.js', 'src/server.js', 'src/logslines.js', 'src/ui-logging-runtime.generated.js'];
   assert.doesNotThrow(() => assertLoggingContents('ui', files));

@@ -7,12 +7,52 @@ import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { isDeepStrictEqual } from 'node:util';
 import { tmpdir } from 'node:os';
-import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const defaultRoot = fileURLToPath(new URL('..', import.meta.url));
-const managedDependencies = ['@openlines/nmnm-core', 'jsonc-parser'];
 const digest = path => createHash('sha256').update(readFileSync(path)).digest('hex');
+const packageName = /^(?:@[a-z0-9._-]+\/)?[a-z0-9][a-z0-9._-]*$/;
+const ownPackage = path => path === 'node_modules' || path.startsWith('node_modules/');
+
+function installedPackage(name, from, boundary, lock) {
+  assert(packageName.test(name), 'Invalid runtime dependency name');
+  const locations = createRequire(join(from, 'package.json')).resolve.paths(name) ?? [];
+  for (const directory of locations) {
+    const source = join(directory, name);
+    if (!source.startsWith(boundary + sep)) continue;
+    const entry = lock?.packages?.[relative(boundary, source).split(sep).join('/')];
+    if (lock && !entry) continue;
+    if (!existsSync(join(source, 'package.json'))) continue;
+    for (let parent = source; parent !== boundary; parent = dirname(parent)) assert(!lstatSync(parent).isSymbolicLink(), `Linked runtime dependency: ${name}`);
+    const manifest = JSON.parse(readFileSync(join(source, 'package.json'), 'utf8'));
+    assert.equal(manifest.name, name, `Runtime dependency name differs: ${name}`);
+    if (entry) assert.equal(manifest.version, entry.version, `Installed ${name} differs from locked version`);
+    return { source, manifest };
+  }
+  throw new Error(`Missing runtime dependency: ${name}`);
+}
+
+// Resolve only declared production dependencies; package exports need not expose package.json.
+export function readCodexRuntime(root) {
+  root = resolve(root);
+  const files = {}, visited = new Set();
+  const visit = (manifest, from) => {
+    for (const [name, range] of Object.entries(manifest.dependencies ?? {})) {
+      const spec = installedPackage(name, from, root);
+      assert(semver.satisfies(spec.manifest.version, range), `Runtime dependency version differs: ${name}`);
+      if (visited.has(spec.source)) continue;
+      visited.add(spec.source);
+      const tree = readPackageTree(spec.source, { exclude: ownPackage });
+      assert(tree, `Expected physical runtime dependency: ${name}`);
+      const prefix = relative(root, spec.source).split(sep).join('/');
+      for (const [path, hash] of Object.entries(tree)) files[`${prefix}/${path}`] = hash;
+      visit(spec.manifest, spec.source);
+    }
+  };
+  visit(JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')), root);
+  return files;
+}
 
 function safePackagePath(path) {
   return typeof path === 'string' && path.length > 0 && !isAbsolute(path)
@@ -59,55 +99,95 @@ export function readPackageTree(root, { exclude = () => false } = {}) {
   catch (error) { if (['ENOENT', 'ENOTDIR', 'NMNM_LINK'].includes(error.code)) return null; throw error; }
 }
 
-export function prepareCodexDependencies({ root = defaultRoot, preparedModules, packCoreFiles, runNpmPack = (args, options) => execFileSync('npm', args, options) } = {}) {
+export function prepareCodexDependencies({ root = defaultRoot, destination, preparedModules, packCoreFiles, runNpmPack = (args, options) => execFileSync('npm', args, options) } = {}) {
+  root = resolve(root);
   const adapter = join(root, 'adapters/codex');
   const pkg = JSON.parse(readFileSync(join(adapter, 'package.json'), 'utf8'));
-  const manifest = JSON.parse(readFileSync(join(adapter, '.codex-plugin/plugin.json'), 'utf8'));
   const core = join(root, 'packages/nmnm-core');
   const corePkg = JSON.parse(readFileSync(join(core, 'package.json'), 'utf8'));
-  assert.equal(manifest.version, pkg.version, 'Codex plugin manifest version differs from package version');
   assert(semver.satisfies(corePkg.version, pkg.dependencies['@openlines/nmnm-core']), 'Codex core dependency does not accept checkout version');
-  let specs;
-  if (preparedModules) {
-    specs = managedDependencies.map(path => ({ path, source: join(preparedModules, path) }));
-  } else {
+  const lock = JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8'));
+  const specs = [], placements = new Map();
+  const collect = (name, range, from, parentPath = '') => {
+    const checkoutCore = name === '@openlines/nmnm-core';
+    const spec = checkoutCore ? { source: core, manifest: corePkg }
+      : installedPackage(name, from, root, lock);
+    assert(semver.satisfies(spec.manifest.version, range), `Installed ${name} differs from dependency range`);
+    // Match Node's nearest-ancestor lookup before introducing another nested copy.
+    let nearest;
+    for (let parent = parentPath; parent; parent = parent.includes('/node_modules/') ? parent.slice(0, parent.lastIndexOf('/node_modules/')) : '') {
+      nearest = placements.get(`${parent}/node_modules/${name}`);
+      if (nearest) break;
+    }
+    nearest ??= placements.get(name);
+    if (nearest?.source === spec.source) return;
+    let path = name;
+    if (nearest) path = `${parentPath}/node_modules/${name}`;
+    if (placements.has(path)) return;
+    spec.path = path;
+    placements.set(path, spec); specs.push(spec);
+  };
+  for (const [name, range] of Object.entries(pkg.dependencies)) collect(name, range, adapter);
+  for (let index = 0; index < specs.length; index++) {
+    const spec = specs[index];
+    for (const [child, range] of Object.entries(spec.manifest.dependencies ?? {})) collect(child, range, spec.source, spec.path);
+  }
+  if (!preparedModules) {
     const paths = packCoreFiles ? packCoreFiles() : parseNpmPackOutput(runNpmPack(['pack', '--dry-run', '--json', '--ignore-scripts'], { cwd: core, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }), [corePkg])[0].files.map(file => file.path);
     assert(paths.includes('package.json'), 'Core package contents are unavailable');
     for (const path of paths) assert(safePackagePath(path) && resolve(core, path).startsWith(core + sep), 'Invalid core package path');
-    const parser = dirname(createRequire(join(root, 'package.json')).resolve('jsonc-parser/package.json'));
-    assert.equal(JSON.parse(readFileSync(join(parser, 'package.json'), 'utf8')).version, corePkg.dependencies['jsonc-parser'], 'Installed jsonc-parser differs from core dependency; reinstall repository dependencies');
-    specs = [{ path: managedDependencies[0], source: core, paths }, { path: managedDependencies[1], source: parser }];
+    specs.find(spec => spec.manifest.name === '@openlines/nmnm-core').paths = paths;
   }
   for (const spec of specs) {
-    const expectedVersion = spec.path === managedDependencies[0] ? corePkg.version : corePkg.dependencies['jsonc-parser'];
-    assert.equal(JSON.parse(readFileSync(join(spec.source, 'package.json'), 'utf8')).version, expectedVersion, `Prepared dependency version differs: ${spec.path}`);
-    spec.expected = spec.paths ? Object.fromEntries(spec.paths.map(path => [path, digest(join(spec.source, path))])) : readPackageTree(spec.source);
+    if (preparedModules) spec.source = join(preparedModules, spec.path);
+    const preparedManifest = JSON.parse(readFileSync(join(spec.source, 'package.json'), 'utf8'));
+    assert.equal(preparedManifest.name, spec.manifest.name, `Prepared dependency name differs: ${spec.path}`);
+    assert.equal(preparedManifest.version, spec.manifest.version, `Prepared dependency version differs: ${spec.path}`);
+    spec.expected = spec.paths ? Object.fromEntries(spec.paths.map(path => [path, digest(join(spec.source, path))])) : readPackageTree(spec.source, { exclude: ownPackage });
     assert(spec.expected, `Prepared dependency must contain physical files: ${spec.path}`);
   }
-  const modules = join(adapter, 'node_modules');
-  for (const parent of [modules, join(modules, '@openlines')]) {
+  const modules = join(destination ?? adapter, 'node_modules');
+  for (const parent of new Set(specs.flatMap(spec => {
+    const parents = []; for (let path = dirname(join(modules, spec.path)); path.startsWith(modules); path = dirname(path)) parents.push(path); return parents;
+  }))) {
     try { assert(!lstatSync(parent).isSymbolicLink(), `Refusing linked dependency parent: ${parent}`); }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
-  const stale = specs.filter(spec => !isDeepStrictEqual(spec.expected, readPackageTree(join(modules, spec.path))));
-  if (!stale.length) return 'current';
+  const statePath = join(modules, '.nmnm-codex-deps.json');
+  let previous = [];
+  try { assert(!lstatSync(statePath).isSymbolicLink(), 'Refusing linked Codex dependency ownership file'); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
+  if (existsSync(statePath)) previous = JSON.parse(readFileSync(statePath, 'utf8'));
+  assert(Array.isArray(previous) && previous.every(path => typeof path === 'string' && path.split('/node_modules/').every(name => packageName.test(name))), 'Invalid managed Codex dependency list');
+  for (const path of previous) {
+    for (let parent = dirname(join(modules, path)); parent.startsWith(modules); parent = dirname(parent)) {
+      try { assert(!lstatSync(parent).isSymbolicLink(), `Refusing linked dependency parent: ${parent}`); }
+      catch (error) { if (error.code !== 'ENOENT') throw error; }
+    }
+  }
+  const obsolete = previous.filter(path => !placements.has(path));
+  const stale = [];
+  for (const spec of specs) if (stale.some(parent => spec.path.startsWith(parent.path + '/node_modules/')) || !isDeepStrictEqual(spec.expected, readPackageTree(join(modules, spec.path), { exclude: ownPackage }))) stale.push(spec);
+  if (!stale.length && !obsolete.length && existsSync(statePath)) return 'current';
   mkdirSync(modules, { recursive: true });
   const temporary = mkdtempSync(join(modules, '.nmnm-prepare-'));
   try {
     for (const spec of stale) {
-      const staged = join(temporary, spec.path);
+      const staged = join(temporary, String(specs.indexOf(spec)));
       for (const path of Object.keys(spec.expected)) {
         const target = join(staged, path); mkdirSync(dirname(target), { recursive: true }); cpSync(join(spec.source, path), target);
       }
-      assert.deepEqual(readPackageTree(staged), spec.expected, `Staged dependency differs: ${spec.path}`);
+      assert.deepEqual(readPackageTree(staged, { exclude: ownPackage }), spec.expected, `Staged dependency differs: ${spec.path}`);
     }
     for (const spec of stale) {
       const destination = join(modules, spec.path);
       mkdirSync(dirname(destination), { recursive: true });
       rmSync(destination, { recursive: true, force: true });
-      renameSync(join(temporary, spec.path), destination);
-      assert.deepEqual(readPackageTree(destination), spec.expected, `Prepared dependency differs: ${spec.path}`);
+      renameSync(join(temporary, String(specs.indexOf(spec))), destination);
+      assert.deepEqual(readPackageTree(destination, { exclude: ownPackage }), spec.expected, `Prepared dependency differs: ${spec.path}`);
     }
+    for (const path of obsolete) rmSync(join(modules, path), { recursive: true, force: true });
+    writeFileSync(statePath, JSON.stringify(specs.map(spec => spec.path)) + '\n');
     return 'updated';
   } finally { rmSync(temporary, { recursive: true, force: true }); }
 }
@@ -121,7 +201,12 @@ export function assertLoggingContents(kind, files) {
     : ['src/logslines.js'];
   for (const path of required) assert(files.includes(path), `missing ${path}`);
   if (kind === 'ui') assert(!files.includes('src/ui-logger.js') && !files.includes('build/ui-logger.js'), 'UI package includes build-only logger source');
-  if (kind === 'codex') assert(files.some(path => path.includes('node_modules/jsonc-parser/') && path.endsWith('package.json')), 'missing bundled jsonc-parser');
+  if (kind === 'codex') {
+    assert(files.some(path => path.includes('node_modules/jsonc-parser/') && path.endsWith('package.json')), 'missing bundled jsonc-parser');
+    for (const path of ['mcp/launch.js', 'mcp/server.js', 'hooks/context.js', 'src/config.js', 'src/context.js', 'src/hooks.js', 'node_modules/@modelcontextprotocol/server/package.json', 'node_modules/@modelcontextprotocol/core/package.json', 'node_modules/zod/package.json']) assert(files.includes(path), `missing ${path}`);
+    assert(!files.some(path => /^(?:\.mcp\.json$|\.codex-plugin\/|hooks\/(?!context\.js$)|scripts\/|test\/|plugin\.json$|src\/runner\.js$|skills\/memory\/runner\.js$)/.test(path)), 'Codex package contains obsolete or development files');
+    assert(!files.some(path => path.includes('node_modules/@modelcontextprotocol/client/')), 'Codex package contains development MCP client');
+  }
 }
 
 export function assertClaudeLock(manifest, lock) {
@@ -228,7 +313,6 @@ export function checkLoggingPackages({ prepareCodex = false } = {}) {
       ...manifests.flatMap(pkg => ['--workspace', pkg.name])], root), manifests);
     const core = packages.find(pkg => pkg.name === '@openlines/nmnm-core');
     for (const pkg of packages) assertLoggingContents(pkg.name.replace('@openlines/nmnm-', ''), pkg.files.map(file => file.path));
-    const coreTar = join(temporary, core.filename);
     const consumer = join(temporary, 'consumer'); mkdirSync(consumer);
     writeFileSync(join(consumer, 'package.json'), '{"private":true,"type":"module"}\n');
     npm([...install, ...packages.map(pkg => join(temporary, pkg.filename))], consumer);
@@ -290,25 +374,97 @@ export function checkLoggingPackages({ prepareCodex = false } = {}) {
     `);
     execFileSync(process.execPath, ['verify.mjs'], { cwd: consumer, env: { ...process.env, HOME: temporary }, stdio: 'pipe' });
 
-    // Pack the private plugin after installing its core tarball, not a workspace symlink.
+    // Pack exactly the checkout's locked production tree, without registry re-resolution.
     const codex = join(temporary, 'codex');
     cpSync(join(root, 'adapters/codex'), codex, { recursive: true, filter: path => basename(path) !== 'node_modules' });
-    npm([...install, coreTar], codex);
+    prepareCodexDependencies({ root, destination: codex });
     const [plugin] = parseNpmPackOutput(npm(['pack', '--json', '--ignore-scripts', '--pack-destination', temporary], codex), [JSON.parse(readFileSync(join(codex, 'package.json'), 'utf8'))]);
     assertLoggingContents('codex', plugin.files.map(file => file.path));
     const pluginConsumer = join(temporary, 'plugin-consumer'); mkdirSync(pluginConsumer);
     writeFileSync(join(pluginConsumer, 'package.json'), '{"private":true,"type":"module"}\n');
     npm([...install, join(temporary, plugin.filename)], pluginConsumer);
-    execFileSync(process.execPath, ['--input-type=module', '-e', `import assert from 'node:assert/strict';
-      import {readFileSync} from 'node:fs';
-      import {join} from 'node:path';
-      import {getMemoryLogger} from './node_modules/@openlines/nmnm-codex/src/logslines.js';
-      const logger=getMemoryLogger({home:process.env.HOME, env:{CODEX_HOME:join(process.env.HOME,'codex')}});
-      assert.equal(logger.run({operation:'retain'},()=>7),7);
-      const failure=new Error('Packaged failure');
-      assert.throws(()=>logger.run({operation:'remove'},()=>{throw failure}),error=>error===failure);
-      const records=readFileSync(join(process.env.HOME,'.local/share/nanomneme/logs/nmnm-codex.jsonl'),'utf8').trim().split('\\n').map(JSON.parse);
-      assert.deepEqual(records.map(record=>[record.operation,record.status]),[['retain','ok'],['remove','failed']]);`], { cwd: pluginConsumer, env: { ...process.env, HOME: temporary }, stdio: 'pipe' });
+    const installed = join(pluginConsumer, 'node_modules/@openlines/nmnm-codex');
+    const copiedCache = join(temporary, 'copied-codex-cache');
+    cpSync(installed, copiedCache, { recursive: true });
+    assert.deepEqual(readCodexRuntime(installed), readCodexRuntime(copiedCache), 'Copied Codex runtime differs');
+    // The verifier client lives outside both deployed artifacts; neither ships it.
+    writeFileSync(join(consumer, 'verify-codex.mjs'), `
+      import assert from 'node:assert/strict';
+      import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, readdirSync } from 'node:fs';
+      import { execFileSync } from 'node:child_process';
+      import { join } from 'node:path';
+      import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+      import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+      const artifact = process.argv[2];
+      const home = process.argv[3]; mkdirSync(home, {recursive:true});
+      const project = join(home,'project'); mkdirSync(project);
+      const settings = join(home,'.local/share/nanomneme'); mkdirSync(settings,{recursive:true});
+      const log = join(settings,'logs/nmnm-codex.jsonl');
+      const config = join(settings,'config.jsonc');
+      const count = () => existsSync(log) ? readFileSync(log,'utf8').trim().split('\\n').length : 0;
+      for (const mode of ['off','on','failed-sink']) {
+        writeFileSync(config,JSON.stringify({logging:{enabled:mode!=='off'}}));
+        if (mode==='failed-sink') { rmSync(join(settings,'logs'),{recursive:true,force:true}); writeFileSync(join(settings,'logs'),'blocked'); }
+        const client = new Client({name:'codex-artifact-check',version:'1.0.0'});
+        const transport = new StdioClientTransport({command:process.execPath,args:[join(artifact,'mcp/launch.js')],cwd:project,
+          env:{HOME:home,NMNM_PROJECT_DIR:artifact,CODEX_HOME:join(home,'codex')},stderr:'pipe'});
+        transport.stderr.on('data',()=>{});
+        try {
+          await client.connect(transport);
+          assert.equal((await client.listTools()).tools.length,4);
+          const before = mode==='failed-sink' ? 0 : count();
+          const call = async (name,args) => { const r=await client.callTool({name,arguments:args}); assert(!r.isError,JSON.stringify(r)); return JSON.parse(r.content[0].text); };
+          const created=await call('retain_memory',{content:'Artifact sentinel 東京'});
+          assert.equal((await call('recall_memory',{id:created.id})).record.metadata.source,'codex');
+          assert.equal((await call('retrieve_memory',{query:'sentinel'})).items[0].id,created.id);
+          await call('retain_memory',{id:created.id,content:'Patched artifact'});
+          assert.equal((await call('recall_memory',{id:created.id})).record.content,'Patched artifact');
+          await call('remove_memory',{id:created.id});
+          assert.equal((await call('recall_memory',{id:created.id})).status,'not_found');
+          if(mode==='on') assert.equal(count()-before,7);
+          if(mode==='off') assert.equal(count(),before);
+        } finally { await client.close(); await transport.close(); }
+      }
+      const codexHome=join(home,'codex'); mkdirSync(codexHome);
+      writeFileSync(join(codexHome,'nmnm.jsonc'), JSON.stringify({
+        injection_budget:10000, logging:{enabled:false}, reinjection:{enabled:true,every_n_prompts:2},
+        autoretention:{enabled:true,never_persist:['ARTIFACT_NEVER'],always_ask:['ARTIFACT_ASK'],always_persist:['ARTIFACT_AUTO']},
+      }));
+      writeFileSync(join(project,'.nanomneme/nmnm.jsonc'), JSON.stringify({autoretention:{always_persist:['ARTIFACT_PROJECT']}}));
+      const contextClient=new Client({name:'codex-context-artifact-check',version:'1.0.0'});
+      const contextTransport=new StdioClientTransport({command:process.execPath,args:[join(artifact,'mcp/launch.js')],cwd:project,
+        env:{HOME:home,CODEX_HOME:codexHome},stderr:'pipe'});
+      contextTransport.stderr.on('data',()=>{});
+      try {
+        await contextClient.connect(contextTransport);
+        const retained=await contextClient.callTool({name:'retain_memory',arguments:{content:'ARTIFACT_CONTEXT_RECORD'}});
+        assert(!retained.isError,JSON.stringify(retained));
+        const id=JSON.parse(retained.content[0].text).id;
+        const hook=event=>execFileSync(process.execPath,[join(artifact,'hooks/context.js')],{cwd:artifact,
+          input:JSON.stringify({hook_event_name:event,cwd:project,session_id:'artifact-session',prompt:'PRIVATE_ARTIFACT_PROMPT'}),encoding:'utf8',
+          env:{...process.env,HOME:home,CODEX_HOME:codexHome,TMPDIR:home,NMNM_PROJECT_DIR:artifact},timeout:10000});
+        const startup=JSON.parse(hook('SessionStart')).hookSpecificOutput.additionalContext;
+        assert(startup.length<=10000);
+        for(const rule of ['ARTIFACT_NEVER','ARTIFACT_ASK','ARTIFACT_AUTO','ARTIFACT_PROJECT']) assert(startup.includes(rule));
+        assert(startup.indexOf('ARTIFACT_NEVER')<startup.indexOf('ARTIFACT_ASK'));
+        assert(startup.indexOf('ARTIFACT_ASK')<startup.indexOf('ARTIFACT_AUTO'));
+        assert(startup.includes('ARTIFACT_PROJECT') && startup.includes('ARTIFACT_CONTEXT_RECORD'));
+        assert.equal(hook('UserPromptSubmit'),'');
+        assert.equal(JSON.parse(hook('UserPromptSubmit')).hookSpecificOutput.additionalContext,startup);
+        const state=join(home,'nmnm-codex-'+(process.getuid?.()??'user'));
+        assert.equal(readdirSync(state).filter(name=>name.endsWith('.json')).length,1);
+        assert.equal(hook('SessionEnd'),'');
+        assert.equal(readdirSync(state).length,0);
+        writeFileSync(join(codexHome,'nmnm.jsonc'),'{broken');
+        assert.equal(hook('SessionStart'),'');
+        const removed=await contextClient.callTool({name:'remove_memory',arguments:{id}});
+        assert(!removed.isError,JSON.stringify(removed));
+      } finally { await contextClient.close(); await contextTransport.close(); }
+    `);
+    for (const [index, artifact] of [installed, copiedCache].entries()) {
+      assertLoggingContents('codex', Object.keys(readPackageTree(artifact)));
+      execFileSync(process.execPath, ['verify-codex.mjs', artifact, join(temporary, `codex-home-${index}`)], { cwd: consumer, env: { ...process.env, HOME: temporary }, stdio: 'pipe', timeout: 60000 });
+    }
     if (prepareCodex) {
       prepareCodexDependencies({ root, preparedModules: join(codex, 'node_modules') });
     }
@@ -320,7 +476,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   try {
     const prepareCodex = process.argv.includes('--prepare-codex');
     console.log(`Standalone logging packages verified: ${checkLoggingPackages({ prepareCodex }).join(', ')}`);
-    if (prepareCodex) console.log('Codex local plugin dependencies prepared in adapters/codex/node_modules; reinstall through its marketplace.');
+    if (prepareCodex) console.log('Codex dependencies prepared in adapters/codex/node_modules; restart direct MCP connections.');
   }
   catch (error) { console.error(error.message); if (error.stdout) console.error(error.stdout.toString()); if (error.stderr) console.error(error.stderr.toString()); process.exitCode = 1; }
 }

@@ -10,7 +10,7 @@ function json(path) {
   return JSON.parse(readFileSync(path, 'utf8'));
 }
 
-test('release metadata aligns the 0.8.5 core and CLI safeguard patches and every consumer', () => {
+test('release metadata aligns the Codex MCP minor release and every unchanged consumer', () => {
   const root = json(new URL('../package.json', import.meta.url));
   const lock = json(new URL('../package-lock.json', import.meta.url));
   const pi = json(new URL('../adapters/pi/package.json', import.meta.url));
@@ -20,7 +20,7 @@ test('release metadata aligns the 0.8.5 core and CLI safeguard patches and every
   const claude = json(new URL('../adapters/claude/package.json', import.meta.url));
   const codex = json(new URL('../adapters/codex/package.json', import.meta.url));
   const opencode = json(new URL('../adapters/opencode/package.json', import.meta.url));
-  assert.equal(root.version, '0.8.5');
+  assert.equal(root.version, '0.9.0');
   assert.equal(lock.version, root.version);
   assert.equal(lock.packages['adapters/codex'].name, '@openlines/nmnm-codex');
   assert.equal(lock.packages['node_modules/@openlines/nmnm-codex'].resolved, 'adapters/codex');
@@ -45,7 +45,7 @@ test('release metadata aligns the 0.8.5 core and CLI safeguard patches and every
   assert.equal(lock.packages['adapters/claude'].dependencies['@modelcontextprotocol/sdk'], claude.dependencies['@modelcontextprotocol/sdk']);
   const [sdkMajor, sdkMinor] = lock.packages['node_modules/@modelcontextprotocol/sdk'].version.split('.').map(Number);
   assert.ok(sdkMajor > 1 || (sdkMajor === 1 && sdkMinor >= 32), 'MCP SDK must include the current advisory fixes');
-  assert.equal(codex.version, '0.2.3');
+  assert.equal(codex.version, '0.3.0');
   assert.equal(opencode.version, '0.3.1');
   for (const [path, pkg] of [['', root], ['packages/nmnm-core', core], ['packages/nmnm-cli', cli], ['packages/nmnm-ui', ui],
     ['adapters/pi', pi], ['adapters/claude', claude], ['adapters/codex', codex], ['adapters/opencode', opencode]]) {
@@ -65,7 +65,6 @@ test('release metadata aligns the 0.8.5 core and CLI safeguard patches and every
   assert.equal(claude.dependencies['@openlines/nmnm-core'], undefined);
   assert.equal(lock.packages['adapters/claude'].dependencies['@openlines/nmnm-core'], undefined);
   assert.equal(json(new URL('../adapters/claude/.claude-plugin/plugin.json', import.meta.url)).version, claude.version);
-  assert.equal(json(new URL('../adapters/codex/.codex-plugin/plugin.json', import.meta.url)).version, codex.version);
   assert.equal(root.engines.node, '>=22.19.0');
   assert.equal(pi.engines.node, '>=22.19.0');
   assert.equal(root.devDependencies['@earendil-works/pi-coding-agent'], '>=0.87.0');
@@ -84,7 +83,7 @@ test('release metadata aligns the 0.8.5 core and CLI safeguard patches and every
   assert.equal(lock.packages['packages/logger'], undefined);
 });
 
-test('Codex prototype remains marketplace-local and is not released to npm', () => {
+test('Codex direct adapter remains private and is not released to npm', () => {
   const codex = json(new URL('../adapters/codex/package.json', import.meta.url));
   const ci = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
   const release = readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');

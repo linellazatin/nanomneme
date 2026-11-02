@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.9.0 - Codex adapter MCP redesign
+
+Prepared for release; no publishing is performed by checkout updates.
+
+### Updated components
+
+| Component | Version |
+| --- | --- |
+| Repository | 0.9.0 |
+| `@openlines/nmnm-codex` | 0.3.0 |
+
+### Changed
+
+- Replaced `nmnm-codex` shell runner and marketplace delivery with direct registration of four native stdio MCP tools. The previous invocation interface is removed without compatibility shims; existing databases remain compatible and core, CLI and UI are unchanged.
+- `nmnm-codex` direct MCP launcher binds memory to the actual session directory without manual project-path exports. It preserves original-store/provenance semantics and soft-only removal, and bounds retrieval previews and lossless full-record paging.
+- `nmnm-codex` preparation and packed-artifact validation cover the complete locked production runtime tree. Updates prepare stable files and require a restart without invoking Codex or changing user registration. The development MCP client is excluded from distribution.
+- `nmnm-codex` supports native JSONC context budgets, project/user precedence, merged autoretention rules and actual prompt-based reinjection through trusted user context hooks. All memory writes remain MCP; lifecycle failures do not block Codex.
+- `nmnm-codex` reuses opt-in Logslines diagnostics with connection-stable configuration, bounded pre-handler validation and sink-failure isolation.
+
+### Validation
+
+- Independently installed and copied `nmnm-codex` artifacts pass direct stdio 4Rs and context-hook checks, including logging off/on/failed-sink and native JSONC cadence. 
+  - Native Codex CLI 0.166.0 accepted normal hook trust review
+  - A local deterministic provider fixture completed 14 project/global calls with an explicitly approved disposable removal policy. Default noninteractive removal rejection preceded adapter execution/logging.
+- Concurrent native sessions verified workspace isolation, Unicode record paging, complete rule precedence/merging, bounded context, actual prompt cadence, reload/restart behavior and session cleanup.
+
+> Also, I can confirm that all other adapters still work lol.
+
 ## 0.8.5 - Core and CLI storage safeguards
 
 ### Updated components

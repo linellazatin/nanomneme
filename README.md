@@ -19,9 +19,7 @@
 [![nmnm-pi version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-pi?label=pi&logo=pi&color=ffffe0)](https://www.npmjs.com/package/@openlines/nmnm-pi)
 [![nmnm-opencode version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-opencode?label=opencode&logo=opencode&color=gray)](https://www.npmjs.com/package/@openlines/nmnm-opencode)
 [![nmnm-claude version](https://img.shields.io/badge/claude-v0.2.3-orange?logo=claude)](https://github.com/linellazatin/nanomneme/tree/main/adapters/claude)
-[![nmnm-codex version](https://img.shields.io/badge/codex-v0.2.3-black?logo=codex)](https://github.com/linellazatin/nanomneme/tree/main/adapters/codex)
-
->
+[![nmnm-codex version](https://img.shields.io/badge/codex-v0.3.0-black?logo=codex)](https://github.com/linellazatin/nanomneme/tree/main/adapters/codex)
 
 <img src="docs/img/nanomneme-logo-dark-accent.svg" width="25%" alt="nmnm logo">
 
@@ -29,7 +27,7 @@
 
 See [CHANGELOG](CHANGELOG.md) for release history, feature introductions, and breaking changes.
 
-nanomneme is a small, deterministic SQLite core for coding-agent memory: useful context survives a session without becoming an opaque service. Inspired by [`openpi-memory`](https://github.com/linellazatin/openpi-memory) and [`openclaude-memory`](https://github.com/linellazatin/openclaude-memory), and their demonstration that memory can persist in inspectable files, it replaces per-harness memory formats with one shared system for `Pi`, `Claude Code`, `OpenCode`, `Codex`, and future adapters.
+nanomneme is a small, deterministic SQLite core for coding-agent memory: useful context survives a session without becoming an opaque service. Inspired by [`openpi-memory`](https://github.com/linellazatin/openpi-memory) and [`openclaude-memory`](https://github.com/linellazatin/openclaude-memory), and their demonstration that memory can persist in inspectable files, it replaces (or complements*) per-harness memory formats with one shared system for `Pi`, `Claude Code*`, `OpenCode`, `Codex*`, and future adapters.
 
 ## What the name means
 
@@ -108,11 +106,11 @@ Diagnostics default off. CLI, UI mutations, and adapters use the shared Logsline
 - **Model guidance:** a `memory-guide` Skill (`/nanomneme:memory-guide`) teaches the 4Rs, project-versus-global scope, and safe capture.
 - **Model-free management command:** `bin/memory.js` (`status`, `list`, `search`, `show`, `pin`, `unpin`, `remove`) reuses the shared store/context helpers; `list` and `search` accept `--source all|claude-code`. A `/nanomneme:memory` slash command embeds it and relays output verbatim, or invoke the CLI with `!` for a fully model-free path.
 
-#### Codex prototype
+#### Codex adapter
 
-- **MCP-free package:** `@openlines/nmnm-codex` bundles the exact core runtime and a constrained, shell-backed JSON runner for retain, recall, retrieve, and soft remove. New records carry `metadata.source: "codex"`; reads and no-op removal do not create a store.
-- **Bounded trusted context:** one SessionStart hook reads existing project then global stores without writing them, injects a fixed bounded index, and emits no context on failure. The prototype intentionally has no pins, context settings, prompt cadence, automatic retention, adapter management CLI, or Windows support claim.
-- **Lazy guidance:** one `memory` skill resolves the package-relative runner beside its `SKILL.md`; no MCP fallback is supplied.
+- **Native stdio MCP:** `@openlines/nmnm-codex` bundles checkout core and the locked production MCP runtime for retain, recall, retrieve and soft remove. Creation sets Codex provenance; patches preserve it, and absent-store reads/removal do not create databases.
+- **Direct registration:** a stable absolute MCP launcher binds to Codex's actual session directory without manual project-path exports. Bounded previews and lossless record paging keep model responses small.
+- **Native configuration:** user context hooks provide startup indexes, optional prompt reinjection and complete autoretention guidance from `nmnm.jsonc`. All persistence remains MCP; there is no autonomous writer, shell runner, pin management or adapter CLI. Removal follows host approval policy. Windows support is not claimed.
 
 
 ## Architecture
@@ -132,7 +130,7 @@ Every individual core call targets one physical store. The CLI, adapters, and UI
 | `packages/nmnm-ui` | CLI-bundled experimental `@openlines/nmnm-ui` foreground browser workbench for review and cleanup. |
 | `adapters/pi` | Publishable `@openlines/nmnm-pi` Pi package, including a model-free memory browser. |
 | `adapters/claude` | Private Git-first Claude Code plugin: native MCP memory tools plus session-start index injection. |
-| `adapters/codex` | Local-marketplace-only MCP-free Codex prototype with a bundled direct-core runner and bounded session-start index. |
+| `adapters/codex` | Direct stdio MCP adapter with session workspace binding, native context configuration and bundled production runtimes. |
 | `adapters/opencode` | Publishable `@openlines/nmnm-opencode` OpenCode server plugin: native memory tools plus bounded transient index injection. |
 
 Use Node.js 22.19+ with built-in `node:sqlite` and FTS5. The Pi adapter is published as `@openlines/nmnm-pi` and the OpenCode adapter as `@openlines/nmnm-opencode`; Claude Code is a separately installed Git-first plugin.
@@ -157,7 +155,7 @@ Claude Code remains a separately installed adapter.
 
 The Claude adapter ships generated core and logging runtimes. Its registry-only lock covers external dependencies, so PR checks and copied plugin installs no longer depend on publishing core first. See the [Claude installation and dependency refresh guide](adapters/claude/docs/CLAUDE_ADAPTER_MANUAL.md#install).
 
-The Codex adapter is a local prototype, not an npm-published install. Create a packed local artifact with:
+The private Codex adapter uses direct MCP registration from a stable checkout or prepared local artifact. Create an artifact with:
 
 ```sh
 npm ci
@@ -166,7 +164,7 @@ npm run codex:prepare
 npm pack --workspace @openlines/nmnm-codex
 ```
 
-The tarball is for isolated artifact validation; use the repo-local `.agents/plugins/marketplace.json` entry for live development, then review and trust its SessionStart hook in Codex. See the [Codex adapter manual](adapters/codex/docs/CODEX_ADAPTER_MANUAL.md).
+Register the absolute `mcp/launch.js` path with no configured cwd. Add and trust the user-level context hooks for full native configuration behavior, then restart Codex. See the [Codex adapter manual](adapters/codex/docs/CODEX_ADAPTER_MANUAL.md#install) for installation, configuration and migration from the retired marketplace delivery.
 
 The CLI defaults to `./.nanomneme/memory.db`. `--global` uses `~/.local/share/nanomneme/memory.db` on Linux and macOS. Standard `retain` routes derive the matching scope; custom `--db` retains require `--scope project|global`. Scope values are trimmed and validated before opening a database; standard selectors reject scope mismatches. `retrieve --both` composes project results before global results; `(store, id)` identifies a retrieval item.
 
@@ -198,8 +196,8 @@ node packages/nmnm-ui/bin/nmnm-ui.js
 | [Pi Adapter Manual](adapters/pi/docs/PI_ADAPTER_MANUAL.md) | Pi installation, tools, pins, configuration, and automatic index behavior. |
 | [Claude quick start](adapters/claude/README.md) | Package-local Claude Code plugin entry point. |
 | [Claude Adapter Manual](adapters/claude/docs/CLAUDE_ADAPTER_MANUAL.md) | Claude Code plugin install, MCP tools, hooks, the `/nanomneme:memory` management command, pins, and configuration. |
-| [Codex quick start](adapters/codex/README.md) | Package-local Codex prototype entry point. |
-| [Codex Adapter Manual](adapters/codex/docs/CODEX_ADAPTER_MANUAL.md) | Codex local-prototype installation, trusted hook, shell-backed 4Rs, and token boundaries. |
+| [Codex quick start](adapters/codex/README.md) | Codex MCP adapter entry point. |
+| [Codex Adapter Manual](adapters/codex/docs/CODEX_ADAPTER_MANUAL.md) | Local installation, workspace binding, MCP 4Rs and output boundaries. |
 | [OpenCode quick start](adapters/opencode/README.md) | Package-local OpenCode server plugin entry point. |
 | [OpenCode Adapter Manual](adapters/opencode/docs/OPENCODE_ADAPTER_MANUAL.md) | OpenCode plugin install, native tools, transient injection, the `nmnm-opencode` CLI, the TUI memory browser, pins, configuration, and compatibility probes. |
 | [Changelog](CHANGELOG.md) | Released changes. |
@@ -215,8 +213,8 @@ node packages/nmnm-ui/bin/nmnm-ui.js
 - `npm run logslines:build`: check all four generated runtimes, regenerate stale outputs, recheck, and validate standalone packages. Reports `up-to-date` or `updated`, followed by `validated`; errors report `failed` and exit nonzero.
 - `npm run logslines:build -- --fast`: skip standalone package validation explicitly for the edit loop.
 - Logger build commands require Node 22.19+, npm, and installed repository dependencies. Package validation may need npm registry access; build commands do not fetch upstream Logslines or refresh Codex. See the [logger guide](docs/LOGGER.md).
-- `npm run codex:prepare`: refresh stale generated runtimes and copy physical core/parser dependencies before first-time marketplace installation or packing. Requires repository dependencies; never calls Codex or runs validation. See the [Codex quick start](adapters/codex/README.md#quick-start).
-- `npm run codex:update`: refresh an existing enabled Codex plugin against this checkout, prepare physical core/parser dependencies, and reinstall only stale cached content. Requires a matching local marketplace and installed plugin; respects `CODEX_HOME` and reports when a new session is required. No first-time setup or full-suite run. See the [Codex manual](adapters/codex/docs/CODEX_ADAPTER_MANUAL.md#refresh-after-checkout-updates).
+- `npm run codex:prepare`: refresh stale generated runtimes and copy the complete locked production runtime tree before direct registration or packing. Requires repository dependencies; never calls Codex or runs validation. See the [Codex quick start](adapters/codex/README.md#quick-start).
+- `npm run codex:update`: refresh generated runtimes and prepare physical locked dependencies, then report restart requirements. It never invokes Codex or changes registrations/hook trust. See the [Codex manual](adapters/codex/docs/CODEX_ADAPTER_MANUAL.md#refresh-after-checkout-updates).
 - `node scripts/build-logger.js --check`: read-only check; exits `0` when current, `2` when stale/missing, or `1` on failure. `npm test` remains read-only.
 
 ```sh
@@ -231,6 +229,10 @@ Logslines source is checked in under `external/logslines/`, selected by upstream
 Run `npm test` before submitting changes. Do not commit `.nanomneme/`, personal global databases, or Pi settings and pin files containing local data. Use canonical JSONL for transfer and closed SQLite copies for exact backups. See the manuals for validation, recovery, and adapter-specific safety boundaries.
 
 ### Noted for future work
+
+#### Codex adapter
+
+- see the adapter's [Developer notes](adapters/codex/docs/CODEX_ADAPTER_MANUAL.md#developer-notes) for specifics.
 
 #### Pi adapter
 

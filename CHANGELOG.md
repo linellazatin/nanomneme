@@ -24,8 +24,6 @@
   - A local deterministic provider fixture completed 14 project/global calls with an explicitly approved disposable removal policy. Default noninteractive removal rejection preceded adapter execution/logging.
 - Concurrent native sessions verified workspace isolation, Unicode record paging, complete rule precedence/merging, bounded context, actual prompt cadence, reload/restart behavior and session cleanup.
 
-> Also, I can confirm that all other adapters still work lol.
-
 ## 0.8.5 - Core and CLI storage safeguards
 
 ### Updated components

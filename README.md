@@ -17,15 +17,19 @@
 
 ### adapters
 [![nmnm-pi version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-pi?label=pi&logo=pi&color=ffffe0)](https://www.npmjs.com/package/@openlines/nmnm-pi)
-[![nmnm-opencode version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-opencode?label=opencode&logo=opencode&color=gray)](https://www.npmjs.com/package/@openlines/nmnm-opencode)
-[![nmnm-claude version](https://img.shields.io/badge/claude-v0.2.3-orange?logo=claude)](https://github.com/linellazatin/nanomneme/tree/main/adapters/claude)
-[![nmnm-codex version](https://img.shields.io/badge/codex-v0.3.0-black?logo=codex)](https://github.com/linellazatin/nanomneme/tree/main/adapters/codex)
+[![nmnm-opencode version](https://img.shields.io/npm/v/%40openlines%2Fnmnm-opencode?label=opencode&logo=opencode&color=ffffff)](https://www.npmjs.com/package/@openlines/nmnm-opencode)
+[![nmnm-claude version](https://img.shields.io/badge/claude-v0.2.3-orange?logo=claudecode)](https://github.com/linellazatin/nanomneme/tree/main/adapters/claude)
+[![nmnm-codex version](https://img.shields.io/badge/codex-v0.3.0-black?logo=gnometerminal)](https://github.com/linellazatin/nanomneme/tree/main/adapters/codex)
 
 <img src="docs/img/nanomneme-logo-dark-accent.svg" width="25%" alt="nmnm logo">
 
 </div>
 
 See [CHANGELOG](CHANGELOG.md) for release history, feature introductions, and breaking changes.
+>
+> ### v0.9.0 - `nmnm-codex` 0.3.0 Codex adapter MCP redesign
+> - transitioned `nmnm-codex` from direct, shell-backed JSON runner to a more accessible stdio MCP runtime (currently via local checkout)
+>
 
 nanomneme is a small, deterministic SQLite core for coding-agent memory: useful context survives a session without becoming an opaque service. Inspired by [`openpi-memory`](https://github.com/linellazatin/openpi-memory) and [`openclaude-memory`](https://github.com/linellazatin/openclaude-memory), and their demonstration that memory can persist in inspectable files, it replaces (or complements*) per-harness memory formats with one shared system for `Pi`, `Claude Code*`, `OpenCode`, `Codex*`, and future adapters.
 

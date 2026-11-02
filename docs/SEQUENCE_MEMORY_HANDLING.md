@@ -174,7 +174,7 @@ sequenceDiagram
 
 When enabled, the observer inspects canonical callback results transiently to classify outcomes: null recall/remove is `not_found`, zero-result retrieve is `empty`, and failed verify/repair reports are `failed`. Management callbacks can mark `not_found` or `blocked` explicitly. Exceptions are `failed` unless explicitly blocked. All blocked durations are null; other durations cover the observed callback and exclude logging work. The emitted envelope contains fixed catalog fields, identity, normalized session ID, duration, empty attributes, and failure summaries whose `error.message` carries the thrown error verbatim (falling back to the fixed catalog message when none is usable), with derived `error.kind` and `cause_kind`. It does not serialize memory-result payloads, host objects, or stack traces. Thrown error messages are not redacted and may include sensitive input, IDs, queries, or paths. Configuration, clock, validation, and sink failures suppress diagnostics and preserve execution; invalid diagnostic inputs suppress the record. No-op logging still runs the callback. See the authoritative [catalog](../shared/logger/catalog.js) and [observer](../shared/logger/index.js).
 
-Shared `~/.local/share/nanomneme/config.jsonc` defaults logging off; user-level adapter `nmnm.jsonc` overrides only explicit booleans. Either invalid applicable configuration disables the caller, and project settings cannot authorize logging. Each shared logger instance caches the decision on its first eligible attempt; UI creates a fresh instance per mutation or general error. Pi `/reload` creates a fresh instance; Claude tools share an MCP-process instance; CLI, management commands, OpenCode bridges, and Codex runners resolve through their per-process instances. The first emitted record creates `logs/<component>.jsonl`; logs use owner-only permissions and remain separate from memory databases and pin JSON. The [Logger manual](LOGGER.md#configuration-and-record-contract) lists exact override paths and correlation sources.
+Shared `~/.local/share/nanomneme/config.jsonc` defaults logging off; user-level adapter `nmnm.jsonc` overrides only explicit booleans. Either invalid applicable configuration disables the caller, and project settings cannot authorize logging. Each shared logger instance caches the decision on its first eligible attempt; UI creates a fresh instance per mutation or general error. Pi `/reload` creates a fresh instance; Claude and Codex tools share their respective MCP-process instances; CLI, management commands and OpenCode bridges use per-process instances. The first emitted record creates `logs/<component>.jsonl`; logs use owner-only permissions and remain separate from memory databases and pin JSON. The [Logger manual](LOGGER.md#configuration-and-record-contract) lists exact override paths and correlation sources.
 
 ## Pi adapter
 
@@ -345,51 +345,54 @@ sequenceDiagram
 
 ## Codex adapter
 
-**Implemented path:** Codex's lazy-loaded memory skill invokes the cached package-relative `skills/memory/runner.js`. `scripts/runner.js` parses stdin and formats the protocol envelope outside observation. `src/runner.js` validates the request object and allowed operation, reads normalized host correlation, then observes input/store validation, path resolution, missing-store shortcuts, and core execution. New retains add `metadata.source: "codex"`; ID patches preserve source. Local marketplace preparation includes physical core/parser dependencies so the cached runner imports the same logging implementation.
+**Implemented path:** Codex launches an absolute stdio MCP entrypoint with no configured cwd; the launcher binds to the actual session directory. Schema rejection precedes operation observation. The handler validates semantics/store selection, executes core and calculates bounded output inside the observer; canonical results determine Logslines status before MCP formatting. Creation forces Codex provenance; ID patches preserve metadata. Separate trusted user hooks deliver startup context and actual prompt reinjection from native settings, reading stores without creating them. Preparation includes the complete locked production runtime tree.
 
 ```mermaid
 sequenceDiagram
   autonumber
   actor Model as Codex model
-  participant Skill as lazy memory skill
-  participant Runner as cached package-relative Node runner
+  participant Host as Codex MCP client
+  participant Server as direct Node MCP server
   participant Logger as shared logger
   participant Core as bundled nmnm-core
   participant DB as selected SQLite store
   participant Log as nmnm-codex.jsonl
-
-  Model->>Skill: choose explicit memory operation
-  Skill->>Runner: execute runner with one JSON stdin request
-  Runner->>Runner: parse request and validate allowed operation
-  Runner->>Runner: read host thread ID, fallback session ID, otherwise null
-  Runner->>Logger: run(operation, host session_id, callback)
-  Logger->>Logger: resolve shared config plus Codex user override
-  Logger->>Runner: execute callback
-  Runner->>Runner: validate input/store and resolve standard path
-  alt non-retain store is absent
-    Runner-->>Logger: null or empty page without creating store
-  else core call is required
-    Runner->>Runner: add source codex only for new retains
-    Runner->>Core: open, execute 4R, close
-    Core->>DB: read-only query or writable transaction
-    DB-->>Core: result or error
-    Core-->>Runner: canonical result or original error
-    Runner-->>Logger: callback result or original exception
+  Note over Host,Server: Absolute launcher uses actual Codex session cwd
+  Model->>Host: call a memory tool
+  Host->>Host: apply tool approval policy
+  Host->>Server: tools/call with model arguments
+  alt schema invalid
+    Server-->>Host: bounded tool error without memory logging
+  else schema valid
+    Server->>Logger: run operation with launch correlation
+    Logger->>Logger: resolve logging once per connection
+    Logger->>Server: execute callback once
+    Server->>Server: validate semantic input and selected store
+    alt read or removal of absent store
+      Server-->>Logger: null or empty canonical page
+    else core call required
+      Server->>Core: open selected store, execute 4R, close
+      Core->>DB: read or writable transaction
+      DB-->>Core: result or error
+      Core-->>Server: canonical result or error
+      Server->>Server: calculate bounded response or record page
+      Server-->>Logger: canonical result or original exception
+    end
+    opt logging enabled
+      Logger->>Log: append one terminal outcome
+    end
+    Logger-->>Server: unchanged result or original error
+    Server-->>Host: MCP result or bounded tool error
   end
-  opt effective logging enabled
-    Logger->>Log: append one bounded terminal outcome with host correlation
-  end
-  Logger-->>Runner: unchanged result or original error
-  Runner-->>Skill: JSON result or nonzero JSON error envelope
-  Skill-->>Model: decoded response
-  Note over Runner,Logger: Request session fields are ignored, protocol serialization is outside observation
+  Host-->>Model: deliver tool response
+  Note over Server,Logger: Separate read-only context hooks and MCP-only writes
 ```
 
 ### Codex-specific boundaries
 
-- Codex supports no arbitrary database path, purge, import, export, verify, repair, context settings, pins, autoretention, or management CLI. Its user-level `nmnm.jsonc` supports the logging override only; transfer/repair remain CLI operations; existing-record cleanup is also available in the separate UI workbench.
-- Its trusted `SessionStart` hook is a separate read-only path that opens existing stores only, emits no index for empty/unreadable stores, and applies a fixed 1,200-character cap.
-- Codex observes explicit 4Rs through the shared logger, using host `CODEX_THREAD_ID` with `CODEX_SESSION_ID` fallback and null when absent. Request-supplied session fields are ignored; the SessionStart hook remains unlogged.
+- Codex supports native `nmnm.jsonc` context budgets, reinjection, logging and merged autoretention rules. It exposes no arbitrary database path, purge, import/export, verify/repair, pins or management CLI; those maintenance operations remain in the separate CLI/workbench.
+- Direct registration leaves cwd unset and uses a stable absolute launcher. Trusted SessionStart/UserPromptSubmit hooks render complete rules before bounded project/global indexes; SessionEnd clears disposable cadence state. Context settings reload per event, zero budget avoids store access and failures never block the host. Autoretention is model guidance; all writes remain MCP.
+- Handler-executed 4Rs use shared diagnostics with launch-supplied thread/session correlation, otherwise null. Model-supplied correlation is rejected. Discovery, schema rejection and host approval refusal occur before operation logging; restart the server to adopt changed logging settings.
 
 ## Management and context flows
 
@@ -401,7 +404,7 @@ sequenceDiagram
 | OpenCode TUI | Node bridge mutation target check and pin/soft-remove action | `browser_pin`, `browser_unpin`, `browser_remove` | Bun-side confirmation/cancellation, browse/detail/index reads, UI refresh |
 | OpenCode management | Node CLI target resolution and pin/soft-remove action | `command_pin`, `command_unpin`, `command_remove` | Invalid command usage, status/list/search/show, final text output |
 
-Pin/unpin touches each adapter's JSON pin file; soft remove calls core and leaves matching pins configured until explicitly unpinned. Pi pin mutations take an exclusive same-directory lock, reread while held, and atomically replace the file; a lock is never reclaimed automatically, so a crash-left lock requires manual removal after all writers stop. Target resolution may perform several core reads, but only the outer mutation is observed. A missing target yields the catalog's not_found outcome where supported; ambiguous command targets yield blocked for the implemented resolving surfaces. Codex has no management mutation surface. Pi/Claude context hooks, OpenCode's per-request context bridge, and Codex's read-only SessionStart index call core directly without an observer, so startup or prompt-time reads create no diagnostic records.
+Pin/unpin touches each adapter's JSON pin file; soft remove calls core and leaves matching pins configured until explicitly unpinned. Pi pin mutations take an exclusive same-directory lock, reread while held, and atomically replace the file; a lock is never reclaimed automatically, so a crash-left lock requires manual removal after all writers stop. Target resolution may perform several core reads, but only the outer mutation is observed. A missing target yields the catalog's not_found outcome where supported; ambiguous command targets yield blocked for the implemented resolving surfaces. Codex has no management mutation surface. Pi/Claude/Codex context hooks and OpenCode's per-request context bridge call core directly without an observer, so startup or prompt-time reads create no diagnostic records.
 
 ## Cross-interface comparison
 
@@ -412,7 +415,7 @@ Pin/unpin touches each adapter's JSON pin file; soft remove calls core and leave
 | Pi | Pi extension directly imports core | `"pi"` | `null` for recall/remove; empty page for retrieve; no creation | Hooks build bounded next-prompt index | `/memory` command and browser | Yes: model 4Rs and browser/command mutations under effective shared/user settings |
 | Claude Code | Local stdio MCP server directly imports core | `"claude-code"` | `null` for recall/remove; empty page for retrieve; no creation | SessionStart and optional UserPromptSubmit hooks | `bin/memory.js` and `/nanomneme:memory` | Yes: explicit 4Rs and management mutations |
 | OpenCode | Bun plugin → short-lived Node bridge → core | `"opencode"` | `null` for recall/remove; empty page for retrieve; no creation | Per-request system transform through bridge | `nmnm-opencode` CLI and optional TUI | Yes: Node operations and mutations; bridge spawn failures observed host-side, other pre-bridge failures unobserved |
-| Codex | Lazy skill → package-relative Node runner → core | `"codex"` | `null` for recall/remove; empty page for retrieve; no creation | Read-only SessionStart hook | None | Yes: explicit 4Rs; no hook records |
+| Codex | Direct stdio MCP launcher → bundled core | `"codex"` | not_found for recall/remove; empty retrieval; no creation | Trusted startup and optional prompt context hooks | None | Yes: handler-executed 4Rs; schema/approval rejection and context hooks are unlogged |
 
 ## Dev notes
 

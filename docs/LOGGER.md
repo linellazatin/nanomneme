@@ -34,7 +34,7 @@ The logger is intentionally shipped with `@openlines/nmnm-core/logging`, rather 
 | `shared/fixtures/logslines-release.json` | Independent reviewed release metadata and SHA-256 pin; repository-only, excluded from runtime packages. | Updated by `logslines:update`; review the diff. |
 | `scripts/external-logslines.test.js` | Offline fixture/provenance/source checks and core/UI license banners. | Only when the validation contract changes. |
 | `scripts/maintenance.test.js` | Generator checks, including Claude core/version/logger staleness and bundled license notices. | Only when the validation contract changes. |
-| `scripts/maintenance.js` | Coordinates read-only validation, logger builds, deliberate upstream release updates, and existing Codex installation refreshes. | Yes, when maintenance workflows change. |
+| `scripts/maintenance.js` | Coordinates read-only validation, logger builds, deliberate upstream release updates, and stable Codex dependency preparation. | Yes, when maintenance workflows change. |
 | `scripts/check-logging-packages.js` | Installed-tarball checks, fixture/build-source exclusion, and reusable physical Codex dependency preparation. | Yes, when distribution checks change. |
 | `scripts/external-logslines.js` | Maintainer-only snapshot check/update command. | Yes, when maintenance tooling changes. |
 | `shared/logger/test/`, component logging tests, scripts' logger tests | Shared contracts, caller behavior, and packaging/maintenance regression tests. | Yes. |
@@ -50,13 +50,15 @@ Run `npm run validate` before shipping. It runs `npm test` (generated-output che
 
 Standalone validation checks Claude's external-only registry lock and performs a frozen copied-plugin install, separate audit, full core contract against the deployed generated runtime, Claude adapter suite, and stdio MCP/management smoke. It checks copied runtime hashes and rejects registry core dependencies. No core publication is needed; see the [Claude refresh procedure](../adapters/claude/docs/CLAUDE_ADAPTER_MANUAL.md#refresh-bundled-runtimes-and-external-dependencies).
 
+Codex validation packs the checkout's locked production runtime tree into a temporary artifact, installs it independently, and compares it with a copied artifact. Both execute direct-launch stdio 4Rs with diagnostics off/on/failed-sink and context hooks with native JSONC merging, prompt cadence and cleanup. Tests and the development client are excluded; the verifier client stays outside deployed artifacts. These checks do not refresh personal installations or establish model/provider behavior. Context hooks are separate from MCP operation logging.
+
 CI and release use this command as a blocking validation gate and retain the informational full-tree audit. Both separately run rendered Chromium checks; those are not part of `npm run validate`. Tagged publishing requires repository validation and rendered UI success on the tagged checkout. Release validation checks the root tag and extracts nonempty changelog notes before publication; validated notes become the GitHub Release body. See [UI validation](../packages/nmnm-ui/README.md#validation) for browser setup and artifacts.
 
 ## Configuration and record contract
 
 - Default: off. Enable `logging.enabled` in `~/.local/share/nanomneme/config.jsonc`; JSONC comments and trailing commas are accepted.
 - User-level adapter overrides accept explicit booleans; absence inherits. Invalid applicable shared/adapter configuration disables logging. Project settings cannot authorize it.
-- The first eligible action caches configuration per logger instance. UI creates a fresh logger per mutation/error; Pi reload, MCP restart, or a new CLI/bridge/runner process refreshes the corresponding instance.
+- The first eligible action caches configuration per logger instance. UI creates a fresh logger per mutation/error; Pi reload, MCP restart, or a new CLI/bridge process refreshes the corresponding instance.
 - Logs append to `~/.local/share/nanomneme/logs/<component>.jsonl`. First emission creates/tightens the logs directory to `0700` and regular JSONL files to `0600`; parent data-directory permissions are unchanged. No stderr fallback or automatic rotation.
 - Logging failures preserve the observed result/error. Successful internal reads, context injection, navigation, help/version, and canceled actions remain quiet; model-facing recall/retrieve calls are observed.
 
@@ -67,7 +69,7 @@ CI and release use this command as a blocking validation gate and retain the inf
 | Pi | `<Pi agent directory>/nmnm.jsonc`, normally `~/.pi/agent/nmnm.jsonc` | `ctx.sessionManager.getSessionId()`, otherwise null. |
 | Claude | `${CLAUDE_PLUGIN_DATA}/nmnm.jsonc`, fallback `~/.claude/nmnm.jsonc` | Null for MCP tools and management; hook IDs are not forwarded. |
 | OpenCode | `${XDG_CONFIG_HOME:-~/.config}/opencode/nmnm.jsonc` | Server tool-context `sessionID`; management/TUI use null. |
-| Codex | `$CODEX_HOME/nmnm.jsonc`, fallback `~/.codex/nmnm.jsonc` | Nonempty `CODEX_THREAD_ID`, then `CODEX_SESSION_ID`, otherwise null. |
+| Codex | `$CODEX_HOME/nmnm.jsonc`, fallback `~/.codex/nmnm.jsonc` | Nonempty launch-supplied `CODEX_THREAD_ID`, then `CODEX_SESSION_ID`, otherwise null; process-level correlation does not establish per-turn identity. |
 
 Every record has the closed 12-field envelope: `schema`, `timestamp`, `level`, `event`, `message`, `service`, `context`, `operation`, `status`, `duration_ms`, `attributes`, and `error`. `schema` is `logslines/v1`; `service` identifies namespace `openlines`, name `nanomneme`, the emitting component, and its package version. `context` contains only `session_id`; `attributes` is empty.
 
@@ -158,22 +160,20 @@ npm run external:update -- <reviewed-release-tag>
 
 ## Workflow: refresh Codex after logging updates
 
-For first-time setup, run `npm ci`, `npm run validate`, then `npm run codex:prepare` before registering the local marketplace and installing the plugin. Preparation refreshes stale generated runtimes and copies physical dependencies without invoking Codex or validation. See the [Codex quick start](../adapters/codex/README.md#quick-start).
+For first-time setup, run `npm ci`, `npm run validate`, then `npm run codex:prepare` before direct MCP registration and user context-hook setup. Preparation refreshes stale generated runtimes and copies physical dependencies without invoking Codex or validation. See the [Codex quick start](../adapters/codex/README.md#quick-start).
 
-For an existing enabled local marketplace installation:
+After updating and validating an existing stable checkout:
 
 ```sh
 npm run codex:update
 ```
 
-- Requires the existing marketplace to point to this checkout and the installed plugin source to match its adapter. Missing setup prints the applicable command; wrong registrations, disabled plugins, and unsupported CLI metadata stop before generation/preparation.
-- Refreshes stale bundles, then prepares only physical core/parser dependencies using packaged core files and the installed exact parser. No full package suite, npm dependency installation, or upstream fetch is repeated during this workflow.
-- Compares adapter files, prepared dependencies, and cached plugin contents. Same-version changes and obsolete managed files trigger refresh; unrelated adapter dependencies remain intact.
-- Reinstalls only when cached content differs and verifies the result. Respects `CODEX_HOME`; default cache is `~/.codex/plugins/cache/nanomneme-local/nmnm-codex/<installed-version>/`.
-- Reports `up-to-date` or `updated`; `reload-required` follows reinstall. Start a new session and review hook trust prompts. Cache verification is not live hook or end-to-end memory validation.
-- Disabled plugins are left untouched. The current command supports refreshing enabled installations only.
+- Refreshes stale bundles, then prepares checkout core and the complete locked production runtime tree as physical files. No full suite, npm dependency installation or upstream fetch is repeated during this workflow.
+- Replaces stale managed dependencies, including same-version changes, while preserving unrelated dependencies. No marketplace/cache delivery is involved.
+- Reports dependency freshness and `restart-required`. Restart Codex to reload the direct MCP server and context hooks; review changed hook definitions through `/hooks`.
+- Never invokes Codex, changes registration/hook trust or establishes provider behavior. Context settings reload per event; MCP logging keeps its first-operation snapshot until restart.
 
-`node scripts/check-logging-packages.js --prepare-codex` remains compatible: it validates standalone packages first, then uses the extracted preparation helper with the validated physical dependencies. It may require npm registry access. The plain package check does not refresh the adapter or cache. See the [Codex manual](../adapters/codex/docs/CODEX_ADAPTER_MANUAL.md#refresh-after-checkout-updates).
+`node scripts/check-logging-packages.js --prepare-codex` remains compatible: it validates standalone packages first, then uses the preparation helper with the validated physical dependencies. It may require npm registry access. The plain package check does not refresh the adapter or personal installation. See the [Codex manual](../adapters/codex/docs/CODEX_ADAPTER_MANUAL.md#refresh-after-checkout-updates).
 
 ## What not to do
 

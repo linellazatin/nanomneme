@@ -236,6 +236,7 @@ Run `npm test` before submitting changes. Do not commit `.nanomneme/`, personal 
 
 #### Codex adapter
 
+- Patch `scope` mutates the record (`adapters/codex/src/operations.js` patch validation; core treats `scope` as a mutable column, not a selector).
 - see the adapter's [Developer notes](adapters/codex/docs/CODEX_ADAPTER_MANUAL.md#developer-notes) for specifics.
 
 #### Pi adapter

@@ -221,6 +221,12 @@ Validation executes MCP operations and context hooks from independently installe
 
 These are current limitations and proposed future updates, not installed features or an approved implementation plan. Keep follow-up work within the Codex adapter and supporting tests/documentation unless a wider change is separately reviewed.
 
+### Patch `scope` mutates the record
+
+- Trigger: `retain_memory` with `id`, `store`, and an agreeing `scope` but no other field. Expected: as in Pi and Claude, patch-time `scope` names the destination store and never rewrites stored data. 
+- Consequence: the record's `scope` column changes and `updated_at` advances, breaking in-flight `record_json` paging and other adapters' scope filters and ordering. 
+- Correction: exclude `scope` from the mutability test and from the core patch input, or reject it on patches, and add one regression test for the agreeing case. Reproduced against a project-store record whose `scope` was `global`.
+
 ### Session correlation
 
 The live MCP connection logged operations correctly but received no launch-provided session ID, leaving `context.session_id: null`. Forwarding environment variables does not make Codex populate them. Pi obtains identity from its session manager; OpenCode's server tools receive the host tool-context session ID. Codex's stdio process currently lacks an equivalent verified per-call binding. Existing hooks receive a host session ID, but that does not automatically associate it with an MCP request.

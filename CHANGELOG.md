@@ -2,8 +2,6 @@
 
 ## 0.9.0 - Codex adapter MCP redesign
 
-Prepared for release; no publishing is performed by checkout updates.
-
 ### Updated components
 
 | Component | Version |

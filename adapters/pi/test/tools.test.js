@@ -46,16 +46,19 @@ test('registerPiTools exposes the nanomneme 4Rs', () => {
 test('Pi retain schema exposes canonical inputs and create/patch guidance', () => {
   const tool = registeredTools().get('retain_memory');
   const schema = tool.parameters;
+  const converted = convertTools([tool])[0].functionDeclarations[0];
   const id = '12345678-1234-4234-8234-123456789abc';
   for (const value of [{ content: 'A fact' }, { id }, ...['note', 'decision', 'preference', 'fact', 'instruction'].map(kind => ({ content: 'A fact', kind })),
     { content: 'A fact', scope: 'global', namespace: 'my-project', tags: ['sqlite', 'node-22'], importance: 0, confidence: 1, expires_at: '2030-01-01T00:00:00.000Z' }]) {
     assert.equal(Check(schema, value), true, JSON.stringify(value));
+    assert.equal(Check(converted.parametersJsonSchema, value), true, `converted: ${JSON.stringify(value)}`);
   }
   for (const value of [{ kind: 'rule' }, { scope: 'local' }, { content: '' }, { id: 'made-up' },
     { namespace: 'My Project' }, { tags: ['Uppercase'] }, { tags: ['two_words'] },
     { expires_at: '2030-01-01' }, { expires_at: '2030-01-01T00:00:00Z' },
     ...['importance', 'confidence'].flatMap(field => [-0.01, 1.01].map(value => ({ [field]: value })))]) {
     assert.equal(Check(schema, value), false, JSON.stringify(value));
+    assert.equal(Check(converted.parametersJsonSchema, value), false, `converted: ${JSON.stringify(value)}`);
   }
   assert.match(tool.description, /omit id/i);
   assert.match(tool.description, /existing/i);
@@ -67,8 +70,8 @@ test('Pi retain schema exposes canonical inputs and create/patch guidance', () =
   assert.match(schema.properties.metadata.description, /replace/i);
   assert.match(schema.properties.tags.description, /replace/i);
   assert.match(schema.properties.expires_at.description, /calendar/i);
-  const converted = convertTools([tool])[0].functionDeclarations[0];
-  assert.deepEqual(converted.parametersJsonSchema, JSON.parse(JSON.stringify(schema)));
+  // Hosts may emit equivalent const or single-value enum constraints for Google.
+  assert.deepEqual(Object.keys(converted.parametersJsonSchema.properties), Object.keys(schema.properties));
   assert.equal(converted.description, tool.description);
 });
 

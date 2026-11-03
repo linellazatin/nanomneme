@@ -7,8 +7,8 @@ import { join } from 'node:path';
 // This command changes node_modules, not manifests or locks. Use a disposable checkout.
 const root = fileURLToPath(new URL('..', import.meta.url));
 const [range, ...extra] = process.argv.slice(2);
-if (!['0.87.0', '~0.87.0', '~0.99.0', '~1.2.0'].includes(range) || extra.length) {
-  throw new Error('Usage: node scripts/check-pi-compatibility.js <0.87.0|~0.87.0|~0.99.0|~1.2.0>');
+if (!['0.87.0', '~0.87.0', '~0.99.0', '~1.2.0', '~1.5.0'].includes(range) || extra.length) {
+  throw new Error('Usage: node scripts/check-pi-compatibility.js <0.87.0|~0.87.0|~0.99.0|~1.2.0|~1.5.0>');
 }
 const npmJson = args => JSON.parse(execFileSync('npm', args, { cwd: root, encoding: 'utf8' }));
 const versions = npmJson(['view', `@earendil-works/pi-coding-agent@${range}`, 'version', '--json']);

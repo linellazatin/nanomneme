@@ -40,7 +40,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        host: ['0.87.0', '~0.87.0', '~0.99.0', '~1.2.0']
+        host: ['0.87.0', '~0.87.0', '~0.99.0', '~1.2.0', '~1.5.0']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { matchesKey, truncateToWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui';
+import { CURSOR_MARKER, matchesKey, truncateToWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui';
 
 import { buildMemoryIndex, pin, piAgentDir, pinsPath, readPins, readSettings, settingsPath, unpin, updatePins } from './context.js';
 import { getPiLogger, piSessionId } from './logslines.js';
@@ -39,8 +39,12 @@ function listTarget(values) {
   return { store, source, limit, offset };
 }
 
+function terminalText(text) {
+  return text.replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, character => `\\u${character.charCodeAt(0).toString(16).padStart(4, '0')}`);
+}
+
 function preview(content) {
-  const text = content.replace(/\s+/g, ' ').trim();
+  const text = terminalText(content).replace(/\s+/g, ' ').trim();
   return text.length > LIST_PREVIEW_LENGTH ? `${text.slice(0, LIST_PREVIEW_LENGTH)}...` : text;
 }
 
@@ -112,11 +116,11 @@ function browserRow({ store, memory }, pinned) {
 function browserDetails(store, memory, pinned) {
   // Native selectors pad their title by one column on each side.
   const width = Math.max(1, (process.stdout.columns || 80) - 2);
-  const lines = wrapTextWithAnsi(memory.content.replace(/\t/g, '   '), width);
+  const lines = wrapTextWithAnsi(terminalText(memory.content).replace(/\t/g, '   '), width);
   const content = lines.length > BROWSER_CONTENT_LINES
     ? [...lines.slice(0, BROWSER_CONTENT_LINES - 1), truncateToWidth('… content truncated', width)].join('\n')
     : lines.join('\n');
-  return [
+  return terminalText([
     `Nanomneme [${store}] ${memory.id}${pinned ? ' · pinned' : ''}`,
     '',
     content,
@@ -132,7 +136,7 @@ function browserDetails(store, memory, pinned) {
     `Expires    ${memory.expires_at ?? '(never)'}`,
     `Removed    ${memory.removed_at ?? '(active)'}`,
     `Metadata   ${JSON.stringify(memory.metadata)}`,
-  ].join('\n');
+  ].join('\n'));
 }
 
 function browserPins({ cwd, home }) {
@@ -186,12 +190,13 @@ class MemoryBrowser {
   selected(items) {
     const previous = this.state.focus[this.state.tab] ?? { key: 'search', index: 0 };
     const match = items.findIndex((item) => item.key === previous.key);
+    const fallback = Math.max(0, Math.min(previous.index ?? 0, items.length - 1));
     let index;
     if (match >= 0) index = match;
     else if (previous.key.startsWith('memory:')) {
       const lastMemory = items.findLastIndex((item) => item.item);
-      index = lastMemory >= 0 ? Math.min(previous.index, lastMemory) : Math.min(previous.index, items.length - 1);
-    } else index = Math.min(previous.index, items.length - 1);
+      index = lastMemory >= 0 ? Math.min(fallback, lastMemory) : fallback;
+    } else index = fallback;
     const selected = items[index];
     this.state.focus[this.state.tab] = { key: selected.key, index };
     return selected;
@@ -232,20 +237,27 @@ class MemoryBrowser {
       ? this.theme.fg('accent', this.theme.bold(`[${tab === 'both' ? 'All' : tab[0].toUpperCase() + tab.slice(1)}]`))
       : tab === 'both' ? 'All' : tab[0].toUpperCase() + tab.slice(1));
     const lines = [tabs.join('  ')];
-    if (this.state.tab === 'status') lines.push(...this.status().split('\n'), '', 'Enter or Esc to close');
+    if (this.state.tab === 'status') lines.push(...terminalText(this.status()).split('\n'), '', 'Enter or Esc to close');
     else {
       const { result } = this.page();
       lines.push([
         `Nanomneme memories [${this.state.tab}]`,
         `source: ${this.state.source}`,
         `showing ${result.items.length} of ${result.total}`,
-        this.state.query ? `search: ${this.state.query}` : undefined,
+        this.state.query ? `search: ${terminalText(this.state.query)}` : undefined,
       ].filter(Boolean).join(' · '), '');
-      const selected = this.selected(this.items());
-      for (const item of this.items()) lines.push(`${item.key === selected.key ? '> ' : '  '}${item.label}`);
-      lines.push('', '←→ tabs · ↑↓ navigate · enter select · esc close');
+      const items = this.items();
+      const selected = this.selected(items);
+      // Leave room for Pi's surrounding widgets/footer. The marker also lets
+      // fullscreen's input dock follow selection when it allocates less space.
+      const height = Math.max(1, (this.tui.terminal?.rows ?? 24) - 6);
+      const capacity = Math.max(1, height - lines.length - 2);
+      const start = Math.max(0, Math.min(items.indexOf(selected) - Math.floor(capacity / 2), items.length - capacity));
+      const visible = items.slice(start, start + capacity).map(item => `${item.key === selected.key ? '> ' : '  '}${item.label}`);
+      if (height < 6) lines.splice(0, lines.length, `> ${selected.label}`);
+      else lines.push(...visible, '', '←→ tabs · ↑↓ navigate · enter select · esc close');
     }
-    return lines.map((line) => truncateToWidth(line, width));
+    return lines.map(line => `${line.startsWith('> ') ? CURSOR_MARKER : ''}${truncateToWidth(line, width)}`);
   }
 
   invalidate() {}
@@ -260,10 +272,10 @@ async function browseMemoryNative({ ctx, home, platform, refresh, logger }) {
       continue;
     }
     const pins = browserPins({ cwd: ctx.cwd, home });
-    const rows = result.items.map((item) => ({ item, label: browserRow(item, pins[item.store].has(item.memory.id)) }));
+    const rows = result.items.map((item, index) => ({ item, label: `${browserRow(item, pins[item.store].has(item.memory.id))} · #${index + 1}` }));
     const title = [
       `Nanomneme memories [${target.store}]`, `source: ${target.source}`,
-      `showing ${result.items.length} of ${result.total}`, target.query ? `search: ${target.query}` : undefined,
+      `showing ${result.items.length} of ${result.total}`, target.query ? `search: ${terminalText(target.query)}` : undefined,
     ].filter(Boolean).join(' · ');
     const choice = await ctx.ui.select(title, [
       'Search', `Store: ${target.store}`, `Source: ${target.source}`,
@@ -361,7 +373,7 @@ async function browseMemory({ ctx, home, platform, refresh, status, logger }) {
     }
     if (item.key === 'next-page') {
       state.offsets[state.tab] += BROWSER_LIMIT;
-      state.focus[state.tab] = { key: 'previous-page', index: item.index };
+      state.focus[state.tab] = { key: 'previous-page', index: state.focus[state.tab].index };
       continue;
     }
     if (!item.item) continue;
@@ -405,7 +417,7 @@ async function applyBrowserAction({ ctx, home, platform, refresh, logger, select
 }
 
 function notify(ctx, message) {
-  ctx.ui.notify(message, 'info');
+  ctx.ui.notify(terminalText(message), 'info');
 }
 
 function projectIsTrusted(ctx) {

@@ -2,34 +2,37 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 
-import { matchesKey, truncateToWidth } from '@earendil-works/pi-tui';
+import { CURSOR_MARKER, matchesKey, truncateToWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui';
 import { Type } from 'typebox';
 
 const require = createRequire(import.meta.url);
 
 const { version: piTuiVersion } = require('@earendil-works/pi-tui/package.json');
 
-// Accept stable patches in ~1.2.0 for the development host only.
+// Accept stable patches in ~1.5.0 for the development host only.
 // The published compatibility floor remains Pi >=0.87.0.
-const PI_TUI_TEST_HOST = /^1\.2\.(0|[1-9]\d*)(?:\+[0-9A-Za-z.-]+)?$/;
+const PI_TUI_TEST_HOST = /^1\.5\.(0|[1-9]\d*)(?:\+[0-9A-Za-z.-]+)?$/;
 
-test('development host range accepts stable 1.2 patches without changing the compatibility floor', () => {
-  for (const version of ['1.2.0', '1.2.1', '1.2.99', '1.2.1+build.1']) {
+test('development host range accepts stable 1.5 patches without changing the compatibility floor', () => {
+  for (const version of ['1.5.0', '1.5.1', '1.5.99', '1.5.1+build.1']) {
     assert.match(version, PI_TUI_TEST_HOST);
   }
-  for (const version of ['0.87.0', '1.1.9', '1.3.0', '2.0.0', '1.2.1-rc.1', '1.2.01']) {
+  for (const version of ['0.87.0', '1.2.0', '1.4.9', '1.6.0', '2.0.0', '1.5.1-rc.1', '1.5.01']) {
     assert.doesNotMatch(version, PI_TUI_TEST_HOST);
   }
 });
 
-test('development host version satisfies ~1.2.0', () => {
-  assert.match(piTuiVersion, PI_TUI_TEST_HOST, 'Pi TUI test host must satisfy ~1.2.0');
+test('development host version satisfies ~1.5.0', () => {
+  assert.match(piTuiVersion, PI_TUI_TEST_HOST, 'Pi TUI test host must satisfy ~1.5.0');
 });
 
 test('loader-provided host packages satisfy the adapter surface', () => {
   // `src/session.js` links only these pi-tui exports.
+  assert.equal(typeof CURSOR_MARKER, 'string');
+  assert.ok(CURSOR_MARKER.length > 0);
   assert.equal(typeof matchesKey, 'function');
   assert.equal(typeof truncateToWidth, 'function');
+  assert.equal(typeof wrapTextWithAnsi, 'function');
   assert.equal(matchesKey('\x1b[C', 'right'), true);
   assert.equal(matchesKey('j', 'right'), false);
   assert.equal(truncateToWidth('abc', 10), 'abc');

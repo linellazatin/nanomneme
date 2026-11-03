@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.9.1 - Pi adapter v1.5.0 compatibility and browser safety
+
+### Updated components
+
+| Component | Version |
+| --- | --- |
+| Repository | 0.9.1 |
+| `@openlines/nmnm-pi` | 0.4.7 |
+
+### Changed
+
+- Locked Pi host to 1.5.0, added CI patch line while kept 0.87.0 floor and existing matrix lanes.
+- Updated `nmnm-pi` guides, architecture refs, and agent docs to include terminal-safe display, browser selection, and renderer validation.
+
+### Fixed
+
+- `nmnm-pi` schema-conversion tests validated accepted/rejected inputs instead of exact schema, supporting Google-style single-value enums. Included host-validator coverage for canonical args, rejects, coercion, nullable patches, and transcript immutability.
+- `nmnm-pi` browser pagination preserved numeric focus index and clamped fallback, preventing render failures on concurrent removals.
+- `nmnm-pi` browser/list showed escaped terminal controls without altering canonical content; scrolling kept selection visible, and dialogs numbered rows for disambiguation.
+
+### Validation
+
+- `nmnm-pi` adapter suite passed 122 tests against Pi 0.87.0, 0.87.1, 0.99.2, 1.2.0, and 1.5.0, maintained the 0.87.0 floor.
+
 ## 0.9.0 - Codex adapter MCP redesign
 
 ### Updated components

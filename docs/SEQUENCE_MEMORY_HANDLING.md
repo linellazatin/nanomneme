@@ -225,16 +225,19 @@ sequenceDiagram
   Tool-->>Model: bounded response or original operation error
   end
 ```
+### Pi browser presentation
+
+- The model‑free browser reads stores, escapes terminal controls without altering records, and caps previews to ten lines.
+- Store tabs use height‑bounded windows and the host cursor marker for small fullscreen docks. Pagination keeps numeric focus; on concurrent removals it falls back to a remaining row or control, clamping selection. 
+- Native dialogs number rows locally to resolve captured (store, id) targets. 
+- Pin/unpin and confirmed soft removal respect logging and refresh boundaries. Tests cover output safety, navigation, and resizing, excluding live‑terminal acceptance.
 
 ### Pi diagnostic boundary
 
-Host schema validation precedes this boundary. Schema-invalid kinds, scores, scopes, or formats may produce a model-facing error without a `memory.retain_failed` record; adapter logs alone therefore cannot count all attempted tool calls. Core-only checks, including non-whitespace/Unicode content, calendar validity, and record existence, still run after observation starts. Direct runtime invocations retain trimming behavior; the model-facing schema requests canonical unpadded values.
-
-Pi passes normalized correlation from `ctx.sessionManager.getSessionId()` on each action, using null if absent, invalid, or throwing. The shared observer sees the callback result transiently, but emits only the common bounded envelope. Browser Pin/Unpin/Remove and explicit `/memory` Pin/Unpin/Remove use separate `browser_*` and `command_*` operations in the shared catalog. Pin files remain Pi-owned JSON outside SQLite.
-
-Logger construction precedes registration; configuration resolution is lazy on the first eligible invocation. Shared authorization and the user-level `<Pi agent directory>/nmnm.jsonc` override follow the common precedence rules. Enabled outcomes append to `~/.local/share/nanomneme/logs/nmnm-pi.jsonl` through core's generated runtime. Browser Remove preflight emits no record when its target is already inactive, confirmation succeeds, or the user cancels; preflight exceptions can emit a failed outcome. A confirmed mutation starts a separate observation after confirmation, excluding decision time. Notifications and refresh remain outside mutation observation.
-
-Pi’s `session_start`, `session_compact`, and `before_agent_start` hooks separately maintain its bounded transient index. Enabled autoretention rules precede index rows and include minimal creation, original-store patch routing, and no untrusted-project-to-global fallback guidance. The reminder adds 290 characters including its newline within the existing total budget; guidance that exceeds that budget is rejected rather than truncated. The index reads existing stores/settings/pins without creating them. Automatic context injection and session lifecycle events emit no diagnostics. `/memory` browser navigation, search, back/cancel, read-only commands, and canceled removals also emit no diagnostics.
+- Host schema validation precedes observation. Invalid kinds, scores, scopes, or formats can fail without `memory.retain_failed`, so logs omit some attempted calls. Core checks for non-whitespace/Unicode content, valid calendar dates, and record existence run after observation starts. Runtime calls still trim inputs; schemas request canonical, unpadded values.
+- Each action passes normalized `ctx.sessionManager.getSessionId()` correlation, or null if absent, invalid, or throwing. The observer inspects results transiently and emits only the bounded envelope. Browser and `/memory` Pin/Unpin/Remove use `browser_*` and `command_*` catalog operations. Pin files are Pi-owned JSON, not SQLite data.
+- Logger construction precedes registration; config loads on the first eligible call. Shared authorization and `<Pi agent directory>/nmnm.jsonc` follow common precedence. Enabled outcomes append to `~/.local/share/nanomneme/logs/nmnm-pi.jsonl` via core's generated runtime. Browser Remove preflight logs nothing for inactive targets, successful confirmation, or cancellation; exceptions may fail. Confirmed removal is observed separately, excluding confirmation time. Notifications and refresh stay outside observation.
+- `session_start`, `session_compact`, and `before_agent_start` maintain the transient index. Autoretention guidance precedes index rows, covering minimal creation, original-store patches, and no untrusted-project fallback to global. Its 290-character reminder fits the budget; excess guidance is rejected, not truncated. The index reads existing stores/settings/pins only. Context injection, lifecycle events, `/memory` navigation/search/back/cancel, read-only commands, and canceled removals emit no diagnostics.
 
 ## Claude Code adapter
 

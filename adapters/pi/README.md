@@ -28,16 +28,16 @@ Pi package for the [nanomneme](https://nanomneme.openlines.dev) SQLite memory ad
   ![nmnm-pi source](docs/img/ss-memory-source.png)
 
   ![nmnm-pi list all pi](docs/img/ss-memory-list-all-pi.png)
-- **Readable list UX:** project-first combined listing, pagination, `[project]` and `[global]` labels, exact-store `*` pin markers, and 60-character previews; browser rows omit IDs, which remain in details.
+- **Readable list UX:** project-first combined listing, pagination, `[project]` and `[global]` labels, exact-store `*` pin markers, and 60-character previews. Store-tab selection scrolls with navigation and terminal resizing and remains valid after concurrent removals; native dialogs number rows to distinguish identical previews. Rows omit IDs, which remain in details.
 
   ![nmnm-pi list all](docs/img/ss-memory-list-all.png)
-- **Safety boundaries:** validated pin targets, serialized atomic pin updates, ambiguity-safe removal, soft-only slash removal, non-creating native reads, and durable unresolved pins.
+- **Safety boundaries:** terminal-safe display of stored text, validated pin targets, serialized atomic pin updates, ambiguity-safe removal, soft-only slash removal, non-creating native reads, and durable unresolved pins.
 
 
 ## Quickstart
 
 >
-> The adapter includes self-describing retain schemas and invocation guidance. It targets Pi 0.87.0 or newer, with the supported compatibility matrix through Pi 1.2.0, and Node.js 22.19 or newer. The manual records a separate bounded live evaluation on Pi 1.3.0. Repository validation accepts stable Pi `~1.2.0` development hosts while retaining the `>=0.87.0` dependency floor. Main CI and release validation use the exact lockfile resolution; a separate blocking CI matrix runs the adapter suite against Pi `0.87.0` and the latest stable patches in `~0.87.0`, `~0.99.0`, and `~1.2.0`.
+> Requires Pi 0.87.0 or newer and Node.js 22.19 or newer. The adapter includes self-describing retain schemas and invocation guidance. Locked-host validation and a separate blocking compatibility matrix cover loading, tool schemas, and host argument validation. See the [manual's compatibility boundaries](docs/PI_ADAPTER_MANUAL.md#boundaries) for tested hosts and the separate bounded live evaluation.
 >
 
 Install it globally with Pi:

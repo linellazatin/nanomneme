@@ -27,6 +27,10 @@
 
 See [CHANGELOG](CHANGELOG.md) for release history, feature introductions, and breaking changes.
 >
+> ### v0.9.1 - `nmnm-pi` pi v1.5.0 compatibility and browser safety
+> - validated Pi compatibility and tool argument handling while retaining support for older hosts
+> - escaped stored terminal controls in browser/list displays without changing saved memories
+> - improved selection visibility during navigation and resizing, distinguished identical previews in native dialogs, and fixed pagination failures after concurrent removals
 > ### v0.9.0 - `nmnm-codex` 0.3.0 Codex adapter MCP redesign
 > - transitioned `nmnm-codex` from direct, shell-backed JSON runner to a more accessible stdio MCP runtime (currently via local checkout)
 >
@@ -69,7 +73,7 @@ Nanomneme helps agents remember without pretending to be human memory.
 - **Human and agent output:** readable terminal messages or structured JSON, with JSONL reserved for exports.
 - **Safe targeting:** project defaults, standard global storage, explicit `--db` paths, `--both` retrieval, and validated command-specific options.
 
-### Local review UI
+### Local Workbench UI
 
 - **On-demand workbench:** experimental `@openlines/nmnm-ui`; node foreground launcher, loopback browser access, no persistent daemon, and local Openlines light/dark assets.
 - **Explicit review:** collapsible Stores with an added-store count, a local database picker, and trash controls that preserve files; recorded source filters, Active/Expired/Removed views, literal search, and five visible preview rows within 50-record pages.
@@ -91,8 +95,8 @@ Diagnostics default off. CLI, UI mutations, and adapters use the shared Logsline
 - **Adapter-owned configuration:** optional JSONC settings and separate JSON pin files, with project and global locations.
 - **Direct user controls:** `/memory refresh`, `status`, `list`, `remove`, `pin`, and `unpin` without model involvement; `status` reports injection state, autoretention, the effective index budget, current full-payload character count, and lifecycle metadata without exposing memory content.
 - **Native memory browser:** `/memory` and `/memory browse` open a Pi TUI menu with `Status`, `All`, `Project`, and `Global` tabs. Record details use a native action dialog; returning preserves selection. Standard selection keys honor configured `tui.select.*` bindings; arrows and `h/j/k/l` support navigation. Non-TUI UI modes use native dialogs.
-- **Readable list UX:** project-first combined listing, pagination, `[project]` and `[global]` labels, exact-store `*` pin markers, and 60-character previews; browser rows omit IDs, which remain in details.
-- **Safety boundaries:** validated pin targets, ambiguity-safe removal, soft-only slash removal, non-creating native reads, and durable unresolved pins.
+- **Readable list UX:** project-first combined listing, pagination, `[project]` and `[global]` labels, exact-store `*` pin markers, and 60-character previews. Store-tab selection scrolls with navigation and resizing and remains valid after concurrent removals; native dialogs number rows to distinguish identical previews. Browser rows omit IDs, which remain in details.
+- **Safety boundaries:** terminal-safe display without rewriting stored text, validated pin targets, ambiguity-safe removal, soft-only slash removal, non-creating native reads, and durable unresolved pins.
 
 #### OpenCode
 
@@ -211,7 +215,7 @@ node packages/nmnm-ui/bin/nmnm-ui.js
 ## Development
 
 - `npm run validate`: read-only generated-output check and full suite via `npm test`, shipped-dependency audit, then standalone package validation. Used by CI/release; stops at the first failure. Requires npm registry access and never repairs tracked artifacts or refreshes Codex.
-- Root-only OpenCode overrides select patched Zod and Effect TOML dependencies pending upstream fixes; exact selections live in the root manifest and lockfile. They protect checkout/CI installs, not independently installed adapters; remove them after a compatible upstream release resolves both advisories and passes validation. The informational full audit still reports Pi's pinned Undici dependency.
+- Root-only OpenCode overrides select patched Zod and Effect TOML dependencies pending upstream fixes; exact selections live in the root manifest and lockfile. They protect checkout/CI installs, not independently installed adapters; remove them after a compatible upstream release resolves both advisories and passes validation. Recheck shipped and full dependency audits against the registry rather than relying on historical results.
 - CI and tagged releases run the same separate blocking rendered UI job: Python 3.14, Playwright 1.62.0, headless Chromium, disposable stores, and a 15-minute timeout. Branch CI runs on pull requests and pushes to `main`; release checks run on the tagged checkout. Screenshots remain available as Actions artifacts for 7 days. Run `python3 packages/nmnm-ui/test/browser.py` locally; see [UI validation](packages/nmnm-ui/README.md#validation) for dependencies and coverage.
 - Tagged releases require matching root versions, nonempty changelog notes, repository validation, and rendered UI success before publishing. Validated notes supply the GitHub Release body; publication order is core, UI, CLI, Pi, then OpenCode. Claude/Codex remain private.
 - `npm run logslines:build`: check all four generated runtimes, regenerate stale outputs, recheck, and validate standalone packages. Reports `up-to-date` or `updated`, followed by `validated`; errors report `failed` and exit nonzero.
@@ -241,4 +245,4 @@ Run `npm test` before submitting changes. Do not commit `.nanomneme/`, personal 
 
 #### Pi adapter
 
-- pi v0.99 prints tool arguments for tools without a custom call renderer, defaults undocumented tool annotations to non-read-only and possibly destructive, and enables the `codemode`, `tool_search`, and `mcp` built-in extensions.
+- Evaluate explicit tool annotations and custom call rendering for memory tools; host defaults and enabled built-ins are not adapter guarantees. See the [Pi manual](adapters/pi/docs/PI_ADAPTER_MANUAL.md#boundaries) for compatibility and validation limits.

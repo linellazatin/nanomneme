@@ -33,10 +33,10 @@ Standalone Claude checks use its frozen independent lock with lifecycle scripts 
 
 - Refresh Claude external dependencies in a temporary standalone copy of its manifest/lock outside the monorepo; review the lock, synchronize root metadata and validate. Keep plugin package/manifest versions aligned.
 
-Pi's development host accepts stable `~1.2.0`, with dependency floor `>=0.87.0`. Main CI/release use the lockfile; a separate blocking matrix tests `0.87.0`, `~0.87.0`, `~0.99.0` and `~1.2.0`.
+Pi's development host accepts stable `~1.5.0`, with dependency floor `>=0.87.0`. Main CI/release use the lockfile; a separate blocking matrix tests `0.87.0`, `~0.87.0`, `~0.99.0`, `~1.2.0` and `~1.5.0`. Schema checks cover equivalent provider constraints and the actual host validator, not only TypeBox checks.
 
 - Reproduce Pi matrix runs only in a disposable checkout after `npm ci`: `node scripts/check-pi-compatibility.js '~0.87.0'` or another selector. It changes `node_modules`, not manifests/locks, and excludes only the development-host version assertion.
-- Keep host-loader/schema evidence distinct from live-provider and rendered-TUI evidence.
+- Pi's adapter suite includes captured regular/fullscreen renderer checks in `adapters/pi/test/browser.test.js`. Test control-sequence safety, unique native-dialog targets, and selection visibility during navigation/resizing, and valid pagination focus after concurrent store removals against disposable stores. Keep captured-renderer evidence distinct from live-terminal and live-provider acceptance.
 
 UI checks require Python Playwright, installed engines and root dev dependencies including axe-core. Default Chromium switches via `NMNM_UI_BROWSER=firefox`/`webkit`. Stores and screenshots/axe reports are temporary; tools are not UI runtime dependencies. Checks run separately from `npm run validate` and do not certify accessibility.
 
@@ -86,6 +86,7 @@ Codex has no marketplace/cache delivery, pin management or adapter CLI. Reads an
 ### Store and adapter contracts
 
 - Trim/validate CLI scope and Pi/Claude/OpenCode retain scope before selecting stores; invalid scope must not create one. CLI selectors determine destination; these adapters use retain scope, defaulting to project. Pi validates scope before project-trust checks.
+- Preserve Pi's terminal presentation boundary: escape stored C0/C1 controls except layout newlines/tabs without rewriting canonical records. Keep store-tab selection visible with a height-bounded window and the floor-compatible cursor marker; native dialogs use unique page-local row numbers, not preview text alone, to distinguish targets.
 - Preserve Pi's canonical model schema guidance: kinds/scopes, scores from 0–1, UUIDs, slugs, expiry formats, create-versus-patch intent, metadata and retrieval score filters. Model inputs are unpadded; direct runtime calls still trim text. Host schema rejection may precede adapter logging.
 - Render enabled autoretention rules before indexes within existing budgets. Pi's minimal-call/original-store reminder consumes 290 characters including its newline without raising the default budget. Never redirect untrusted project memories to global as a fallback.
 - Preserve Claude's config-first prompt hook: disabled reinjection touches no session state or memory; enabled prompts advance an ephemeral counter and build context only on cadence. Context-build failures do not stall cadence; settings errors fail open without state changes.

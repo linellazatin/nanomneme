@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.1-tests-ci
+
+### Tests and CI (no adapter/package bump needed; repo-only change)
+
+- Added Pi real-runner lifecycle and project-trust coverage across the compatibility matrix, preserving the 0.87.0 floor.
+- Added controlled SDK/Anthropic threading regressions for transient context refresh/removal, continuation fallback, and cache-warming replay isolation.
+  - Hosts before the Pi 1.5.1 feature introduction explicitly skip these tests; current-host CI rejects skipped, empty, or missing threading coverage. Fake HTTP/SSE responses require no credentials or live model requests.
+
 ## 0.9.1 - Pi adapter v1.5.0 compatibility and browser safety
 
 ### Updated components

@@ -150,6 +150,11 @@ test('CI checks Pi compatibility separately from locked release validation', () 
   assert.match(ci, /fail-fast: false/);
   for (const host of ['0.87.0', '~0.87.0', '~0.99.0', '~1.2.0', '~1.5.0']) assert.ok(ci.includes(`'${host}'`));
   assert.match(ci, /node scripts\/check-pi-compatibility\.js/);
+  assert.match(ci, /NMNM_PI_REQUIRE_THREADING_TESTS: \$\{\{ matrix\.host == '~1\.5\.0' && '1' \|\| '0' \}\}/);
+  const compatibility = readFileSync(new URL('../scripts/check-pi-compatibility.js', import.meta.url), 'utf8');
+  assert.match(compatibility, /NMNM_PI_REQUIRE_THREADING_TESTS/);
+  assert.match(compatibility, /host-threading\.test\.js/);
+  assert.match(compatibility, /# skipped 0/);
   assert.doesNotMatch(release, /check-pi-compatibility|pi-compatibility:/);
 });
 

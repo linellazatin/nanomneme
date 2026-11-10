@@ -51,6 +51,7 @@ jobs:
       - name: Install selected host and run adapter compatibility suite
         env:
           PI_HOST_RANGE: ${{ matrix.host }}
+          NMNM_PI_REQUIRE_THREADING_TESTS: ${{ matrix.host == '~1.5.0' && '1' || '0' }}
         run: node scripts/check-pi-compatibility.js "$PI_HOST_RANGE"
       - name: Ensure tracked dependency metadata is unchanged
         run: git diff --exit-code -- package.json package-lock.json adapters/pi/package.json

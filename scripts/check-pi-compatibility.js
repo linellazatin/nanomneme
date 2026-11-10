@@ -25,6 +25,15 @@ for (const name of ['@earendil-works/pi-coding-agent', '@earendil-works/pi-tui',
   console.log(`Pi compatibility ${range}: ${name} ${installed.version}`);
   if (name !== 'typebox' && installed.version !== version) throw new Error(`Unexpected ${name} resolution`);
 }
+// The current-host CI lane must execute the threading file, not silently skip or omit it.
+if (process.env.NMNM_PI_REQUIRE_THREADING_TESTS === '1') {
+  const output = execFileSync(process.execPath, ['--test', '--test-reporter=tap', join(root, 'adapters/pi/test/host-threading.test.js')],
+    { cwd: root, encoding: 'utf8' });
+  process.stdout.write(output);
+  if (!/^# Subtest: Pi threading /m.test(output) || !/^# skipped 0$/m.test(output) || !/^# pass [1-9]\d*$/m.test(output)) {
+    throw new Error('Required Pi threading coverage was skipped or empty');
+  }
+}
 const tests = readdirSync(join(root, 'adapters/pi/test')).filter(name => name.endsWith('.test.js'))
   .map(name => join(root, 'adapters/pi/test', name));
 execFileSync(process.execPath, ['--test', '--test-skip-pattern=^development host version ', ...tests],

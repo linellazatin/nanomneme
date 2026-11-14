@@ -27,6 +27,10 @@
 
 See [CHANGELOG](CHANGELOG.md) for release history, feature introductions, and breaking changes.
 >
+> ### v0.9.2 - Adapter fixes and shared CI
+> - bounded `nmnm-opencode` browser-read retries; mutations never retry
+> - fixed `nmnm-pi` browser pagination at the core offset limit
+> - shared validation and host compatibility gates for CI and releases
 > ### v0.9.1 - `nmnm-pi` pi v1.5.0 compatibility and browser safety
 > - validated Pi compatibility and tool argument handling while retaining support for older hosts
 > - escaped stored terminal controls in browser/list displays without changing saved memories
@@ -100,11 +104,11 @@ Diagnostics default off. CLI, UI mutations, and adapters use the shared Logsline
 
 #### OpenCode
 
-- **Native V1/V2 memory tools:** V2 support, introduced in adapter `0.3.0`, exposes retain, recall, retrieve, and soft remove through the server's short-lived Node bridge. Tested host baselines are V1 1.19.0 and V2 2.0.29; only retain creates missing stores and new records carry `"opencode"` source provenance.
+- **Native V1/V2 memory tools:** V2 support, introduced in adapter `0.3.0`, exposes retain, recall, retrieve, and soft remove through the server's short-lived Node bridge. Native evidence covers V1 1.19.0 and V2 2.3.0; only retain creates missing stores and new records carry `"opencode"` source provenance.
 - **Bounded transient injection:** V1 uses its experimental system transform; V2 rebuilds context for each primary request using the session's location. Guidance precedes pins and recent memories. No context is persisted or added to V2 auxiliary generation/compaction requests; the next primary request receives fresh context.
 - **Shared and adapter-owned config:** project `nmnm.jsonc` settings shared with Pi and Claude, adapter-owned `nmnm-opencode.json` pins, and global settings under `${XDG_CONFIG_HOME:-~/.config}/opencode`.
 - **Model-free management CLI:** `nmnm-opencode` (`status`, `list`, `search`, `show`, `pin`, `unpin`, `remove`) with project-first combined pagination and `--source all|opencode`; purge is available through `nmnm remove --purge` or the UI workbench, outside adapter management.
-- **Model-free terminal browser:** **ctrl+alt+m** opens Status/All/Project/Global, filtering, pagination, pin/unpin, and confirmed soft removal. V1 registers via `tui.jsonc` and uses its local bridge; V2 loads `./tui` automatically or through global `cli.json`, routing operations over authenticated OpenCode RPC to server-owned stores. Changed locations reject stale selections. See the [adapter guide](adapters/opencode/README.md) for version-specific setup and verification limits.
+- **Model-free terminal browser:** **ctrl+alt+m** opens Status/All/Project/Global, filtering, pagination, pin/unpin, and confirmed soft removal. V1 registers via `tui.jsonc` and uses its local bridge; V2 loads `./tui` automatically or through global `cli.json`, routing operations over authenticated OpenCode RPC to server-owned stores. Reads briefly retry typed location-readiness failures; mutations never retry, and changed locations reject stale selections. See the [adapter guide](adapters/opencode/README.md) for setup and verification limits.
 
 #### Claude Code
 
@@ -215,9 +219,11 @@ node packages/nmnm-ui/bin/nmnm-ui.js
 ## Development
 
 - `npm run validate`: read-only generated-output check and full suite via `npm test`, shipped-dependency audit, then standalone package validation. Used by CI/release; stops at the first failure. Requires npm registry access and never repairs tracked artifacts or refreshes Codex.
+- `.github/workflows/validate.yml` owns all automated gates: repository validation, Pi/OpenCode compatibility, and rendered UI. It runs on PRs/main and is called by `release.yml` on the tagged commit. Release-only tag/changelog checks supply the release notes; publishing waits for every shared job. Repository required-check rules may need updating when workflow/check names change.
 - Root-only OpenCode overrides select patched Zod and Effect TOML dependencies pending upstream fixes; exact selections live in the root manifest and lockfile. They protect checkout/CI installs, not independently installed adapters; remove them after a compatible upstream release resolves both advisories and passes validation. Recheck shipped and full dependency audits against the registry rather than relying on historical results.
 - CI and tagged releases run the same separate blocking rendered UI job: Python 3.14, Playwright 1.62.0, headless Chromium, disposable stores, and a 15-minute timeout. Branch CI runs on pull requests and pushes to `main`; release checks run on the tagged checkout. Screenshots remain available as Actions artifacts for 7 days. Run `python3 packages/nmnm-ui/test/browser.py` locally; see [UI validation](packages/nmnm-ui/README.md#validation) for dependencies and coverage.
-- Tagged releases require matching root versions, nonempty changelog notes, repository validation, and rendered UI success before publishing. Validated notes supply the GitHub Release body; publication order is core, UI, CLI, Pi, then OpenCode. Claude/Codex remain private.
+- CI and tagged releases also require the separate OpenCode native/terminal matrix, including connected-server routing and V2 live TUI reload. Hosts install outside checkout dependencies; no model credentials are needed. See the [OpenCode manual](adapters/opencode/docs/OPENCODE_ADAPTER_MANUAL.md#dual-host-compatibility) for reproduction and coverage limits.
+- Tagged releases require matching root versions, nonempty changelog notes, repository validation, rendered UI, and OpenCode compatibility success before publishing. Validated notes supply the GitHub Release body; publication order is core, UI, CLI, Pi, then OpenCode. Claude/Codex remain private.
 - `npm run logslines:build`: check all four generated runtimes, regenerate stale outputs, recheck, and validate standalone packages. Reports `up-to-date` or `updated`, followed by `validated`; errors report `failed` and exit nonzero.
 - `npm run logslines:build -- --fast`: skip standalone package validation explicitly for the edit loop.
 - Logger build commands require Node 22.19+, npm, and installed repository dependencies. Package validation may need npm registry access; build commands do not fetch upstream Logslines or refresh Codex. See the [logger guide](docs/LOGGER.md).

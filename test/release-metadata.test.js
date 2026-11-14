@@ -10,7 +10,7 @@ function json(path) {
   return JSON.parse(readFileSync(path, 'utf8'));
 }
 
-test('release metadata aligns the Pi compatibility patch and every unchanged consumer', () => {
+test('release metadata aligns the OpenCode readiness patch and every unchanged consumer', () => {
   const root = json(new URL('../package.json', import.meta.url));
   const lock = json(new URL('../package-lock.json', import.meta.url));
   const pi = json(new URL('../adapters/pi/package.json', import.meta.url));
@@ -20,7 +20,7 @@ test('release metadata aligns the Pi compatibility patch and every unchanged con
   const claude = json(new URL('../adapters/claude/package.json', import.meta.url));
   const codex = json(new URL('../adapters/codex/package.json', import.meta.url));
   const opencode = json(new URL('../adapters/opencode/package.json', import.meta.url));
-  assert.equal(root.version, '0.9.1');
+  assert.equal(root.version, '0.9.2');
   assert.equal(lock.version, root.version);
   assert.equal(lock.packages['adapters/codex'].name, '@openlines/nmnm-codex');
   assert.equal(lock.packages['node_modules/@openlines/nmnm-codex'].resolved, 'adapters/codex');
@@ -46,7 +46,7 @@ test('release metadata aligns the Pi compatibility patch and every unchanged con
   const [sdkMajor, sdkMinor] = lock.packages['node_modules/@modelcontextprotocol/sdk'].version.split('.').map(Number);
   assert.ok(sdkMajor > 1 || (sdkMajor === 1 && sdkMinor >= 32), 'MCP SDK must include the current advisory fixes');
   assert.equal(codex.version, '0.3.0');
-  assert.equal(opencode.version, '0.3.1');
+  assert.equal(opencode.version, '0.3.2');
   for (const [path, pkg] of [['', root], ['packages/nmnm-core', core], ['packages/nmnm-cli', cli], ['packages/nmnm-ui', ui],
     ['adapters/pi', pi], ['adapters/claude', claude], ['adapters/codex', codex], ['adapters/opencode', opencode]]) {
     assert.equal(lock.packages[path].version, pkg.version, `${path || 'root'} lockfile version`);

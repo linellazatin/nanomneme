@@ -1,10 +1,10 @@
 # Pi Adapter Manual
 
-`@openlines/nmnm-pi` is the Pi harness adapter for nanomneme. It calls `@openlines/nmnm-core` directly, keeps SQLite as the storage authority, and does not invoke or parse the CLI.
+`@openlines/nmnm-pi` calls `@openlines/nmnm-core` directly, with SQLite as the storage authority; it never invokes or parses the CLI.
 
 ## Install
 
-Use Node.js 22.19+ and Pi 0.87.0 or newer. See [Boundaries](#boundaries) for compatibility checks and separate live-provider evidence. This manual describes the adapter's retain schemas, invocation guidance, and memory workflows. Install the public package:
+Requires Node.js 22.19+ and Pi 0.87.0+. See [Boundaries](#boundaries) for compatibility and live-test limits. Install the public package:
 
 ```sh
 pi install npm:@openlines/nmnm-pi
@@ -22,20 +22,20 @@ To add the checkout to this project's Pi settings, use an absolute package path:
 pi install -l "$(pwd)/adapters/pi"
 ```
 
-For a Git installation, replace the placeholder with an existing release tag or commit. Do not treat the placeholder as an executable version:
+For Git installation, replace `<released-tag-or-commit>` with an existing tag or commit:
 
 ```sh
 pi install git:github.com/linellazatin/nanomneme@<released-tag-or-commit>
 ```
 
-Pi runs package extensions with full local-system access. Review package, checked-out, or Git source before installing it.
+Extensions have full local-system access; review package, checkout, or Git source before installation.
 
 ## Logslines diagnostics
 
 - `src/logslines.js` binds Pi identity, user settings, and host session correlation to `@openlines/nmnm-core/logging`. Pi uses core's generated runtime and shared catalog.
-- Diagnostics default off. Shared `~/.local/share/nanomneme/config.jsonc` supplies the default; global `<Pi agent directory>/nmnm.jsonc` can override it. Project settings cannot enable logging. Run `/reload` to refresh the lazy logger's settings.
-- Model-facing 4Rs, confirmed browser mutations, and explicit `/memory pin`, `unpin`, and `remove` attempts are observed. Policy blocks are recorded when enabled; timing excludes user confirmation.
-- Navigation, search, Back, canceled actions, read-only commands, invalid command usage, lifecycle events, and automatic context injection remain quiet. Context diagnostics are deferred; `/memory status` reports injection state and errors.
+- Diagnostics default off. Shared `~/.local/share/nanomneme/config.jsonc` supplies defaults; global `<Pi agent directory>/nmnm.jsonc` overrides them. Project settings cannot enable logging. `/reload` refreshes the lazy logger's settings.
+- Diagnostics cover model 4Rs, confirmed browser mutations, and `/memory pin`, `unpin`, and `remove` attempts, including policy blocks. Timing excludes confirmation.
+- Navigation, search, Back, cancellation, read-only/invalid commands, lifecycle events, and context injection are unlogged. Context diagnostics are deferred; use `/memory status` for injection state/errors.
 - Records append to `~/.local/share/nanomneme/logs/nmnm-pi.jsonl`, using the adapter version and `ctx.sessionManager.getSessionId()` correlation when available, otherwise null.
 - Logging failures preserve memory results, errors, notifications, and trust decisions. Raw error messages are not redacted; review logs before sharing.
 
@@ -43,9 +43,9 @@ The [Logger manual](../../../docs/LOGGER.md#configuration-and-record-contract) d
 
 ## Native memory tools
 
-Pi exposes four tools to the model. Model-facing project operations require the current project to be trusted by Pi. In an untrusted project, use explicit global scope/store operations; user-invoked `/memory` commands remain available for explicit local project management.
+Four model tools require Pi project trust for project operations. Explicit global scope/store remains available in untrusted projects, as do user-invoked `/memory` project commands.
 
-Successful model-visible tool JSON is limited to 50 KiB (51,200 UTF-8 bytes). Results that fit retain their existing canonical JSON. Oversized results return valid JSON with `truncated: true`, byte-count diagnostics, stable record or page identifiers, bounded content previews, and guidance to narrow the request or use the CLI. This summary does not modify or truncate the canonical stored memory.
+Successful tool JSON is capped at 50 KiB (51,200 UTF-8 bytes). Fitting results remain canonical; oversized results return valid JSON with `truncated: true`, byte diagnostics, record identifiers/page summaries, bounded previews, and narrowing/CLI guidance. Stored records remain unchanged.
 
 | Tool | Input | Description | Notes |
 |---|---|---|---|
@@ -54,23 +54,25 @@ Successful model-visible tool JSON is limited to 50 KiB (51,200 UTF-8 bytes). Re
 | `retrieve_memory` | Optional query, filters, ordering, pagination, `store` | Search or list active memories. | One store only; missing stores return `{ total: 0, items: [] }`. Core FTS syntax and malformed-query fallback apply; this is not substring search. |
 | `remove_memory` | `id`; optional `store` | Soft-remove an active memory. | Reversible through an explicit retain patch; irreversible purge requires CLI or UI workbench action; missing stores return `null`. |
 
-For `retain_memory`, scope selects the matching write store: omitted scope means project and `scope: "global"` means global. Scope is trimmed and validated before routing or project-trust checks; invalid scope never creates a store. The other tools use optional `store` (`"project"` or `"global"`) to choose a physical database. Project data is `./.nanomneme/memory.db`; global data is `~/.local/share/nanomneme/memory.db` on Linux and macOS. Results are canonical core JSON records. The adapter does not parse CLI flags or support custom database paths. Only `retain_memory` creates a missing store.
+`retain_memory` selects its store through `scope` (default `project`); other tools use `store: "project" | "global"`, also defaulting to project. Retain scope is trimmed/validated before routing or trust checks; invalid scope never creates a store. Only retain creates missing stores. Paths are `./.nanomneme/memory.db` and, on Linux/macOS, `~/.local/share/nanomneme/memory.db`. No CLI flags or custom database paths are supported.
 
-For a new memory, a single `retain_memory` call with `{"content":"Use SQLite for storage."}` is sufficient; omit `id` and unnecessary optional fields. For a cross-project preference, use `{"content":"Prefer concise documentation.","kind":"preference","scope":"global"}`. To patch that record, pass `{"id":"<returned-id>","scope":"global","content":"Prefer concise documentation with runnable examples."}`, replacing `<returned-id>` with the UUID returned by creation; it is not a literal ID. Patch or restore only a returned, existing ID, using its original store as `scope`; patches do not move records. A successful retain confirms the write without requiring a second recall call. Creation defaults are `kind: "note"`, `namespace: "default"`, `importance: 0.5`, `confidence: 1`, empty tags, and no expiry. Omitted patch fields are preserved; supplied tags and metadata replace their respective values rather than merging.
+Creation examples: `{"content":"Use SQLite for storage."}` or, for a cross-project preference, `{"content":"Prefer concise documentation.","kind":"preference","scope":"global"}`. Omit `id` and unnecessary fields. Patch the latter with `{"id":"<returned-id>","scope":"global","content":"Prefer concise documentation with runnable examples."}`, substituting its returned UUID. Patch/restore only an existing ID in its original scope; records never move stores. Successful retain confirms the write without a follow-up recall.
 
-Retain schemas describe kinds (`note`, `decision`, `preference`, `fact`, `instruction`), project/global scope, scores from 0 to 1 inclusive, lowercase kebab-case namespaces/tags such as `node-22`, and nanomneme-generated UUID v4 IDs. Expiry is `null` or a calendar-valid UTC timestamp with milliseconds, such as `2030-01-01T00:00:00.000Z`. The model-facing schema requests canonical unpadded values; core still trims text and validates Unicode, calendar validity, and record existence. Schema and host-loader checks do not establish live-provider acceptance or first-attempt model success. Content must contain non-whitespace text and is required when creating.
+Creation defaults: `kind: "note"`, `namespace: "default"`, `importance: 0.5`, `confidence: 1`, empty tags, no expiry. Patches preserve omitted fields; supplied tags/metadata replace, not merge.
 
-A bounded live evaluation on Pi 1.3.0 with `amazon-bedrock/global.openai.gpt-6-luna` (low thinking) passed five fresh synthetic sessions: autoretention project creation, global preference creation, tags/scores, expiry, and a known-ID global patch. Each used one successful retain call with no retries or post-write reads; the patch included one pre-write recall. Stored records and routing were checked read-only. This is a small single-model sample on an additional host, not a replacement for supported-host compatibility checks or a guarantee of semantic categorization: the model left the project decision at the default `kind: "note"`.
+Retain schemas describe kinds (`note`, `decision`, `preference`, `fact`, `instruction`), project/global scope, inclusive 0–1 scores, lowercase kebab-case namespaces/tags (e.g. `node-22`), and generated UUID v4 IDs. Expiry accepts `null` or calendar-valid UTC with milliseconds (e.g. `2030-01-01T00:00:00.000Z`). Creation requires non-whitespace content. Schemas request unpadded values; core still trims text and validates Unicode, calendar dates, and record existence. Schema/loader checks alone do not prove provider acceptance or first-attempt model success.
 
-Tool schemas describe metadata as a JSON object or `null`, which retain normalizes to an empty object before adding new-record provenance. Retrieval `importance` and `confidence` accept a number from 0 to 1, a non-empty range object using `gt`, `gte`, `lt`, or `lte` with values from 0 to 1, or `null` for no filter. Core validates nested metadata JSON values and rejects unsupported range operators.
+Historical live evidence: Pi 1.3.0 with `amazon-bedrock/global.openai.gpt-6-luna` (low thinking) passed five fresh synthetic sessions covering project autoretention, global preference creation, tags/scores, expiry, and a known-ID global patch. Each made one successful retain without retries/post-write reads; the patch used one pre-write recall. Records/routing were independently checked read-only. This single-model sample supplements compatibility checks and does not guarantee categorization: the project decision retained default `kind: "note"`.
+
+Metadata accepts a JSON object or `null`; null becomes `{}`, with provenance added on creation. Retrieval `importance`/`confidence` accept an inclusive 0–1 number, a nonempty `gt`/`gte`/`lt`/`lte` range object with 0–1 values, or `null` (no filter). Core validates nested JSON and rejects unsupported range operators.
 
 ## Automatic memory index
 
-At the first user prompt in each trusted Pi session, the adapter appends bounded Nanomneme context to that prompt's system prompt. In an untrusted project, this automatic context is global-only: the adapter does not read project settings, project pins, or the project database. Enabled global autoretention guidance takes priority, followed by a compact index. In a trusted project, project and global settings and memories compose as described below. Pinned entries come first, with recent active records after them. Rows contain `store`, a `[source]` label when recorded, ID, and a short content preview. It is not a transfer of complete records; use `recall_memory` or `retrieve_memory` for full content.
+The first user prompt receives bounded system-prompt context: enabled autoretention guidance, then pins, then recent active memories. Trusted projects compose project/global settings and records; untrusted projects use only global data, without reading project settings, pins, or databases. Index rows contain store, optional `[source]`, ID, and preview; use recall/retrieve for full records.
 
-New Pi retains record `metadata.source` as `"pi"`. **Note:** ID-based patches preserve existing source when metadata is omitted; older or externally created records have no source label unless they already carry one.
+New Pi records get `metadata.source: "pi"`; ID patches preserve it when metadata is omitted. Older/external records show a source only if one exists.
 
-The index is transient, not a session message. It is rebuilt for the next user prompt after `/memory refresh`, successful Pi compaction, or a successful retain, remove, pin, or unpin mutation. Read operations and no-op removals do not trigger it. Missing databases are empty. Missing, removed, expired, or otherwise unreadable pins are skipped and counted as unresolved. The pin remains configured until explicitly unpinned. Index reads are read-only and never create or migrate a SQLite database.
+Context is transient, not a session message. Refresh, successful compaction, and successful retain/remove/pin/unpin queue a rebuild for the next user prompt; reads and no-op removals do not. Index reads never create/migrate databases; missing stores are empty. Missing/removed/expired/unreadable pin targets are skipped and counted as unresolved, but remain configured until unpinned.
 
 ## Pins and configuration
 
@@ -81,11 +83,11 @@ Settings and pins are separate adapter files outside SQLite.
 | Project | `.nanomneme/nmnm.jsonc` | `.nanomneme/nmnm-pi.json` |
 | Global | `<Pi agent directory>/nmnm.jsonc` | `~/.local/share/nanomneme/nmnm-pi.json` |
 
-Pi's agent directory defaults to `~/.pi/agent`; current Pi uses `PI_CODING_AGENT_DIR` to override it. Settings are read-only to the adapter and may use comments or trailing commas.
+The Pi agent directory defaults to `~/.pi/agent`, overridden by `PI_CODING_AGENT_DIR`. The adapter only reads settings; comments/trailing commas are allowed.
 
 ### Complete settings template
 
-This is the supported `nmnm.jsonc` shape. Copy it to either settings location above for context options. Only the global file can opt in to logging.
+Copy this `nmnm.jsonc` template to either settings location for context options. Only global settings can enable logging.
 
 ```jsonc
 {
@@ -126,50 +128,52 @@ This is the supported `nmnm.jsonc` shape. Copy it to either settings location ab
 }
 ```
 
-Use concise, scope-appropriate natural-language rules. Global rules provide baseline safeguards across projects; project rules add project-specific guidance.
+Write concise, scope-appropriate rules: global safeguards plus project-specific guidance.
 
-Pin files are plain JSON arrays, written only by `/memory pin` and `/memory unpin`:
+Pin files are JSON arrays, updated by browser actions or `/memory pin` and `/memory unpin`:
 
 ```json
 ["<memory-id>"]
 ```
 
-Pin mutations take an exclusive same-directory lock, reread the current array while holding it, then atomically replace the file. Production mutations create or replace the pin file with owner read/write permission (`0600`). A concurrent pin or unpin reports that updates are in progress and can be retried. Lock ownership is never reclaimed automatically, because a stale observer could otherwise delete a newly acquired lock; use the manual recovery procedure below only after a Pi crash.
+Pin mutations take an exclusive same-directory lock, reread the pin array, and atomically replace the pin file with owner-only permissions (`0600`). Competing writers receive a retry error. Locks are never reclaimed automatically; see [Pin update locks](#pin-update-locks) for crash recovery.
 
-`injection_budget` is a non-negative total character limit for all transient Nanomneme context. The project value overrides the global value; the default is 2,000. Complete autoretention guidance is included before index rows; individual rules are never truncated. When enabled rules exist, guidance includes a minimal creation example, original-store patch routing, and a reminder not to redirect untrusted project memories to global. This invocation reminder uses 290 characters, including its added newline, of the same budget, leaving less room for index rows; the default budget is unchanged. If enabled guidance alone exceeds the budget, no Nanomneme context is injected until the rules are shortened or the budget is raised. `autoretention` is inactive unless its effective `enabled` value is `true` (project overrides global). Rule arrays from both scopes combine with global entries first; `never_persist` takes precedence, `always_ask` requires user confirmation, and `always_persist` guides the active model when applicable. The adapter never writes memory directly for autoretention: the active model decides whether to call `retain_memory`.
+`injection_budget` is the nonnegative total context character limit: project overrides global, default 2,000. Complete guidance precedes index rows; rules are never truncated. Enabled guidance includes a creation example, original-store patch routing, and a reminder not to redirect untrusted project memories to global. This invocation reminder consumes 290 characters including its newline within the unchanged budget. If guidance alone exceeds it, context is omitted until rules shrink or the budget increases.
 
-#### Updated
+Autoretention defaults off; project `enabled` overrides global. Rule arrays combine global-first: `never_persist` takes precedence, `always_ask` requires confirmation, and `always_persist` guides applicable retention. The active model decides whether to call `retain_memory`; the adapter never writes automatically.
 
-`reinjection` is disabled unless its effective `enabled` value is `true` (project overrides global). When enabled, `every_n_prompts` is a positive safe integer that resolves project, then global, then `5`. After a successful context build, each eligible user prompt increments a session-local counter; the configured prompt queues a transient `cadence` rebuild in that same prompt. A successful build resets the counter, while a failed build leaves it pending. Slash commands and extension-triggered custom-message runs do not count. Custom-message runs also leave queued injection pending for the next user prompt. The adapter caches the effective policy after a successful build, so ordinary prompts do not reread settings or stores; change settings with `/memory refresh` or reload the session. Cadence uses the existing total `injection_budget`, increases recurring provider input/cache activity, and creates no timer, worker, session record, memory, or SQLite write. A project pin and a global pin use the same ID format but remain distinct `(store, id)` references. The unreleased combined `nmnm-memory.json` layout is not migrated automatically.
+Reinjection also defaults off, with project `enabled` overriding global. `every_n_prompts` must be a positive safe integer, resolved project → global → `5`. Eligible user prompts increment a session-local counter; reaching the interval rebuilds context in that prompt (`cadence`). Successful builds reset the counter; failures stay pending. Slash commands/custom-message runs do not count, and custom runs preserve pending injection for the next user prompt. Effective policy is cached after a successful build; apply settings changes with `/memory refresh` or session reload. Cadence shares the context budget, increases recurring provider input/cache activity, and creates no timer, worker, session record, memory, or SQLite write.
+
+Project/global pins use identical ID formats but distinct `(store, id)` references. The unreleased combined `nmnm-memory.json` layout is not migrated.
 
 ### Normal file lifecycle
 
-On extension load and session start, the adapter registers its tools and hooks only. It does not create a settings file, a pin file, or a database. `nmnm.jsonc` is optional and user-authored: create it only to override the default index budget or opt into autoretention, periodic reinjection, or global-only logging. If it is absent, the adapter uses the defaults. The adapter never rewrites it.
+Loading registers tools/hooks; session start validates existing configuration. Neither creates settings, pins, or databases. Optional, user-authored `nmnm.jsonc` overrides the budget or enables autoretention, reinjection, or global-only logging. Missing settings use defaults; the adapter never rewrites them.
 
 | Event or action | Reads | Writes | What to expect |
 |---|---|---|---|
 | Extension load | Nothing | Nothing | No nanomneme files appear; global logging opt-in is read on the first eligible attempt. |
 | Session start | Existing settings and pins | Nothing | Read-only validation reports malformed configuration without preventing Pi startup. |
-| First user prompt, queued refresh, or enabled cadence | Existing settings, pins, and SQLite stores | Nothing | A bounded index, and enabled autoretention rules, are appended transiently to the system prompt. Cadence is disabled by default and counts user prompts only. Missing files and stores are empty. |
+| First user prompt, queued refresh, or enabled cadence | Existing settings, pins, and SQLite stores | Nothing | Appends bounded index/enabled rules transiently. Cadence defaults off and counts user prompts only; missing files/stores are empty. |
 | Successful Pi compaction | Nothing immediately | Nothing | The next user prompt rebuilds the transient index and enabled rules. Pi's own compaction summary preserves session continuity. |
-| `retain_memory` | Scope-selected store when patching | Selected `memory.db` and core-derived rows | The core creates a missing selected database; a successful mutation queues next-prompt index rebuild; no Pi settings or pin file changes. |
+| `retain_memory` | Scope-selected store when patching | Selected `memory.db` and core-derived rows | Creates missing store; success queues next-prompt rebuild. Settings/pins unchanged. |
 | `recall_memory` or `retrieve_memory` | Selected existing `memory.db` | Nothing | Missing stores return `null` or an empty page without creating a database. |
-| `remove_memory` | Selected existing `memory.db` | Selected `memory.db` and core-derived rows | Missing stores return `null`; successful removal queues next-prompt index rebuild; no Pi settings or pin file changes. |
-| `/memory` or `/memory browse` | Existing settings, pins, and stores | Pins or stores only on explicit mutation; if global diagnostics are enabled, a JSONL outcome for a browser mutation | Opens the model-free memory browser. Navigation, search, and canceled removal do not write diagnostic records; missing stores remain absent. |
-| `/memory status` | Existing settings, pins, and stores | Nothing | Pi shows pin counts, effective budget, current full-payload character count (including the separator when both context sections exist), unresolved count, and transient injection lifecycle metadata; it never shows injected memory content. |
+| `remove_memory` | Selected existing `memory.db` | Selected `memory.db` and core-derived rows | Missing store returns `null`; removal queues next-prompt rebuild. Settings/pins unchanged. |
+| `/memory` or `/memory browse` | Existing settings, pins, and stores | Explicit pin/store mutations; mutation JSONL if diagnostics enabled | Model-free browser; navigation/search/canceled removal are unlogged. Missing stores stay absent. |
+| `/memory status` | Existing settings, pins, and stores | Nothing | Shows pin counts, budget, payload characters (including inter-section separator), unresolved pins, and injection lifecycle; no memory content. |
 | `/memory refresh` | Nothing immediately | Nothing | The next user prompt rebuilds the hidden index. |
 | `/memory list ...` | Both default stores, or the selected `memory.db` and pins | Nothing | Displays a bounded, paginated active-memory page without invoking the model. |
-| `/memory remove ...` | Both stores when unqualified, otherwise the selected `memory.db` | Selected `memory.db` on success; an outcome JSONL line if logging is enabled | Soft-removes one unambiguous entry and queues next-prompt index rebuild; ambiguous IDs emit `blocked` without mutation. |
-| `/memory pin ...` | Selected active `memory.db` and pin file when present | Selected `nmnm-pi.json` on success; an outcome JSONL line if logging is enabled | Validates the selected store before creating the pin file, serializes the atomic update, then queues next-prompt index rebuild; settings remain untouched. |
-| `/memory unpin ...` | Selected pin file when present | Selected `nmnm-pi.json` and, if logging is enabled, an outcome JSONL line | Serializes the atomic update, removes the reference even when its memory is unresolved, and preserves the existing notification and refresh behavior for an absent pin. |
+| `/memory remove ...` | Both stores if unqualified, otherwise selected `memory.db` | Selected `memory.db` on success; JSONL if logging enabled | Unambiguous soft removal queues next-prompt rebuild; ambiguity yields `blocked` without mutation. |
+| `/memory pin ...` | Selected active `memory.db` and existing pins | Selected `nmnm-pi.json` on success; JSONL if logging enabled | Validates target before pin-file creation; serialized atomic update queues rebuild. Settings unchanged. |
+| `/memory unpin ...` | Existing selected pins | Selected `nmnm-pi.json`; JSONL if logging enabled | Serialized atomic update removes unresolved references too; absent pins still notify and queue refresh. |
 
-To create project settings manually before starting Pi or between prompts, create the directory, then copy the complete template above into `.nanomneme/nmnm.jsonc` and adjust `injection_budget`, autoretention, or reinjection if needed:
+Before startup or between prompts, create the directory and copy the template to `.nanomneme/nmnm.jsonc`; adjust budget, autoretention, or reinjection:
 
 ```sh
 mkdir -p .nanomneme
 ```
 
-An invalid settings or pin file leaves the file unchanged. Session start reports the configuration issue without preventing Pi startup. The next-prompt injection remains pending, so after correcting the file the following prompt retries automatically; `/memory refresh` is not required.
+Invalid settings/pins stay unchanged. Startup reports errors without blocking Pi; failed injection stays pending and retries after correction on the next user prompt, without `/memory refresh`.
 
 ## Slash command reference
 
@@ -188,10 +192,13 @@ An invalid settings or pin file leaves the file unchanged. Session start reports
 
 | Topic | Behavior |
 |---|---|
-| Browser | In the Pi TUI, `/memory` and `/memory browse` open a custom menu with `Status`, `All`, `Project`, and `Global` tabs. Left/right selects tabs; configured `tui.select.up`, `tui.select.down`, `tui.select.confirm`, and `tui.select.cancel` bindings control selection, confirmation, and cancellation. Raw `h`/`l` change tabs and `j`/`k` navigate rows. Status renders the shared read-only card. Store tabs contain search, source selection, records, paging, and Close. Text search uses FTS retrieval (hyphenated terms are literal); changing search or source resets that tab’s pagination. Source `all` includes legacy records; `pi` matches `metadata.source: "pi"`. The selected row remains selected after tab changes, details, and pin/unpin; removal selects the nearest remaining row. If concurrent store changes empty a page, pagination falls back while preserving a valid row selection, including when no records remain. Store tabs use a height-bounded window that follows selection and resizing; the host cursor marker keeps selection visible when fullscreen allocates a smaller input dock. Very short terminals show only the selected row; keyboard navigation remains available. Non-TUI UI modes retain the native dialog browser; non-UI modes should use explicit subcommands. |
-| Browser details | Selecting a row opens a native action dialog whose title contains a content preview capped at 10 displayed lines, including a truncation notice when needed, followed by all canonical fields. Wrapping uses the current terminal width (80 columns when unavailable); stored content is unchanged. The dialog offers exact-store pin/unpin, confirmed soft removal, or back. Closing it returns to the custom browser with the previous selection retained. |
+| Browser controls | TUI tabs are `Status`, `All`, `Project`, `Global`; left/right or `h`/`l` switches tabs. Configured `tui.select.up`, `tui.select.down`, `tui.select.confirm`, `tui.select.cancel` control navigation/actions; `j`/`k` also navigate. Status shows the shared read-only card. Store tabs offer search, source, records, paging, and Close. Non-TUI UI modes use native dialogs; non-UI modes need explicit subcommands. |
+| Browser filtering | Search uses FTS (hyphenated terms are literal). Source `all` includes legacy records; `pi` matches `metadata.source: "pi"`. Changing search/source resets that tab’s pagination. |
+| Browser pagination | Both modes stop at offset 1,000 (records 1,001–1,020). If more remain, Next page is omitted with guidance to narrow search/source/store. |
+| Browser selection | Tabs, details, and pin/unpin preserve selection; removal selects the nearest remaining row. Concurrently emptied pages fall back with valid selection, even when no records remain. Height-bounded windows follow selection/resizing; the host cursor marker keeps selection visible in smaller fullscreen docks. Very short terminals show only the selected row, with navigation still active. |
+| Browser details | Native action-dialog titles show a 10-displayed-line content preview (including any truncation notice), then all canonical fields. Wrapping uses terminal width, default 80 columns; stored content is unchanged. Actions: exact-store pin/unpin, confirmed soft removal, back. Closing preserves browser selection. |
 | List order | Unscoped list and browser `both` pages combine project entries before global entries; selected-store views read one store. |
-| List display | Browser rows include `[project]` or `[global]`; `*` marks an exact `(store, id)` pin. They omit IDs; details show the selected record's ID. Native dialogs append unique page-local row numbers so identical previews select distinct records. Previews normalize whitespace, show 60 characters, and append `...` only when truncated. Stored C0/C1 controls other than layout newlines/tabs display as literal Unicode escapes in browser text and notifications, not executable terminal sequences; canonical stored content is unchanged. |
+| List display | Rows show store labels and exact `(store, id)` pin marker `*`. Browser rows omit IDs (shown in details); slash lists include them. Native dialogs add unique page-local row numbers to distinguish identical previews. Previews normalize whitespace, cap at 60 characters, and append `...` when truncated. Browser/notification text escapes stored C0/C1 controls except layout newlines/tabs as literal Unicode escapes; canonical content is unchanged. |
 | List output | The notification reports `showing <n> of <total>` and is local command output, not a model request. |
 | Pin validation | An unscoped pin needs an active project memory. A global-only ID leaves pin files unchanged and reports `/memory pin global <id>`. Explicit scopes validate their selected store. |
 | Identity | UUID v4 collisions are unlikely, but explicit IDs and imports can duplicate IDs across stores; use `(store, id)`. |
@@ -200,9 +207,9 @@ An invalid settings or pin file leaves the file unchanged. Session start reports
 
 ### Pin update locks
 
-Browser and slash-command pin/unpin mutations use a same-directory `nmnm-pi.json.lock` and replace the pin file atomically. Any existing lock causes the command to fail with a retry message. The lock records its owner PID for diagnosis only; it is never automatically reclaimed based on age, malformed ownership, or PID liveness, because doing so can delete a lock acquired by another process. If writing ownership fails during acquisition, the adapter closes its descriptor and removes the incomplete lock. Cleanup always attempts the temporary file, descriptor, and lock; if a completed pin update cannot finish cleanup, Pi reports a stable manual-recovery error and the logging observer emits one `failed` outcome whose `error.message` is that recovery error. Pin payloads are not included in that record.
+Browser/slash pin updates use `nmnm-pi.json.lock` beside the pin file. Existing locks return a retry error; owner PID is diagnostic only. Age, malformed ownership, or apparent PID death never authorize automatic reclamation: another process may have acquired the lock. Failed ownership writes close the descriptor and remove the incomplete lock. Cleanup attempts temporary-file removal, descriptor close, and lock removal. If cleanup fails after a committed update, Pi reports a stable manual-recovery error; enabled diagnostics emit one `failed` outcome with that `error.message`, without pin payloads.
 
-After a Pi or Node process crashes during a pin mutation, stop every Pi process that could write the affected pin file. Inspect the lock's PID only as supporting evidence, then remove the lock manually and retry the command:
+After a Pi/Node pin-writer crash, stop every Pi writer of that file before removing its lock and retrying. PID inspection is supporting evidence only:
 
 ```sh
 rm -- .nanomneme/nmnm-pi.json.lock
@@ -210,9 +217,7 @@ rm -- .nanomneme/nmnm-pi.json.lock
 rm -- ~/.local/share/nanomneme/nmnm-pi.json.lock
 ```
 
-Never remove a lock merely because it is old, malformed, or its PID appears absent; a concurrent Pi process could have acquired it after inspection. The stop-all-writers step is mandatory: a pathname lock is not a process-owned kernel lock, so removing it while a writer remains live can invalidate that writer's ownership.
-
-A crash before atomic replacement can also leave an inert same-directory `nmnm-pi.json.<pid>.<timestamp>.tmp` file. It does not alter or block the pin file. After stopping writers, it is safe to remove that temporary file along with a confirmed crash-left lock.
+Stopping all writers is mandatory: this pathname lock is not a process-owned kernel lock. Removing it while a writer runs can invalidate ownership. A crash before replacement may also leave inert `nmnm-pi.json.<pid>.<timestamp>.tmp` files beside the pins; they neither alter nor block pins and may be removed after writers stop.
 
 ### Status card fields
 
@@ -220,38 +225,38 @@ A crash before atomic replacement can also leave an inert same-directory `nmnm-p
 
 | Field | Meaning |
 |---|---|
-| `Injection pending` | `yes` means the next eligible agent start will rebuild and attempt transient context injection. Session start, compaction, refresh, cadence, and successful memory mutations can make it pending. |
-| `Periodic reinjection` | The effective periodic policy: `disabled` or the configured interval after which eligible prompts queue a rebuild. |
-| `Prompts since injection` | Eligible prompt count since the last successful injection while periodic reinjection is enabled. It resets after a successful injection. |
-| `Last` | The most recent successful transient-memory injection in this Pi session. `none` means no injection has succeeded. Otherwise it reports the trigger, timestamp, index-entry count, and full injected character count. It is not the last database write or browser action. |
+| `Injection pending` | `yes`: rebuild/attempt injection on the next eligible start. Set by session start, compaction, refresh, cadence, or successful memory mutations. |
+| `Periodic reinjection` | Effective policy: `disabled` or eligible-prompt rebuild interval. |
+| `Prompts since injection` | Eligible prompts counted with reinjection enabled; resets after a successful context build. |
+| `Last` | This session's last successful injection: trigger, timestamp, entry count, and full character count, or `none`. Not a database write/browser action. |
 | `Autoretention` | Whether effective autoretention guidance is enabled for the current index. |
 | `Pins` | Configured project and global pin counts, including pins whose targets are currently unresolved. |
-| `Index` | Effective character budget, the full current next-injection payload size (including its separator when both sections exist), and unresolved pin count. The card does not expose payload content. |
-| `Error` | The latest context-build or status-read error recorded in this session, with its timestamp; `none` means no error is currently recorded. A successful injection clears it. |
+| `Index` | Effective budget, next-injection payload characters (including inter-section separator), and unresolved pins; no payload content. |
+| `Error` | Latest context-build/status-read error and timestamp, or `none`; successful context builds clear it. |
 
 ### Pi token overhead
 
-`nmnm-pi` adds four model-visible tool definitions: `retain_memory`, `recall_memory`, `retrieve_memory`, and `remove_memory`. Retain definitions include field descriptions, supported kind/scope values, score bounds, slug/UUID/expiry patterns, and create/patch guidance; metadata and retrieval score filters also have explicit schemas. Their serialized size depends on the adapter and host version. Schema size alone is not a token or cost estimate: Pi adds tool names, descriptions, and provider request structure, while each provider uses its own tokenizer.
+The four tool definitions include retain field descriptions, kind/scope values, score bounds, slug/UUID/expiry patterns, create/patch guidance, metadata schemas, and retrieval score filters. Serialized size depends on adapter/host; it is not a token/cost estimate. Pi adds tool names, descriptions, and request structure; each provider uses its own tokenizer.
 
-The transient memory context is separately bounded. On the first prompt and each queued refresh, Pi appends at most `injection_budget + 2` characters to the system prompt: the configured context plus its two newline separator characters. With the default budget, that is at most 2,002 characters. Autoretention guidance and index rows share that limit. Ordinary prompts without a queued refresh append no memory context unless opt-in periodic `reinjection` queues a rebuild.
+First/queued prompts append at most `injection_budget + 2` system-prompt characters (default 2,002): shared guidance/index budget plus two separating newlines. Ordinary prompts append nothing unless a refresh or opt-in cadence is queued.
 
 ```text
 first or queued-turn adapter overhead =
   provider-tokenized memory tool definitions + provider-tokenized injected context (0 to injection_budget + 2 characters)
 ```
 
-To measure exact overhead for a chosen model and provider, compare equivalent first-turn sessions with identical prompt, project context, and enabled non-nanomneme tools: run once with `nmnm-pi` enabled and once without it, then subtract the first assistant response's `usage.input` values in the Pi session JSONL. For later turns, report `usage.cacheRead` and `usage.cacheWrite` separately rather than treating cached input as fresh overhead. Session usage is provider-reported and is the authoritative token and cost measurement.
+Measure a model/provider with equivalent first-turn sessions, keeping prompt, project context, and other tools identical. Subtract first-response `usage.input` in session JSONL with/without `nmnm-pi`. On later turns, report `usage.cacheRead`/`usage.cacheWrite` separately from fresh input. Provider-reported session usage is authoritative for token/cost measurement.
 
 ## Boundaries
 
-The compatibility floor remains Pi 0.87.0. Main CI and release validation use the reviewed lockfile; development-host checks accept stable Pi `~1.5.0`. A separate blocking matrix tests Pi `0.87.0` plus stable patches in `~0.87.0`, `~0.99.0`, `~1.2.0`, and `~1.5.0`, reporting resolved Pi/TUI/AI/TypeBox versions. It runs the adapter suite, including host loading, provider schema constraints, and actual host argument validation, excluding only the development-host version assertion. Reproduce in a disposable checkout after `npm ci` with `node scripts/check-pi-compatibility.js '~1.5.0'` (or another matrix selector); this changes `node_modules`, not manifests or locks. The suite includes captured regular/fullscreen renderer checks, not live-provider or live-terminal acceptance, and does not cover every intermediate release.
+Pi's floor is 0.87.0. Main CI/releases use the reviewed lockfile; development-host checks accept stable `~1.5.0`. A blocking matrix covers `0.87.0`, `~0.87.0`, `~0.99.0`, `~1.2.0`, and `~1.5.0`, reporting Pi/TUI/AI/TypeBox versions. It tests loading, provider schema constraints, host argument validation, and captured regular/fullscreen rendering, excluding only the development-host version assertion. It does not certify live providers/terminals or every intermediate release. Reproduce after `npm ci` in a disposable checkout with `node scripts/check-pi-compatibility.js '~1.5.0'` (or another selector); only `node_modules` changes, not manifests/locks.
 
-Runner tests cover host-generated contexts, transient prompts, cadence, compaction refresh, wrapped mutations, and project trust across the matrix. From Pi 1.5.1, SDK threading tests use the real Anthropic provider with fake HTTP/SSE responses to check refresh/removal with and without native mid-conversation system messages, continuation fallback, and cache-warming replay isolation. Older hosts skip these tests without loading newer APIs. Current-host CI rejects skipped, empty, or missing threading coverage; reproduce it by prefixing the matrix command with `NMNM_PI_REQUIRE_THREADING_TESTS=1` in a disposable checkout. No live model requests are made; provider acceptance, cache savings, and terminal behavior remain unverified.
+Runner tests cover host-generated contexts, transient prompts, cadence, compaction refresh, wrapped mutations, and trust. From Pi 1.5.1, SDK threading tests use the real Anthropic provider with fake HTTP/SSE to check refresh/removal with/without native mid-conversation system messages, continuation fallback, and cache-warming replay isolation. Older hosts skip without loading newer APIs. Current-host CI rejects skipped/empty/missing threading coverage; reproduce with `NMNM_PI_REQUIRE_THREADING_TESTS=1` before the matrix command in a disposable checkout. These tests make no live requests and do not establish provider acceptance, cache savings, or terminal behavior.
 
-Pi 1.5 validates tools through pi-schema rather than TypeBox. The adapter uses ordinary JSON Schema constraints and keeps its TypeBox imports. Browser rendering uses the host cursor marker available at the compatibility floor; text escaping and row disambiguation are adapter-local. No newer runtime API is required. Tests accept equivalent Google `const`/single-value `enum` constraints and exercise the host validator's canonical inputs, rejections, coercion, and nullable patch fields without depending on engine-specific error wording.
+Pi 1.5 introduced pi-schema tool validation; the adapter retains TypeBox imports and ordinary JSON Schema constraints. Its browser uses the floor-compatible host cursor marker with local escaping/row disambiguation, requiring no newer runtime API. Tests accept equivalent Google `const`/single-value `enum` constraints and check host validation, rejection, coercion, and nullable patches without engine-specific error wording.
 
-The current production adapter injects transient context through the `before_agent_start` system-prompt return. Pi 0.87 structured prompt sections remain under a separate behavior and cache probe; Pi 0.99 documentation prefers those sections over a whole-prompt replacement, but the replacement path is unchanged and this release does not claim a cache improvement or change the injection lifecycle.
+Injection still uses the `before_agent_start` system-prompt return. Structured sections introduced in Pi 0.87 remain a separate behavior/cache probe; Pi 0.99 guidance prefers them over whole-prompt replacement. This release changes neither the replacement path nor injection lifecycle and claims no cache improvement.
 
-This adapter has no Markdown memory storage, consolidation, separate compaction handoff, or auto-resume. Those capabilities are not implied by configuration, pins, or the browser. See the [Core and CLI Manual](../../../docs/CORE_CLI_MANUAL.md) for the core and CLI, and the [adapter quick start](../README.md) for the package-local entry point.
+Markdown memory storage, consolidation, separate compaction handoff, and auto-resume are unsupported, regardless of settings/pins/browser use. See the [Core and CLI Manual](../../../docs/CORE_CLI_MANUAL.md) and [adapter quick start](../README.md).
 
 See the [Logger manual](../../../docs/LOGGER.md#source-and-artifact-map) for the shared source/artifact map and build/distribution checks.

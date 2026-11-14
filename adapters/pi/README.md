@@ -28,7 +28,7 @@ Pi package for the [nanomneme](https://nanomneme.openlines.dev) SQLite memory ad
   ![nmnm-pi source](docs/img/ss-memory-source.png)
 
   ![nmnm-pi list all pi](docs/img/ss-memory-list-all-pi.png)
-- **Readable list UX:** project-first combined listing, pagination, `[project]` and `[global]` labels, exact-store `*` pin markers, and 60-character previews. Store-tab selection scrolls with navigation and terminal resizing and remains valid after concurrent removals; native dialogs number rows to distinguish identical previews. Rows omit IDs, which remain in details.
+- **Readable list UX:** project-first combined listing, pagination, `[project]` and `[global]` labels, exact-store `*` pin markers, and 60-character previews. Store-tab selection scrolls with navigation and terminal resizing and remains valid after concurrent removals; native dialogs number rows to distinguish identical previews. Rows omit IDs, which remain in details. Both browser modes stop at offset 1,000 (the page covering records 1,001–1,020) and prompt you to narrow search, source, or store when more results remain.
 
   ![nmnm-pi list all](docs/img/ss-memory-list-all.png)
 - **Safety boundaries:** terminal-safe display of stored text, validated pin targets, serialized atomic pin updates, ambiguity-safe removal, soft-only slash removal, non-creating native reads, and durable unresolved pins.

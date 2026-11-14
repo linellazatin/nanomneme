@@ -1,6 +1,6 @@
 # @openlines/nmnm-opencode
 
-Native baselines are OpenCode V1 1.19.0 and V2 2.0.29. Checkout and independently installed-package checks cover both terminal browsers; live Bedrock Haiku 5.5 verifies V2 context, recall continuation, and post-compaction freshness. Node 22.19.0 and 26.11.1 are verified. Remote-machine deployment and publication remain separate.
+Native evidence covers OpenCode V1 1.19.0 and V2 2.3.0, with earlier V2 2.0.29 checks retained as historical evidence. Rendered checks cover navigation, mutations, location safety, and live TUI reload; model checks cover V2 context, recall continuation, post-compaction freshness, and concurrent child-session isolation. Remote-machine deployment and publication remain separate.
 
 <div align="center">
 
@@ -27,7 +27,7 @@ OpenCode adapter for [nanomneme](https://github.com/linellazatin/nanomneme): a s
 
 Registry examples use the published package; use local checkout loading below for unpublished changes. Manifests and lockfiles define dependency requirements. Root-only security overrides do not propagate to registry installations or Bun-managed caches; the upstream dependency fixes remain pending.
 
-Use Node.js 22.19+ with built-in SQLite/FTS5 on the server's `PATH` (or `NMNM_NODE`). The unchanged package engine floor is 22.13 with FTS5 required separately, but the tested stock 22.13.0 binary lacks FTS5 and is unsuitable. The complete adapter suite passes on 22.19.0 and 26.11.1. Tested hosts are V1 1.19.0 and V2 2.0.29, not every version accepted by the legacy API dependency. V1 receives compatibility fixes, not indefinite feature parity or an older-host guarantee.
+Use Node.js 22.19+ with built-in SQLite/FTS5 on the server's `PATH` (or `NMNM_NODE`). The unchanged package engine floor is 22.13 with FTS5 required separately, but the tested stock 22.13.0 binary lacks FTS5 and is unsuitable. Earlier adapter suites passed on 22.19.0 and 26.11.1; the V2 2.3.0 checks use 26.13.0. Tested hosts do not certify every version accepted by the legacy API dependency. V1 receives compatibility fixes, not indefinite feature parity or an older-host guarantee.
 
 ### OpenCode V2
 
@@ -91,7 +91,7 @@ See the [OpenCode Adapter Manual](docs/OPENCODE_ADAPTER_MANUAL.md) for the confi
 
 The repository root temporarily overrides the legacy OpenCode plugin's Zod and Effect TOML dependencies to clear known denial-of-service advisories; exact selections live in the root manifest and lockfile. These overrides apply only when installing this checkout with npm; independently installed adapters and OpenCode's Bun-managed plugin caches do not inherit them. The adapter's tested host floor remains unchanged. Wait for an upstream plugin dependency fix before claiming clean independent installations, then remove the overrides and rerun adapter, native-host, audit, and standalone checks.
 
-The browser RPC transport exposes only status, browse, detail, and pin/unpin/soft-removal operations through the connected OpenCode server. The server owns store routing and the Node bridge; the V2 client transport never falls back to local persistence. Transport failures are not retried automatically, and cancellation does not roll back a mutation already dispatched to the synchronous bridge. Native transport checks are opt-in: set `NMNM_OPENCODE_V1` or `NMNM_OPENCODE_V2` to the corresponding executable and run `node --test adapters/opencode/test/browser-rpc-v1-host.test.js` or `node --test adapters/opencode/test/browser-rpc-host.test.js`. Each creates isolated host state and disposable stores without using the personal background service; without the environment variable, that host check is explicitly skipped.
+The browser RPC transport exposes only status, browse, detail, and pin/unpin/soft-removal operations through the connected OpenCode server. The server owns store routing and the Node bridge; the V2 client never falls back to local persistence. Reads retry only typed `rpc.unavailable` failures while location plugins load: at most 50 attempts, 100 ms apart, with disposal cancellation and origin checks. Mutations, authentication failures, and other transport errors are never retried; cancellation cannot roll back a dispatched synchronous mutation. Native checks are opt-in: set `NMNM_OPENCODE_V1` or `NMNM_OPENCODE_V2` to the native executable and run the corresponding `browser-rpc-v1-host.test.js` or `browser-rpc-host.test.js` under `adapters/opencode/test/`. Each uses isolated host state and disposable stores; unset hosts are explicitly skipped. See the manual for rendered and optional paid checks.
 
 Core hardening introduced in `0.3.0` is covered through the real Node bridge for Unicode search/validation, invalid metadata/range operators, and private project/global first-use storage; direct handlers cover monotonic patch/restore timestamps under frozen/backward clocks. Tool-handler APIs are unchanged. Export/import/verification remain core CLI operations, not adapter tools.
 

@@ -10,7 +10,7 @@ function json(path) {
   return JSON.parse(readFileSync(path, 'utf8'));
 }
 
-test('release metadata aligns the OpenCode readiness patch and every unchanged consumer', () => {
+test('release metadata aligns the OpenCode readiness and Pi pagination patches and unchanged consumers', () => {
   const root = json(new URL('../package.json', import.meta.url));
   const lock = json(new URL('../package-lock.json', import.meta.url));
   const pi = json(new URL('../adapters/pi/package.json', import.meta.url));
@@ -38,7 +38,7 @@ test('release metadata aligns the OpenCode readiness patch and every unchanged c
   assert.equal(ui.exports, './src/launcher.js');
   assert.equal(ui.engines.node, root.engines.node);
   assert.equal(lock.packages['node_modules/@openlines/nmnm-ui'].resolved, 'packages/nmnm-ui');
-  assert.equal(pi.version, '0.4.7');
+  assert.equal(pi.version, '0.4.8');
   assert.equal(claude.name, '@openlines/nmnm-claude');
   assert.equal(claude.version, '0.2.3');
   assert.equal(claude.dependencies['@modelcontextprotocol/sdk'], '^1.32.2');

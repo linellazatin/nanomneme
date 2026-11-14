@@ -946,6 +946,50 @@ test('memory browser moves between 20-row pages', async () => {
   }
 });
 
+for (const mode of ['native', 'tui']) {
+  test(`memory browser ${mode} stops at the core offset boundary with narrowing guidance`, async () => {
+    const project = temporaryDirectory('nmnm-pi-browser-boundary-project-');
+    const home = temporaryDirectory('nmnm-pi-browser-boundary-home-');
+    try {
+      const db = open(databasePath({ cwd: project, store: 'project' }));
+      try {
+        for (let index = 0; index < 1021; index += 1) db.retain({ content: `Boundary memory ${index}` });
+      } finally {
+        db.close();
+      }
+      const commands = new Map();
+      let pages = 0;
+      const checkPage = (hasNext, text) => {
+        assert.equal(hasNext, pages < 50);
+        if (pages === 50) assert.match(text, /Pagination limit reached; narrow by search, source, or store/);
+        pages += 1;
+      };
+      const scripted = mode === 'native' ? scriptedUi({
+        selections: Array.from({ length: 51 }, () => (options, title) => {
+          checkPage(options.includes('Next page'), title);
+          return pages < 51 ? 'Next page' : 'Close';
+        }),
+      }) : customUi({
+        interactions: Array.from({ length: 51 }, (_, index) => component => {
+          if (index === 0) component.handleInput('\x1b[C');
+          const items = component.items();
+          checkPage(items.some(item => item.key === 'next-page'), component.render(200).join('\n'));
+          if (pages === 51) { component.handleInput('\x1b'); return; }
+          const next = items.findIndex(item => item.key === 'next-page');
+          component.state.focus.both = { key: 'next-page', index: next };
+          component.handleInput('\r');
+        }),
+      });
+      registerPiMemory({ on: () => {}, registerCommand: (name, command) => commands.set(name, command) }, { home, platform: 'darwin' });
+      await commands.get('memory').handler('browse', { cwd: project, hasUI: true, mode: mode === 'tui' ? 'tui' : 'rpc', ui: scripted.ui });
+      assert.equal(pages, 51);
+    } finally {
+      rmSync(project, { recursive: true, force: true });
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+}
+
 test('memory browser pins and unpins the exact selected store', async () => {
   const project = temporaryDirectory('nmnm-pi-browser-pin-project-');
   const home = temporaryDirectory('nmnm-pi-browser-pin-home-');

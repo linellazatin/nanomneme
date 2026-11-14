@@ -69,6 +69,81 @@ test('RPC failures are not retried and never fall back to a local bridge', async
   assert.equal(calls, 1);
 });
 
+test('read operations wait for location RPC readiness using the current connected client', async () => {
+  const { createBrowserClient } = await import('../src/browser-rpc-client.js');
+  for (const op of ['status', 'browse', 'detail']) {
+    const f = fixture();
+    const browser = createBrowserClient(f.api);
+    let calls = 0;
+    f.api.client = { rpc: () => ({ [op]: async () => {
+      calls++;
+      if (calls === 1) throw { type: 'rpc.unavailable', message: 'Location is loading' };
+      return { ok: true };
+    } }) };
+    assert.deepEqual(await browser.call(op), { ok: true });
+    assert.equal(calls, 2);
+    browser.dispose();
+  }
+});
+
+test('readiness waiting aborts on disposal and refuses a changed session location', async () => {
+  const { createBrowserClient } = await import('../src/browser-rpc-client.js');
+  for (const change of ['dispose', 'location']) {
+    const f = fixture();
+    let calls = 0;
+    let browser;
+    f.api.client.rpc = () => ({ status: async () => {
+      calls++;
+      if (change === 'dispose') browser.dispose();
+      else f.route({ type: 'session', sessionID: 'known' });
+      throw { type: 'rpc.unavailable' };
+    } });
+    browser = createBrowserClient(f.api);
+    await assert.rejects(browser.call('status'), change === 'dispose' ? /abort/i : /location changed/i);
+    assert.equal(calls, 1);
+  }
+});
+
+test('readiness never retries mutations, authentication, transport, or application errors', async () => {
+  const { createBrowserClient } = await import('../src/browser-rpc-client.js');
+  for (const [op, error] of [
+    ['mutate', { type: 'rpc.unavailable' }],
+    ['status', { type: 'unauthorized' }],
+    ['status', new Error('network failure')],
+    ['browse', { type: 'not_found' }],
+  ]) {
+    const f = fixture();
+    let calls = 0;
+    f.api.client.rpc = () => ({ [op]: async () => { calls++; throw error; } });
+    const browser = createBrowserClient(f.api);
+    await assert.rejects(browser.call(op), caught => caught === error);
+    assert.equal(calls, 1);
+  }
+});
+
+test('persistent RPC unavailability has a bounded read retry budget', async () => {
+  const { createBrowserClient } = await import('../src/browser-rpc-client.js');
+  const f = fixture();
+  const error = { type: 'rpc.unavailable' };
+  let calls = 0;
+  f.api.client.rpc = () => ({ status: async () => { calls++; throw error; } });
+  const browser = createBrowserClient(f.api);
+  await assert.rejects(browser.call('status'), caught => caught === error);
+  assert.equal(calls, 50);
+  browser.dispose();
+});
+
+test('disposal cancels a pending readiness timer', async () => {
+  const { createBrowserClient } = await import('../src/browser-rpc-client.js');
+  const f = fixture();
+  let calls = 0;
+  f.api.client.rpc = () => ({ status: async () => { calls++; throw { type: 'rpc.unavailable' }; } });
+  const browser = createBrowserClient(f.api);
+  const timer = setTimeout(() => browser.dispose(), 10);
+  try { await assert.rejects(browser.call('status'), /abort/i); } finally { clearTimeout(timer); browser.dispose(); }
+  assert.equal(calls, 1);
+});
+
 test('transport does not expose retain or purge operations', async () => {
   const { createBrowserClient } = await import('../src/browser-rpc-client.js');
   const f = fixture();

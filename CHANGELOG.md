@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.9.2 - Adapter compatibility, bugfixes, and CI updates
+
+### Updated components
+
+| Component | Version |
+| --- | --- |
+| Repository | 0.9.2 |
+| `@openlines/nmnm-opencode` | 0.3.2 |
+| `@openlines/nmnm-pi` | 0.4.8 |
+
+### Fixed
+
+- `nmnm-opencode` V2 browser reads retry typed RPC-readiness failures with bounded attempts, origin checks, and disposal cancellation; mutations and unrelated failures never retry.
+- `nmnm-pi` memory browsers stop at the core offset limit and show narrowing guidance instead of offering a next page that fails retrieval.
+
+### Changed
+
+- Clarified primary-only context injection, `nmnm-opencode` V1/V2 browser boundaries, and native verification limits.
+- Shared `validate.yml` now owns repository/UI gates and Pi/OpenCode matrices for CI and releases; `release.yml` reuses it with tag/changelog checks before publishing.
+
+### Validation & CI
+
+- `nmnm-opencode` checks cover V1 1.19.0 and V2 2.0.29/2.3.0, requiring unskipped native coverage, connected routing, and V2 live TUI reload without provider credentials.
+  - OpenCode 2.3.0 checkout/tarball checks passed on Node 26.13.0: native tools/RPC, rendered browser/reload, Bedrock recall/continuation/compaction, and concurrent child-session isolation
+  - Added opencode-compatibility validation to CI
+
 ## 0.9.1-tests-ci
 
 ### Tests and CI (no adapter/package bump needed; repo-only change)

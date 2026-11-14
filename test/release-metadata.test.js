@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import semver from 'semver';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -10,7 +10,7 @@ function json(path) {
   return JSON.parse(readFileSync(path, 'utf8'));
 }
 
-test('release metadata aligns the Pi compatibility patch and every unchanged consumer', () => {
+test('release metadata aligns the OpenCode readiness and Pi pagination patches and unchanged consumers', () => {
   const root = json(new URL('../package.json', import.meta.url));
   const lock = json(new URL('../package-lock.json', import.meta.url));
   const pi = json(new URL('../adapters/pi/package.json', import.meta.url));
@@ -20,7 +20,7 @@ test('release metadata aligns the Pi compatibility patch and every unchanged con
   const claude = json(new URL('../adapters/claude/package.json', import.meta.url));
   const codex = json(new URL('../adapters/codex/package.json', import.meta.url));
   const opencode = json(new URL('../adapters/opencode/package.json', import.meta.url));
-  assert.equal(root.version, '0.9.1');
+  assert.equal(root.version, '0.9.2');
   assert.equal(lock.version, root.version);
   assert.equal(lock.packages['adapters/codex'].name, '@openlines/nmnm-codex');
   assert.equal(lock.packages['node_modules/@openlines/nmnm-codex'].resolved, 'adapters/codex');
@@ -38,7 +38,7 @@ test('release metadata aligns the Pi compatibility patch and every unchanged con
   assert.equal(ui.exports, './src/launcher.js');
   assert.equal(ui.engines.node, root.engines.node);
   assert.equal(lock.packages['node_modules/@openlines/nmnm-ui'].resolved, 'packages/nmnm-ui');
-  assert.equal(pi.version, '0.4.7');
+  assert.equal(pi.version, '0.4.8');
   assert.equal(claude.name, '@openlines/nmnm-claude');
   assert.equal(claude.version, '0.2.3');
   assert.equal(claude.dependencies['@modelcontextprotocol/sdk'], '^1.32.2');
@@ -46,7 +46,7 @@ test('release metadata aligns the Pi compatibility patch and every unchanged con
   const [sdkMajor, sdkMinor] = lock.packages['node_modules/@modelcontextprotocol/sdk'].version.split('.').map(Number);
   assert.ok(sdkMajor > 1 || (sdkMajor === 1 && sdkMinor >= 32), 'MCP SDK must include the current advisory fixes');
   assert.equal(codex.version, '0.3.0');
-  assert.equal(opencode.version, '0.3.1');
+  assert.equal(opencode.version, '0.3.2');
   for (const [path, pkg] of [['', root], ['packages/nmnm-core', core], ['packages/nmnm-cli', cli], ['packages/nmnm-ui', ui],
     ['adapters/pi', pi], ['adapters/claude', claude], ['adapters/codex', codex], ['adapters/opencode', opencode]]) {
     assert.equal(lock.packages[path].version, pkg.version, `${path || 'root'} lockfile version`);
@@ -85,7 +85,7 @@ test('release metadata aligns the Pi compatibility patch and every unchanged con
 
 test('Codex direct adapter remains private and is not released to npm', () => {
   const codex = json(new URL('../adapters/codex/package.json', import.meta.url));
-  const ci = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  const ci = readFileSync(new URL('../.github/workflows/validate.yml', import.meta.url), 'utf8');
   const release = readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
   const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
 
@@ -106,14 +106,29 @@ test('OpenCode declares its tested host floor while the lock retains a compatibl
   assert.ok(major > 1 || (major === 1 && (minor > 18 || (minor === 18 && patch >= 15))));
 });
 
-test('tag publishing requires the same blocking rendered UI job as branch CI', () => {
-  const ci = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
+test('validation is shared by branch CI and release without publishing permissions', () => {
+  assert.deepEqual(readdirSync(new URL('../.github/workflows/', import.meta.url)).sort(), ['release.yml', 'validate.yml']);
+  const validation = readFileSync(new URL('../.github/workflows/validate.yml', import.meta.url), 'utf8');
   const release = readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
-  const ciUi = ci.split('\n  ui:')[1].trim();
-  const releaseUi = release.split('\n  ui:')[1]?.split('\n  publish:')[0].trim();
-  assert.equal(releaseUi, ciUi);
+  assert.match(validation, /pull_request:/);
+  assert.match(validation, /branches:\n      - main/);
+  assert.match(validation, /workflow_call:/);
+  assert.match(validation, /release:\n\s+type: boolean\n\s+default: false/);
+  assert.match(validation, /value: \$\{\{ jobs\.validate\.outputs\.notes \}\}/);
+  assert.equal((validation.match(/if: inputs.release/g) ?? []).length, 2);
+  assert.doesNotMatch(validation, /contents: write|id-token: write|secrets: inherit/);
+  assert.match(validation, /group: validate-\$\{\{ github\.workflow \}\}-\$\{\{ github\.ref \}\}/);
+  assert.match(release, /validate:\n    uses: \.\/\.github\/workflows\/validate\.yml\n    with:\n      release: true/);
+  assert.doesNotMatch(release, /pi-compatibility:|opencode-compatibility:|\n  ui:/);
+});
+
+test('tag publishing requires the same blocking rendered UI job as branch CI', () => {
+  const ci = readFileSync(new URL('../.github/workflows/validate.yml', import.meta.url), 'utf8');
+  const release = readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
+  const releaseUi = ci.split('\n  ui:')[1].trim();
+  assert.match(release, /uses: \.\/\.github\/workflows\/validate\.yml/);
   const publish = release.split('\n  publish:')[1];
-  assert.match(publish, /needs: \[validate, ui\]/);
+  assert.match(publish, /needs: validate/);
   assert.doesNotMatch(publish, /if:.*always\(\)/);
   assert.doesNotMatch(releaseUi, /continue-on-error/);
   assert.match(releaseUi, /image: mcr\.microsoft\.com\/playwright\/python:v1\.62\.0-noble/);
@@ -128,23 +143,20 @@ test('tag publishing requires the same blocking rendered UI job as branch CI', (
 });
 
 test('CI and release use read-only validation while retaining informational audit and publish order', () => {
-  for (const name of ['ci', 'release']) {
-    const workflow = readFileSync(new URL(`../.github/workflows/${name}.yml`, import.meta.url), 'utf8');
-    const validation = workflow.split('\n  publish:')[0];
-    assert.equal((validation.match(/run: npm run validate/g) ?? []).length, 1);
-    assert.match(validation, /run: npm audit --audit-level=high\n\s+continue-on-error: true/);
-    assert.doesNotMatch(validation, /run: npm test|run: node scripts\/check-logging-packages|logslines:build|logslines:update|codex:update|--prepare-codex/);
-    assert.match(validation, /run: git diff --check/);
-    assert.match(validation, /npm pack --dry-run/);
-  }
+  const validation = readFileSync(new URL('../.github/workflows/validate.yml', import.meta.url), 'utf8');
+  assert.equal((validation.match(/run: npm run validate/g) ?? []).length, 1);
+  assert.match(validation, /run: npm audit --audit-level=high\n\s+continue-on-error: true/);
+  assert.doesNotMatch(validation, /run: npm test|run: node scripts\/check-logging-packages|logslines:build|logslines:update|codex:update|--prepare-codex/);
+  assert.match(validation, /run: git diff --check/);
+  assert.match(validation, /npm pack --dry-run/);
   const release = readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
   const publish = ['core', 'UI', 'CLI', 'Pi adapter', 'OpenCode adapter'].map(name => release.indexOf(`name: Publish ${name} when this version is new`));
   assert.ok(publish.every((position, index) => position >= 0 && (!index || position > publish[index - 1])));
-  assert.match(release, /Verify release tag/);
+  assert.match(release, /release: true/);
 });
 
-test('CI checks Pi compatibility separately from locked release validation', () => {
-  const ci = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
+test('shared validation gates CI and release on Pi compatibility alongside locked validation', () => {
+  const ci = readFileSync(new URL('../.github/workflows/validate.yml', import.meta.url), 'utf8');
   const release = readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
   assert.match(ci, /pi-compatibility:/);
   assert.match(ci, /fail-fast: false/);
@@ -158,11 +170,46 @@ test('CI checks Pi compatibility separately from locked release validation', () 
   assert.doesNotMatch(release, /check-pi-compatibility|pi-compatibility:/);
 });
 
+test('CI and release require credential-free native and rendered OpenCode compatibility', () => {
+  const validation = readFileSync(new URL('../.github/workflows/validate.yml', import.meta.url), 'utf8');
+  const workflow = validation.match(/\n  opencode-compatibility:\n([\s\S]*?)(?=\n  validate:)/)?.[1];
+  assert.ok(workflow);
+  assert.match(workflow, /fail-fast: false/);
+  for (const host of ['1.19.0', '2.0.29', '2.3.0']) assert.ok(workflow.includes(`version: '${host}'`));
+  assert.match(workflow, /package: opencode-ai/);
+  assert.match(workflow, /package: '@opencode\/cli'/);
+  assert.match(workflow, /node-version: 22/);
+  assert.match(workflow, /pexpect==4\.9\.0 pyte==0\.8\.2/);
+  assert.match(workflow, /node scripts\/check-opencode-compatibility\.js/);
+  assert.doesNotMatch(workflow, /continue-on-error|secrets:|AWS_|LIVE_MODEL/);
+  const runner = readFileSync(new URL('../scripts/check-opencode-compatibility.js', import.meta.url), 'utf8');
+  assert.match(runner, /# skipped 0/);
+  assert.match(runner, /terminal_browser\.py/);
+  assert.match(runner, /--connected/);
+});
+
+test('release mode accepts only a matching root version tag', () => {
+  const validation = readFileSync(new URL('../.github/workflows/validate.yml', import.meta.url), 'utf8');
+  const script = validation.match(/name: Verify release tag\n        if: inputs.release\n        run: \|\n([\s\S]*?)(?=      - name:)/)[1]
+    .split('\n').map(line => line.replace(/^          /, '')).join('\n');
+  const directory = mkdtempSync(join(tmpdir(), 'nmnm-release-tag-'));
+  try {
+    writeFileSync(join(directory, 'package.json'), '{"version":"0.9.2"}');
+    for (const [type, name, expected] of [['tag', 'v0.9.2', 0], ['tag', 'v0.9.1', 1], ['branch', 'v0.9.2', 1]]) {
+      const result = spawnSync('bash', ['-e', '-c', script], {
+        cwd: directory, env: { ...process.env, GITHUB_REF_TYPE: type, GITHUB_REF_NAME: name }, encoding: 'utf8',
+      });
+      assert.equal(result.status, expected, result.stderr);
+    }
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
 test('release validates changelog before publishing and forwards the extracted notes', () => {
   const release = readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
-  const [validation, publish] = release.split('\n  publish:');
+  const validation = readFileSync(new URL('../.github/workflows/validate.yml', import.meta.url), 'utf8');
+  const publish = release.split('\n  publish:')[1];
   assert.match(validation, /notes: \$\{\{ steps\.changelog\.outputs\.notes \}\}/);
-  assert.match(publish, /needs: \[validate, ui\]/);
+  assert.match(publish, /needs: validate/);
   assert.match(publish, /body: \$\{\{ needs\.validate\.outputs\.notes \}\}/);
   assert.doesNotMatch(publish, /Extract changelog/);
   const script = validation.match(/id: changelog\n        run: \|\n([\s\S]*?)(?=      #)/)[1]

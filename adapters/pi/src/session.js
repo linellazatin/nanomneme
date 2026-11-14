@@ -10,6 +10,16 @@ const MAX_LIST_LIMIT = 100;
 const LIST_PREVIEW_LENGTH = 60;
 const BROWSER_LIMIT = 20;
 const BROWSER_CONTENT_LINES = 10;
+const MAX_BROWSER_OFFSET = 1000;
+const PAGINATION_GUIDANCE = 'Pagination limit reached; narrow by search, source, or store.';
+
+function hasNextPage(target, result) {
+  return target.offset + result.items.length < result.total && target.offset + target.limit <= MAX_BROWSER_OFFSET;
+}
+
+function paginationLimited(target, result) {
+  return target.offset + result.items.length < result.total && !hasNextPage(target, result);
+}
 
 function commandInput(args) {
   return args.trim().split(/\s+/).filter(Boolean);
@@ -182,7 +192,7 @@ class MemoryBrowser {
         item,
       })),
       ...(this.state.offsets[this.state.tab] > 0 ? [{ key: 'previous-page', label: 'Previous page' }] : []),
-      ...(this.state.offsets[this.state.tab] + result.items.length < result.total ? [{ key: 'next-page', label: 'Next page' }] : []),
+      ...(hasNextPage(browserTarget(this.state), result) ? [{ key: 'next-page', label: 'Next page' }] : []),
       { key: 'close', label: 'Close' },
     ];
   }
@@ -246,6 +256,7 @@ class MemoryBrowser {
         `showing ${result.items.length} of ${result.total}`,
         this.state.query ? `search: ${terminalText(this.state.query)}` : undefined,
       ].filter(Boolean).join(' · '), '');
+      if (paginationLimited(browserTarget(this.state), result)) lines.push(PAGINATION_GUIDANCE);
       const items = this.items();
       const selected = this.selected(items);
       // Leave room for Pi's surrounding widgets/footer. The marker also lets
@@ -276,12 +287,13 @@ async function browseMemoryNative({ ctx, home, platform, refresh, logger }) {
     const title = [
       `Nanomneme memories [${target.store}]`, `source: ${target.source}`,
       `showing ${result.items.length} of ${result.total}`, target.query ? `search: ${terminalText(target.query)}` : undefined,
+      paginationLimited(target, result) ? PAGINATION_GUIDANCE : undefined,
     ].filter(Boolean).join(' · ');
     const choice = await ctx.ui.select(title, [
       'Search', `Store: ${target.store}`, `Source: ${target.source}`,
       ...(target.query ? ['Clear search'] : []), ...rows.map(({ label }) => label),
       ...(target.offset > 0 ? ['Previous page'] : []),
-      ...(target.offset + result.items.length < result.total ? ['Next page'] : []), 'Close',
+      ...(hasNextPage(target, result) ? ['Next page'] : []), 'Close',
     ]);
     if (!choice || choice === 'Close') return;
     const selected = rows.find(({ label }) => label === choice)?.item;

@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 const adapter = process.env.NMNM_ADAPTER_ROOT ? pathToFileURL(`${process.env.NMNM_ADAPTER_ROOT}/`) : new URL('../', import.meta.url);
 const { runBridge } = await import(new URL('src/bridge-client.js', adapter));
+const { createBrowserClient } = await import(new URL('src/browser-rpc-client.js', adapter));
 
 const host = process.env.NMNM_OPENCODE_V2;
 const liveModel = process.env.NMNM_OPENCODE_LIVE_MODEL;
@@ -89,20 +90,33 @@ test('native V2 host routes selected adapter RPC to server stores with authentic
     });
   }
   async function call(method, input, directory) {
-    const response = await request(method, input, directory);
-    const result = await response.json();
-    assert.equal(response.status, 200, JSON.stringify(result));
-    return result.output;
+    const browser = createBrowserClient({
+      location: { directory: directory ?? project },
+      ui: { router: { current: () => ({ type: 'home' }) } },
+      client: { rpc: () => Object.fromEntries(['status', 'browse', 'detail', 'mutate'].map(op => [op, async params => {
+        const response = await request(op, params, directory);
+        const result = await response.json();
+        if (response.status !== 200) throw result.error ?? result;
+        return result.output;
+      }])) },
+    });
+    try { return await browser.call(method, input); } finally { browser.dispose(); }
   }
   const ctx = { cwd: project, home, platform: process.platform };
-  async function probe(input) {
-    const response = await fetch(`${address}/api/rpc/nmnm-test-observer/probe`, {
-      method: 'POST', headers: { 'content-type': 'application/json', authorization, 'x-opencode-directory': encodeURIComponent(project) },
-      body: JSON.stringify({ input }), signal: AbortSignal.timeout(15000),
-    });
-    const result = await response.json();
-    assert.equal(response.status, 200, JSON.stringify(result));
-    return result.output;
+  async function probe(input, directory = project) {
+    for (let attempt = 0; ; attempt++) {
+      const response = await fetch(`${address}/api/rpc/nmnm-test-observer/probe`, {
+        method: 'POST', headers: { 'content-type': 'application/json', authorization, 'x-opencode-directory': encodeURIComponent(directory) },
+        body: JSON.stringify({ input }), signal: AbortSignal.timeout(liveModel ? 90000 : 15000),
+      });
+      const result = await response.json();
+      if (input.action === 'list' && response.status === 400 && (result.error ?? result).type === 'rpc.unavailable' && attempt < 99) {
+        await delay(100);
+        continue;
+      }
+      assert.equal(response.status, 200, JSON.stringify(result));
+      return result.output;
+    }
   }
   const names = await probe({ action: 'list' });
   assert.deepEqual(names.filter(name => /^(retain|recall|retrieve|remove)_memory$/.test(name)).sort(), ['recall_memory', 'remove_memory', 'retain_memory', 'retrieve_memory']);
@@ -149,6 +163,28 @@ test('native V2 host routes selected adapter RPC to server stores with authentic
   const movedMemory = await execute('retain_memory', { content: 'Moved session fact' });
   assert.equal((await call('browse', { store: 'project' }, empty)).items[0].id, movedMemory.id);
   assert.equal((await call('browse', { store: 'project' }, other)).total, 0);
+  const parents = await Promise.all([other, empty].map(directory => probe({ action: 'create', directory })));
+  const concurrent = await Promise.all([0, 0, 1, 1].map(index =>
+    probe({ action: 'create', directory: parents[index].location.directory, parentID: parents[index].id })));
+  for (const [index, agent] of concurrent.entries()) {
+    const parent = parents[Math.floor(index / 2)];
+    assert.equal(agent.parentID, parent.id);
+    assert.equal(agent.location.directory, parent.location.directory);
+  }
+  const agentTool = async (agent, name, params) =>
+    JSON.parse((await probe({ name, params, sessionID: agent.id })).content);
+  const facts = await Promise.all(concurrent.map((agent, index) =>
+    agentTool(agent, 'retain_memory', { content: `Concurrent child fact ${index}` })));
+  const recalled = await Promise.all(concurrent.map((agent, index) =>
+    agentTool(agent, 'recall_memory', { id: facts[index].id })));
+  assert.deepEqual(recalled.map(record => record.id), facts.map(record => record.id));
+  const crossed = await Promise.all(concurrent.map((agent, index) =>
+    agentTool(agent, 'recall_memory', { id: facts[(index + 2) % 4].id })));
+  assert.deepEqual(crossed, [null, null, null, null]);
+  await Promise.all(concurrent.map((agent, index) =>
+    agentTool(agent, 'remove_memory', { id: facts[index].id })));
+  assert.deepEqual(await Promise.all(concurrent.map((agent, index) =>
+    agentTool(agent, 'recall_memory', { id: facts[index].id }))), [null, null, null, null]);
   if (liveModel) {
     const live = await probe({ action: 'create', directory: project, model: { providerID: 'amazon-bedrock', id: liveModel } });
     const seedFact = content => {
@@ -175,5 +211,22 @@ test('native V2 host routes selected adapter RPC to server stores with authentic
     assert.ok(requests.length >= 2);
     assert.match(JSON.stringify(requests.at(-1).system), /violet-badger-9284/);
     assert.doesNotMatch(JSON.stringify(requests.at(-1).system), /amber-otter-7319/);
+    const beacons = ['copper-lynx-4826', 'silver-wren-6153'];
+    const directories = [other, empty];
+    for (const [index, directory] of directories.entries()) {
+      assert.equal(runBridge({ op: 'tool', name: 'retain_memory', params: { content: `The concurrent beacon is ${beacons[index]}.` }, ctx: { ...ctx, cwd: directory } }).ok, true);
+    }
+    const agents = await Promise.all(directories.map((directory, index) =>
+      probe({ action: 'create', directory, parentID: parents[index].id, model: { providerID: 'amazon-bedrock', id: liveModel } })));
+    const replies = await Promise.all(agents.map(agent =>
+      probe({ action: 'prompt', sessionID: agent.id, text: 'Read only the current Nanomneme system memory index. Reply with the concurrent beacon exactly. Do not use tools.' })));
+    for (const [index, agent] of agents.entries()) {
+      assert.equal(agent.parentID, parents[index].id);
+      assert.equal(agent.location.directory, directories[index]);
+      assert.match(assistantText(replies[index]), new RegExp(beacons[index]));
+      const context = JSON.stringify((await probe({ action: 'requests', sessionID: agent.id }, directories[index])).at(-1).system);
+      assert.match(context, new RegExp(beacons[index]));
+      assert.doesNotMatch(context, new RegExp(beacons[1 - index]));
+    }
   }
 });

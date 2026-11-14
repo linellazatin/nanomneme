@@ -3,7 +3,6 @@ import { browserRpc } from './browser-rpc.js';
 // V2 transport only: never import the local bridge into this client.
 export function createBrowserClient(api) {
   const controller = new AbortController();
-  const rpc = api.client.rpc(browserRpc);
   function location() {
     const route = api.ui.router.current();
     const value = route.type === 'session'
@@ -23,7 +22,26 @@ export function createBrowserClient(api) {
       if (expectedLocation && (current.directory !== expectedLocation.directory || current.workspaceID !== expectedLocation.workspaceID)) {
         throw new Error('Nanomneme browser location changed; reopen the browser.');
       }
-      return rpc[op](input, { location: current, signal: controller.signal });
+      for (let attempt = 0; ; attempt++) {
+        controller.signal.throwIfAborted();
+        const active = location();
+        if (active.directory !== current.directory || active.workspaceID !== current.workspaceID) {
+          throw new Error('Nanomneme browser location changed; reopen the browser.');
+        }
+        try {
+          return await api.client.rpc(browserRpc)[op](input, { location: current, signal: controller.signal });
+        } catch (error) {
+          // Only reads are safe to replay while a location's plugins load.
+          if (op === 'mutate' || error?.type !== 'rpc.unavailable' || attempt >= 49) throw error;
+          await new Promise((resolve, reject) => {
+            const signal = controller.signal;
+            signal.throwIfAborted();
+            const aborted = () => { clearTimeout(timer); reject(signal.reason); };
+            const timer = setTimeout(() => { signal.removeEventListener('abort', aborted); resolve(); }, 100);
+            signal.addEventListener('abort', aborted, { once: true });
+          });
+        }
+      }
     },
     dispose() { controller.abort(); },
   };

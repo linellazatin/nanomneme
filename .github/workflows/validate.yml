@@ -1,6 +1,15 @@
-name: CI
+name: Validate
 
 on:
+  workflow_call:
+    inputs:
+      release:
+        type: boolean
+        default: false
+    outputs:
+      notes:
+        description: Validated release changelog
+        value: ${{ jobs.validate.outputs.notes }}
   pull_request:
   push:
     branches:
@@ -10,12 +19,61 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: validate-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  opencode-compatibility:
+    name: OpenCode ${{ matrix.generation }} ${{ matrix.version }} (native and terminal)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - generation: v1
+            version: '1.19.0'
+            package: opencode-ai
+          - generation: v2
+            version: '2.0.29'
+            package: '@opencode/cli'
+          - generation: v2
+            version: '2.3.0'
+            package: '@opencode/cli'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - run: npm ci
+        timeout-minutes: 3
+      - name: Install terminal test dependencies
+        timeout-minutes: 2
+        run: python -m pip install pexpect==4.9.0 pyte==0.8.2
+      - name: Install isolated native host
+        timeout-minutes: 3
+        env:
+          HOST_PACKAGE: ${{ matrix.package }}
+          HOST_VERSION: ${{ matrix.version }}
+        # The native launcher requires the host package's postinstall script.
+        run: npm install --prefix "$RUNNER_TEMP/opencode-host" --no-audit --no-fund --no-package-lock "$HOST_PACKAGE@$HOST_VERSION"
+      - name: Validate native adapter and rendered terminal
+        timeout-minutes: 6
+        env:
+          HOST_GENERATION: ${{ matrix.generation }}
+          HOST_VERSION: ${{ matrix.version }}
+        run: node scripts/check-opencode-compatibility.js "$HOST_GENERATION" "$HOST_VERSION" "$RUNNER_TEMP/opencode-host/node_modules/.bin/opencode"
+      - name: Ensure tracked dependency metadata is unchanged
+        run: git diff --exit-code -- package.json package-lock.json adapters/opencode/package.json
+
   validate:
     runs-on: ubuntu-latest
+    outputs:
+      notes: ${{ steps.changelog.outputs.notes }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -28,6 +86,22 @@ jobs:
       - name: Audit full dependency tree (informational)
         run: npm audit --audit-level=high
         continue-on-error: true
+      - name: Verify release tag
+        if: inputs.release
+        run: |
+          version=$(node -p "require('./package.json').version")
+          test "$GITHUB_REF_TYPE" = tag
+          test "$GITHUB_REF_NAME" = "v$version"
+      - name: Extract changelog for this version
+        if: inputs.release
+        id: changelog
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          NOTES=$(awk -v version="$VERSION" '$0 == "## " version || index($0, "## " version " - ") == 1 { found=1; next } found && /^## / { exit } found { print }' CHANGELOG.md)
+          test -n "$NOTES"
+          echo "notes<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$NOTES" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
       # Blocking: generated runtimes, tests, shipped dependency audit, packages.
       - run: npm run validate
       - run: git diff --check

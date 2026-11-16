@@ -522,6 +522,116 @@ test('open validates the readOnly option before filesystem changes', async () =>
   await assert.rejects(access(path));
 });
 
+const performanceIndexName = 'nmnm_perf_v1_live_updated';
+
+async function indexlessStore(t) {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-optional-index-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  store.retain({ content: 'Existing compatible store', tags: ['existing'] });
+  const records = store.export();
+  store.close();
+  const raw = new DatabaseSync(path);
+  raw.exec(`DROP INDEX IF EXISTS ${performanceIndexName}`);
+  t.after(() => raw.close());
+  return { path, raw, records };
+}
+
+test('writable opens install an optional covering index without changing canonical schema or records', async (t) => {
+  const { path, raw, records } = await indexlessStore(t);
+  const reader = open(path, { readOnly: true });
+  const before = readFileSync(path);
+  assert.equal(reader.verify().ok, true);
+  assert.deepEqual(reader.export(), records);
+  reader.close();
+  assert.deepEqual(readFileSync(path), before);
+  const writer = open(path, { create: false });
+  t.after(() => writer.close());
+  assert.deepEqual(writer.export(), records);
+  assert.equal(raw.prepare("SELECT value FROM nmnm_meta WHERE key = 'schema_version'").get().value, '1');
+  const index = raw.prepare('SELECT sql FROM sqlite_master WHERE name = ?').get(performanceIndexName);
+  assert.match(index?.sql ?? '', /updated_at DESC, id, expires_at, namespace/);
+  const plan = raw.prepare('EXPLAIN QUERY PLAN SELECT COUNT(*) FROM memories WHERE removed_at IS NULL AND (expires_at IS NULL OR expires_at > ?)').all('2026-01-01T00:00:00.000Z');
+  assert(plan.some(row => row.detail.includes(performanceIndexName)));
+  const installed = readFileSync(path);
+  const second = open(path, { create: false });
+  second.close();
+  assert.deepEqual(readFileSync(path), installed);
+});
+
+test('failed optional-index installation rolls back and leaves the indexless store readable', async (t) => {
+  const { path, raw, records } = await indexlessStore(t);
+  const before = readFileSync(path);
+  const exec = DatabaseSync.prototype.exec;
+  DatabaseSync.prototype.exec = function (sql) {
+    const result = exec.call(this, sql);
+    if (sql.startsWith(`CREATE INDEX ${performanceIndexName}`)) throw new Error('Injected index failure');
+    return result;
+  };
+  try { assert.throws(() => open(path, { create: false }), /Injected index failure/); }
+  finally { DatabaseSync.prototype.exec = exec; }
+  assert.equal(raw.prepare('SELECT 1 FROM sqlite_master WHERE name = ?').get(performanceIndexName), undefined);
+  assert.deepEqual(readFileSync(path), before);
+  const reader = open(path, { readOnly: true });
+  try { assert.deepEqual(reader.export(), records); assert.equal(reader.verify().ok, true); }
+  finally { reader.close(); }
+});
+
+test('verification reports malformed optional indexes without requiring missing ones or rejecting unrelated indexes', async (t) => {
+  const { path, raw } = await indexlessStore(t);
+  raw.exec(`CREATE INDEX ${performanceIndexName} ON memories(namespace); CREATE INDEX unrelated ON memories(kind)`);
+  const store = open(path, { readOnly: true });
+  t.after(() => store.close());
+  assert.deepEqual(store.verify().issues, [{ code: 'performance_index', count: 1, ids: [performanceIndexName] }]);
+  assert.equal(store.retrieve().total, 1);
+});
+
+test('concurrent writable opens recheck optional-index installation after acquiring the write lock', { timeout: 15000 }, async (t) => {
+  const { path } = await indexlessStore(t);
+  const gate = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT);
+  let ready = 0;
+  const workers = Array.from({ length: 2 }, () => new Worker(`
+    const { parentPort, workerData } = require('node:worker_threads');
+    (async () => {
+      const { DatabaseSync } = await import('node:sqlite');
+      const { open } = await import(workerData.core);
+      const prepare = DatabaseSync.prototype.prepare;
+      let held = false;
+      DatabaseSync.prototype.prepare = function(sql) {
+        const statement = prepare.call(this, sql);
+        const get = statement.get;
+        statement.get = function(...args) {
+          const result = get.apply(this, args);
+          if (!held && args[0] === workerData.index && result === undefined) {
+            held = true;
+            parentPort.postMessage('ready');
+            if (Atomics.wait(new Int32Array(workerData.gate), 0, 0, 10000) === 'timed-out') throw new Error('Index coordination timed out');
+          }
+          return result;
+        };
+        return statement;
+      };
+      const store = open(workerData.path, { create: false });
+      store.close();
+      parentPort.postMessage('done');
+    })().catch(error => { throw error; });
+  `, { eval: true, workerData: { core: new URL('../src/index.js', import.meta.url).href, path, index: performanceIndexName, gate } }));
+  t.after(() => { Atomics.store(new Int32Array(gate), 0, 1); Atomics.notify(new Int32Array(gate), 0); return Promise.all(workers.map(worker => worker.terminate())); });
+  await Promise.all(workers.map(worker => new Promise((resolve, reject) => {
+    let done = false;
+    worker.on('message', message => {
+      if (message === 'ready' && ++ready === workers.length) {
+        Atomics.store(new Int32Array(gate), 0, 1);
+        Atomics.notify(new Int32Array(gate), 0);
+      }
+      if (message === 'done') done = true;
+    });
+    worker.once('error', reject);
+    worker.once('exit', code => code === 0 && done ? resolve() : reject(new Error(`Index worker exited ${code} before completing`)));
+  })));
+  assert.equal(ready, 2);
+});
+
 test('open rejects a database created by a newer schema', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-schema-'));
   const path = join(directory, 'memory.db');
@@ -767,6 +877,141 @@ test('rebuildFts repairs derived rows without changing canonical memories', asyn
   assert.deepEqual(store.rebuildFts(), { mode: 'rebuild-fts', rebuilt: 2 });
   assert.equal(store.verify().ok, true);
   assert.equal(store.recall({ id: first.id }).content, 'First rebuild target');
+});
+
+function captureSql(work) {
+  const prepare = DatabaseSync.prototype.prepare;
+  const statements = [];
+  DatabaseSync.prototype.prepare = function (sql) {
+    const statement = prepare.call(this, sql);
+    for (const method of ['get', 'all', 'run']) {
+      const execute = statement[method];
+      statement[method] = function (...args) {
+        statements.push(sql);
+        return execute.apply(this, args);
+      };
+    }
+    return statement;
+  };
+  try { return { result: work(), statements }; }
+  finally { DatabaseSync.prototype.prepare = prepare; }
+}
+
+function derivedWrites(statements) {
+  return statements.filter(sql => /^(DELETE FROM|INSERT INTO) (memory_tags|memories_fts)(\s|\()/.test(sql));
+}
+
+test('unchanged content and normalized tags avoid derived writes while patches advance timestamps', async (t) => {
+  const store = await createStore(t);
+  let memory = store.retain({ content: 'Unchanged SQLite target', tags: ['alpha', 'beta'], metadata: { source: 'pi' } });
+  for (const patch of [
+    { importance: 0.9 }, { confidence: 0.4 }, { metadata: { source: 'codex' } },
+    { expires_at: '9999-01-01T00:00:00.000Z' }, { kind: 'decision' }, { namespace: 'selected' },
+    { tags: ['beta', 'alpha', 'alpha'] }, { content: '  Unchanged SQLite target  ' }, {},
+  ]) {
+    const { result, statements } = captureSql(() => store.retain({ id: memory.id, ...patch }));
+    assert.deepEqual(derivedWrites(statements), [], JSON.stringify(patch));
+    assert(result.updated_at > memory.updated_at);
+    assert.equal(result.created_at, memory.created_at);
+    assert.equal(result.content, memory.content);
+    assert.deepEqual(result.tags, ['alpha', 'beta']);
+    memory = result;
+  }
+  assert.equal(store.retrieve({ query: 'SQLite' }).total, 1);
+  assert.equal(store.verify().ok, true);
+});
+
+test('changed tags and content synchronize independently and restores reindex even expired records', async (t) => {
+  const store = await createStore(t);
+  const memory = store.retain({ content: 'Original indexed target', tags: ['original'] });
+  const changedTags = captureSql(() => store.retain({ id: memory.id, tags: ['changed'] }));
+  assert.equal(derivedWrites(changedTags.statements).filter(sql => sql.includes('memory_tags')).length, 2);
+  assert.equal(derivedWrites(changedTags.statements).filter(sql => sql.includes('memories_fts')).length, 0);
+  const changedContent = captureSql(() => store.retain({ id: memory.id, content: 'Replacement indexed target' }));
+  assert.equal(derivedWrites(changedContent.statements).filter(sql => sql.includes('memory_tags')).length, 0);
+  assert.equal(derivedWrites(changedContent.statements).filter(sql => sql.includes('memories_fts')).length, 2);
+  assert.equal(store.retrieve({ query: 'Original' }).total, 0);
+  assert.equal(store.retrieve({ query: 'Replacement' }).total, 1);
+  store.remove({ id: memory.id });
+  const restored = captureSql(() => store.retain({ id: memory.id, expires_at: '2000-01-01T00:00:00.000Z' }));
+  assert.equal(derivedWrites(restored.statements).filter(sql => sql.includes('memory_tags')).length, 0);
+  assert.equal(derivedWrites(restored.statements).filter(sql => sql.includes('memories_fts')).length, 2);
+  assert.deepEqual(restored.result.tags, ['changed']);
+  assert.equal(store.retrieve({ query: 'Replacement' }).total, 0);
+  assert.equal(store.retrieve({ query: 'Replacement', expires: 'expired' }).total, 1);
+  assert.equal(store.verify().ok, true);
+});
+
+test('multi-row hydration preserves canonical exports, sorted tags, scores, and empty results', () => {
+  const store = open(':memory:');
+  try {
+    assert.deepEqual(store.export(), []);
+    assert.deepEqual(store.retrieve(), { total: 0, items: [] });
+    const template = store.retain({ content: 'Hydration SQLite target', metadata: { source: 'fixture', nested: { valid: true } } });
+    store.remove({ id: template.id, mode: 'purge' });
+    const records = Array.from({ length: 1201 }, (_, index) => ({ ...template,
+      id: `10000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+      tags: index % 2 ? ['alpha', 'beta'] : [],
+      expires_at: index % 3 ? null : '2000-01-01T00:00:00.000Z',
+      removed_at: index % 7 ? null : template.updated_at,
+    }));
+    store.import(records);
+    assert.deepEqual(store.export(), records);
+    const expected = records.filter(record => record.removed_at === null).slice(0, 1000);
+    assert.deepEqual(store.retrieve({ expires: 'any', order_by: 'id', limit: 1000 }).items, expected);
+    const searched = store.retrieve({ query: 'SQLite', expires: 'any', order_by: 'id', limit: 1000 });
+    assert(searched.items.every(record => Number.isFinite(record.score)));
+    assert.deepEqual(searched.items.map(({ score, ...record }) => record), expected);
+    assert.deepEqual(store.retrieve({ namespace: 'missing' }), { total: 0, items: [] });
+    assert.equal(store.verify().ok, true);
+  } finally { store.close(); }
+});
+
+test('batched export keeps one snapshot when tags change between hydration batches', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-batch-snapshot-'));
+  const path = join(directory, 'memory.db');
+  const reader = open(path);
+  const writer = open(path);
+  const raw = new DatabaseSync(path);
+  raw.exec('PRAGMA journal_mode = WAL');
+  t.after(() => { raw.close(); writer.close(); reader.close(); });
+  const template = writer.retain({ content: 'Batch snapshot', tags: ['before'] });
+  writer.remove({ id: template.id, mode: 'purge' });
+  const records = Array.from({ length: 1001 }, (_, index) => ({ ...template,
+    id: `10000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+  }));
+  writer.import(records);
+  const exported = afterSqlRead(
+    sql => sql.includes('FROM memory_tags WHERE memory_id'),
+    () => writer.retain({ id: records.at(-1).id, tags: ['after'] }),
+    () => reader.export(),
+  );
+  assert.deepEqual(exported, records);
+  assert.deepEqual(writer.recall({ id: records.at(-1).id }).tags, ['after']);
+});
+
+test('retrieval and large exports hydrate tags with bounded batches instead of per-row queries', () => {
+  const store = open(':memory:');
+  try {
+    const template = store.retain({ content: 'Batch target', tags: ['alpha', 'beta'] });
+    store.remove({ id: template.id, mode: 'purge' });
+    const records = Array.from({ length: 1201 }, (_, index) => ({ ...template,
+      id: `10000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+    }));
+    store.import(records);
+    for (const [work, expected] of [
+      [() => store.export(), records],
+      [() => store.retrieve({ order_by: 'id', limit: 1000 }).items, records.slice(0, 1000)],
+    ]) {
+      const { result, statements } = captureSql(work);
+      assert.deepEqual(result, expected);
+      const tagQueries = statements.filter(sql => /^SELECT .*FROM memory_tags\b/.test(sql));
+      assert(tagQueries.length <= 3, `${tagQueries.length} tag queries for ${result.length} records`);
+      assert(tagQueries.every(sql => (sql.match(/\?/g) ?? []).length <= 500));
+    }
+    const empty = captureSql(() => store.retrieve({ namespace: 'missing' }));
+    assert(!empty.statements.some(sql => sql.includes('FROM memory_tags')));
+  } finally { store.close(); }
 });
 
 test('retain creates an active memory that recall returns', async (t) => {

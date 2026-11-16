@@ -35,6 +35,26 @@ const SCHEMA_COLUMNS = {
 };
 const MEMORY_SELECT = SCHEMA_COLUMNS.memories.map((column) => `m.${column}`).join(', ');
 const MIGRATIONS = new Map();
+// Optional and backward-readable: indexless schema-1 stores remain valid.
+const PERFORMANCE_INDEX_NAME = 'nmnm_perf_v1_live_updated';
+const PERFORMANCE_INDEX_SQL = `CREATE INDEX ${PERFORMANCE_INDEX_NAME} ON memories(updated_at DESC, id, expires_at, namespace) WHERE removed_at IS NULL`;
+
+function performanceIndex(db) {
+  return db.prepare('SELECT type, sql FROM sqlite_master WHERE name = ?').get(PERFORMANCE_INDEX_NAME);
+}
+
+function ensurePerformanceIndex(db) {
+  if (performanceIndex(db)) return;
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    // Another opener may have installed it while this connection waited.
+    if (!performanceIndex(db)) db.exec(PERFORMANCE_INDEX_SQL);
+    db.exec('COMMIT');
+  } catch (error) {
+    try { db.exec('ROLLBACK'); } catch {}
+    throw error;
+  }
+}
 
 function text(value, name) {
   if (typeof value !== 'string' || !value.trim()) throw new TypeError(`${name} must be a non-empty string`);
@@ -372,7 +392,10 @@ export function open(path, { create = true, readOnly = false } = {}) {
     const version = path === ':memory:' ? (db.exec(SCHEMA), SCHEMA_VERSION) : schemaVersion(db);
     if (version > SCHEMA_VERSION) throw new Error(`database schema version ${version} is newer than this version of nanomneme`);
     if (readOnly && version < SCHEMA_VERSION) throw new Error(`database schema version ${version} requires migration before read-only use`);
-    if (!readOnly) migrate(db, version);
+    if (!readOnly) {
+      migrate(db, version);
+      ensurePerformanceIndex(db);
+    }
   } catch (error) {
     db.close();
     if (fresh && /fts5/i.test(error.message)) throw new Error('SQLite FTS5 support is required', { cause: error });
@@ -380,11 +403,22 @@ export function open(path, { create = true, readOnly = false } = {}) {
   }
 
   const active = 'm.removed_at IS NULL AND (m.expires_at IS NULL OR m.expires_at > ?)';
-  const hydrate = (row) => {
-    const memoryTags = db.prepare('SELECT tag FROM memory_tags WHERE memory_id = ? ORDER BY tag').all(row.id).map(({ tag }) => tag);
+  const hydrate = (row, memoryTags = db.prepare('SELECT tag FROM memory_tags WHERE memory_id = ? ORDER BY tag').all(row.id).map(({ tag }) => tag)) => {
     const memory = { ...row, metadata: JSON.parse(row.metadata), tags: memoryTags };
     if (memory.score == null) delete memory.score;
     return memory;
+  };
+  const hydrateMany = (rows) => {
+    const tagsById = new Map();
+    for (let offset = 0; offset < rows.length; offset += 500) {
+      const ids = rows.slice(offset, offset + 500).map(row => row.id);
+      const memoryTags = db.prepare(`SELECT memory_id, tag FROM memory_tags WHERE memory_id IN (${ids.map(() => '?').join(', ')}) ORDER BY memory_id, tag`).all(...ids);
+      for (const { memory_id, tag } of memoryTags) {
+        if (!tagsById.has(memory_id)) tagsById.set(memory_id, []);
+        tagsById.get(memory_id).push(tag);
+      }
+    }
+    return rows.map(row => hydrate(row, tagsById.get(row.id) ?? []));
   };
   const read = (id, activeOnly = true) => {
     const targetId = memoryId(id);
@@ -448,8 +482,8 @@ export function open(path, { create = true, readOnly = false } = {}) {
           const now = mutationTimestamp(current);
           db.prepare(`UPDATE memories SET content = ?, kind = ?, scope = ?, namespace = ?, importance = ?, confidence = ?, updated_at = ?, expires_at = ?, removed_at = NULL, metadata = ? WHERE id = ?`)
             .run(next.content, next.kind, next.scope, next.namespace, next.importance, next.confidence, now, next.expires_at, JSON.stringify(next.metadata), id);
-          writeTags(id, next.tags);
-          syncFts(id, next.content);
+          if (next.tags.length !== current.tags.length || next.tags.some((tag, index) => tag !== current.tags[index])) writeTags(id, next.tags);
+          if (current.removed_at != null || next.content !== current.content) syncFts(id, next.content);
           return read(id, false);
         });
       }
@@ -522,12 +556,12 @@ export function open(path, { create = true, readOnly = false } = {}) {
         const total = db.prepare(`SELECT COUNT(*) AS total FROM memories m ${join} WHERE ${condition}`).get(...parameters).total;
         const rows = db.prepare(`SELECT ${MEMORY_SELECT}, ${query ? 'bm25(memories_fts) AS score' : 'NULL AS score'} FROM memories m ${join} WHERE ${condition} ORDER BY ${ordering} LIMIT ? OFFSET ?`)
           .all(...parameters, limit, offset);
-        return { total, items: rows.map(hydrate) };
+        return { total, items: hydrateMany(rows) };
       }, 'DEFERRED');
     },
 
     export() {
-      return transaction(() => db.prepare(`SELECT ${MEMORY_SELECT} FROM memories m ORDER BY m.id`).all().map(hydrate), 'DEFERRED');
+      return transaction(() => hydrateMany(db.prepare(`SELECT ${MEMORY_SELECT} FROM memories m ORDER BY m.id`).all()), 'DEFERRED');
     },
 
     import(records) {
@@ -566,6 +600,9 @@ export function open(path, { create = true, readOnly = false } = {}) {
     verify() {
       return transaction(() => {
         const report = issueReporter();
+        const index = performanceIndex(db);
+        const normalizedSql = sql => sql?.replace(/\s+/g, ' ').trim().toLowerCase();
+        if (index && (index.type !== 'index' || normalizedSql(index.sql) !== normalizedSql(PERFORMANCE_INDEX_SQL))) report.add('performance_index', PERFORMANCE_INDEX_NAME);
         if (permissionsPath !== null && process.platform !== 'win32') {
           for (const [label, suffix] of [['database', ''], ['journal', '-journal'], ['wal', '-wal'], ['shm', '-shm']]) {
             try {

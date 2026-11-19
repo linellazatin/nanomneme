@@ -522,7 +522,13 @@ test('open validates the readOnly option before filesystem changes', async () =>
   await assert.rejects(access(path));
 });
 
-const performanceIndexName = 'nmnm_perf_v1_live_updated';
+const legacyPerformanceIndexName = 'nmnm_perf_v1_live_updated';
+const performanceIndexName = 'nmnm_perf_v2_live_updated_source';
+const sourceExpression = "CASE WHEN json_valid(metadata) THEN json_extract(metadata, '$.source') END";
+const performanceIndexDefinitions = [
+  [legacyPerformanceIndexName, 'updated_at DESC, id, expires_at, namespace'],
+  [performanceIndexName, `updated_at DESC, id, expires_at, namespace, ${sourceExpression}`],
+];
 
 async function indexlessStore(t) {
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-optional-index-'));
@@ -532,7 +538,7 @@ async function indexlessStore(t) {
   const records = store.export();
   store.close();
   const raw = new DatabaseSync(path);
-  raw.exec(`DROP INDEX IF EXISTS ${performanceIndexName}`);
+  for (const [name] of performanceIndexDefinitions) raw.exec(`DROP INDEX IF EXISTS ${name}`);
   t.after(() => raw.close());
   return { path, raw, records };
 }
@@ -552,29 +558,48 @@ test('writable opens install an optional covering index without changing canonic
   const index = raw.prepare('SELECT sql FROM sqlite_master WHERE name = ?').get(performanceIndexName);
   assert.match(index?.sql ?? '', /updated_at DESC, id, expires_at, namespace/);
   const plan = raw.prepare('EXPLAIN QUERY PLAN SELECT COUNT(*) FROM memories WHERE removed_at IS NULL AND (expires_at IS NULL OR expires_at > ?)').all('2026-01-01T00:00:00.000Z');
-  assert(plan.some(row => row.detail.includes(performanceIndexName)));
+  assert(plan.some(row => performanceIndexDefinitions.some(([name]) => row.detail.includes(name))));
   const installed = readFileSync(path);
   const second = open(path, { create: false });
   second.close();
   assert.deepEqual(readFileSync(path), installed);
 });
 
-test('failed optional-index installation rolls back and leaves the indexless store readable', async (t) => {
+for (const [operation, name] of [['CREATE INDEX', performanceIndexName], ['DROP INDEX', legacyPerformanceIndexName]]) {
+  test(`failed ${operation} ${name} rolls back the optional-index replacement`, async (t) => {
+    const { path, raw, records } = await indexlessStore(t);
+    raw.exec(`CREATE INDEX ${legacyPerformanceIndexName} ON memories(updated_at DESC, id, expires_at, namespace) WHERE removed_at IS NULL`);
+    const before = readFileSync(path);
+    const exec = DatabaseSync.prototype.exec;
+    DatabaseSync.prototype.exec = function (sql) {
+      const result = exec.call(this, sql);
+      if (sql.startsWith(`${operation} ${name}`)) throw new Error('Injected index failure');
+      return result;
+    };
+    try { assert.throws(() => open(path, { create: false }), /Injected index failure/); }
+    finally { DatabaseSync.prototype.exec = exec; }
+    assert.equal(raw.prepare('SELECT 1 FROM sqlite_master WHERE name = ?').get(performanceIndexName), undefined);
+    assert(raw.prepare('SELECT 1 FROM sqlite_master WHERE name = ?').get(legacyPerformanceIndexName));
+    assert.deepEqual(readFileSync(path), before);
+    const reader = open(path, { readOnly: true });
+    try { assert.deepEqual(reader.export(), records); assert.equal(reader.verify().ok, true); }
+    finally { reader.close(); }
+  });
+}
+
+test('legacy recency stores remain healthy read-only and replace their index on the next writable open', async (t) => {
   const { path, raw, records } = await indexlessStore(t);
+  raw.exec(`CREATE INDEX ${legacyPerformanceIndexName} ON memories(updated_at DESC, id, expires_at, namespace) WHERE removed_at IS NULL`);
   const before = readFileSync(path);
-  const exec = DatabaseSync.prototype.exec;
-  DatabaseSync.prototype.exec = function (sql) {
-    const result = exec.call(this, sql);
-    if (sql.startsWith(`CREATE INDEX ${performanceIndexName}`)) throw new Error('Injected index failure');
-    return result;
-  };
-  try { assert.throws(() => open(path, { create: false }), /Injected index failure/); }
-  finally { DatabaseSync.prototype.exec = exec; }
-  assert.equal(raw.prepare('SELECT 1 FROM sqlite_master WHERE name = ?').get(performanceIndexName), undefined);
-  assert.deepEqual(readFileSync(path), before);
   const reader = open(path, { readOnly: true });
-  try { assert.deepEqual(reader.export(), records); assert.equal(reader.verify().ok, true); }
+  try { assert.equal(reader.verify().ok, true); assert.deepEqual(reader.export(), records); }
   finally { reader.close(); }
+  assert.deepEqual(readFileSync(path), before);
+  const writer = open(path, { create: false });
+  try { assert.equal(writer.verify().ok, true); assert.deepEqual(writer.export(), records); }
+  finally { writer.close(); }
+  assert(raw.prepare('SELECT 1 FROM sqlite_master WHERE name = ?').get(performanceIndexName));
+  assert.equal(raw.prepare('SELECT 1 FROM sqlite_master WHERE name = ?').get(legacyPerformanceIndexName), undefined);
 });
 
 test('verification reports malformed optional indexes without requiring missing ones or rejecting unrelated indexes', async (t) => {
@@ -584,6 +609,165 @@ test('verification reports malformed optional indexes without requiring missing 
   t.after(() => store.close());
   assert.deepEqual(store.verify().issues, [{ code: 'performance_index', count: 1, ids: [performanceIndexName] }]);
   assert.equal(store.retrieve().total, 1);
+});
+
+for (const analyzed of [false, true]) test(`source-only counts stay covered ${analyzed ? 'with' : 'without'} planner statistics`, async (t) => {
+  const { path, raw } = await indexlessStore(t);
+  let store = open(path, { create: false });
+  t.after(() => store.close());
+  const selected = store.retain({ content: 'Source planning target', namespace: 'selected', metadata: { source: 'pi' }, tags: ['rare'] });
+  const other = store.retain({ content: 'Source planning target', metadata: { source: 'pi' } });
+  store.retain({ content: 'Source planning target', metadata: { source: 'claude-code' } });
+  if (analyzed) {
+    store.close();
+    raw.exec('ANALYZE memories');
+    store = open(path, { readOnly: true });
+  }
+  const before = readFileSync(path);
+  const plans = [];
+  const canonicalReads = [];
+  const hinted = [];
+  const prepare = DatabaseSync.prototype.prepare;
+  DatabaseSync.prototype.prepare = function (sql) {
+    const statement = prepare.call(this, sql);
+    if (sql.startsWith('SELECT COUNT(*) AS total FROM memories m')) {
+      const db = this;
+      const get = statement.get;
+      statement.get = function (...args) {
+        plans.push(prepare.call(db, 'EXPLAIN QUERY PLAN ' + sql).all(...args).map(row => row.detail));
+        const rootpage = prepare.call(db, "SELECT rootpage FROM sqlite_master WHERE name = 'memories'").get().rootpage;
+        const program = prepare.call(db, 'EXPLAIN ' + sql).all(...args);
+        const cursors = new Set(program.filter(row => row.opcode === 'OpenRead' && row.p2 === rootpage && row.p3 === 0).map(row => row.p1));
+        canonicalReads.push(program.some(row => row.opcode === 'Column' && cursors.has(row.p1)));
+        hinted.push(sql.includes('INDEXED BY'));
+        return get.apply(this, args);
+      };
+    }
+    return statement;
+  };
+  try {
+    assert.equal(store.retrieve().total, 4);
+    const source = store.retrieve({ source: 'pi', order_by: 'id' });
+    assert.equal(source.total, 2);
+    assert.deepEqual(source.items.map(row => row.id), [selected.id, other.id].sort());
+    assert.equal(store.retrieve({ source: 'pi', namespace: 'selected' }).total, 1);
+    assert.equal(store.retrieve({ source: 'pi', tags: ['rare'] }).total, 1);
+    assert.equal(store.retrieve({ source: 'pi', query: 'planning' }).total, 2);
+    for (const filter of [{ kind: 'note' }, { scope: 'project' }, { importance: { gte: 0 } }, { confidence: { gte: 0 } }]) {
+      assert.equal(store.retrieve({ source: 'pi', ...filter }).total, 2);
+    }
+  } finally { DatabaseSync.prototype.prepare = prepare; }
+  assert(plans[0].some(detail => detail.includes(performanceIndexName)), 'unfiltered counts retain a covering index');
+  assert(plans[1].some(detail => detail.includes(performanceIndexName)), 'source-only counts use the source-aware covering index');
+  assert.equal(canonicalReads[1], false, 'source-only counts must not read canonical columns');
+  assert(plans[2].some(detail => detail.includes(performanceIndexName)), 'source and namespace counts retain covered filtering');
+  assert(plans[3].some(detail => detail.includes('memory_tags')), 'tag candidates retain indexed filtering');
+  if (!analyzed) assert(plans[4][0].includes('SCAN memories_fts'), 'text counts retain FTS-first candidate selection');
+  assert.deepEqual(hinted, [true, true, true, false, false, false, false, false, false]);
+  assert.deepEqual(readFileSync(path), before);
+});
+
+for (const [name] of performanceIndexDefinitions) {
+  test(`case-variant ${name} remains readable and writable without duplicate installation`, async (t) => {
+    const { path, raw, records } = await indexlessStore(t);
+    for (const [other, definition] of performanceIndexDefinitions) {
+      raw.exec(`CREATE INDEX ${other === name ? other.toUpperCase() : other} ON memories(${definition}) WHERE removed_at IS NULL`);
+    }
+    const before = readFileSync(path);
+    const reader = open(path, { readOnly: true });
+    try {
+      assert.equal(reader.verify().ok, true);
+      assert.deepEqual(reader.export(), records);
+    } finally { reader.close(); }
+    assert.deepEqual(readFileSync(path), before);
+    const rootpage = raw.prepare('SELECT rootpage FROM sqlite_master WHERE name = ? COLLATE NOCASE').get(performanceIndexName).rootpage;
+    const writer = open(path, { create: false });
+    try {
+      assert.equal(writer.verify().ok, true);
+      assert.deepEqual(writer.export(), records);
+      assert.equal(raw.prepare('SELECT COUNT(*) AS count FROM sqlite_master WHERE name = ? COLLATE NOCASE').get(performanceIndexName).count, 1);
+      assert.equal(raw.prepare('SELECT 1 FROM sqlite_master WHERE name = ? COLLATE NOCASE').get(legacyPerformanceIndexName), undefined);
+      assert.equal(raw.prepare('SELECT rootpage FROM sqlite_master WHERE name = ? COLLATE NOCASE').get(performanceIndexName).rootpage, rootpage);
+    } finally { writer.close(); }
+  });
+
+  test(`case-variant ${name} conflicts are reported without replacement or blocking writable opens`, async (t) => {
+    const { path, raw, records } = await indexlessStore(t);
+    for (const [other, definition] of performanceIndexDefinitions) {
+      raw.exec(`CREATE INDEX ${other === name ? other.toUpperCase() : other} ON memories(${other === name ? 'namespace' : definition}) WHERE removed_at IS NULL`);
+    }
+    const before = readFileSync(path);
+    const expected = [{ code: 'performance_index', count: 1, ids: [name] }];
+    const reader = open(path, { readOnly: true });
+    try { assert.deepEqual(reader.verify().issues, expected); }
+    finally { reader.close(); }
+    assert.deepEqual(readFileSync(path), before);
+    const writer = open(path, { create: false });
+    try {
+      assert.deepEqual(writer.verify().issues, expected);
+      assert.deepEqual(writer.export(), records);
+    } finally { writer.close(); }
+    assert.deepEqual(readFileSync(path), before);
+  });
+}
+
+test('quoted case-variant optional-index identifiers remain equivalent', async (t) => {
+  const { path, raw, records } = await indexlessStore(t);
+  for (const [name, columns] of performanceIndexDefinitions) {
+    const quoted = columns.replace(/\b(metadata|updated_at|id|expires_at|namespace)\b/g, '"$1"');
+    raw.exec(`CREATE INDEX "${name.toUpperCase()}" ON "memories"(${quoted}) WHERE removed_at IS NULL`);
+  }
+  const before = readFileSync(path);
+  for (const readOnly of [true, false]) {
+    const store = open(path, { readOnly, create: false });
+    try { assert.equal(store.verify().ok, true); assert.deepEqual(store.export(), records); }
+    finally { store.close(); }
+    if (readOnly) assert.deepEqual(readFileSync(path), before);
+  }
+  assert.equal(raw.prepare('SELECT 1 FROM sqlite_master WHERE name = ? COLLATE NOCASE').get(legacyPerformanceIndexName), undefined);
+  assert(raw.prepare('SELECT 1 FROM sqlite_master WHERE name = ? COLLATE NOCASE').get(performanceIndexName));
+});
+
+test('indexed and FTS source filters preserve JSON value types, case, trimming and metadata patches', async (t) => {
+  const { path, raw } = await indexlessStore(t);
+  const store = open(path, { create: false });
+  t.after(() => store.close());
+  const values = ['pi', 'PI', ' pi ', 1, true, null, { agent: 'pi' }, ['pi']];
+  const memories = values.map(source => store.retain({ content: 'Typed source target', metadata: { source } }));
+  for (const source of ['pi', ' pi ', 'PI', '1', 'true', 'null', '{"agent":"pi"}', '["pi"]', 'missing']) {
+    const expected = raw.prepare("SELECT id FROM memories WHERE removed_at IS NULL AND json_extract(metadata, '$.source') = ? ORDER BY id").all(source.trim()).map(row => row.id);
+    for (const query of [undefined, '"Typed source target"']) {
+      const result = store.retrieve({ source, query, order_by: 'id' });
+      assert.equal(result.total, expected.length);
+      assert.deepEqual(result.items.map(row => row.id), expected);
+    }
+  }
+  store.retain({ id: memories[0].id, metadata: { source: 'claude-code' } });
+  assert.equal(store.retrieve({ source: 'pi' }).total, 0);
+  assert.equal(store.retrieve({ source: 'claude-code' }).total, 1);
+  store.remove({ id: memories[0].id });
+  assert.equal(store.retrieve({ source: 'claude-code' }).total, 0);
+  store.retain({ id: memories[0].id });
+  assert.equal(store.retrieve({ source: 'claude-code' }).total, 1);
+  assert.equal(store.verify().ok, true);
+});
+
+test('source index installation preserves malformed-metadata verification', async (t) => {
+  const { path, raw, records } = await indexlessStore(t);
+  raw.exec("UPDATE memories SET metadata = 'not-json'");
+  const writer = open(path, { create: false });
+  try {
+    assert.deepEqual(writer.verify().issues, [{ code: 'memory_field', count: 1, ids: [records[0].id] }]);
+    assert(raw.prepare('SELECT 1 FROM sqlite_master WHERE name = ?').get(performanceIndexName));
+  } finally { writer.close(); }
+});
+
+test('source index verification preserves case-sensitive JSON-path literals', async (t) => {
+  const { path, raw } = await indexlessStore(t);
+  raw.exec(`CREATE INDEX ${performanceIndexName} ON memories(updated_at DESC, id, expires_at, namespace, CASE WHEN json_valid(metadata) THEN json_extract(metadata, '$.SOURCE') END) WHERE removed_at IS NULL`);
+  const reader = open(path, { readOnly: true });
+  try { assert.deepEqual(reader.verify().issues, [{ code: 'performance_index', count: 1, ids: [performanceIndexName] }]); }
+  finally { reader.close(); }
 });
 
 test('concurrent writable opens recheck optional-index installation after acquiring the write lock', { timeout: 15000 }, async (t) => {

@@ -64,6 +64,9 @@ test('benchmark runner records comparable modes and refuses to overwrite evidenc
       assert.equal(mode.timings.restore.warmups, 5);
       assert(mode.timings.recall.p95_ms >= mode.timings.recall.p50_ms);
       assert(mode.plans['memories_fts.rank'].length > 0);
+      assert(mode.plans.source.some(detail => detail.includes('nmnm_perf_v2_live_updated_source')));
+      assert(mode.plans.source_count.some(detail => detail.includes('nmnm_perf_v2_live_updated_source')));
+      assert.equal(mode.source_count_canonical_column_reads, 0);
       assert(mode.bytes.database > 0);
     }
     assert.throws(() => execFileSync(process.execPath, args, { stdio: 'pipe' }), /EEXIST/);

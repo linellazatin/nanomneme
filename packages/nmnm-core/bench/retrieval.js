@@ -59,14 +59,19 @@ function inspect(path) {
       recent: 'SELECT m.id FROM memories m WHERE m.removed_at IS NULL AND (m.expires_at IS NULL OR m.expires_at > ?) ORDER BY m.updated_at DESC, m.id ASC LIMIT 20',
       namespace: "SELECT m.id FROM memories m WHERE m.removed_at IS NULL AND m.namespace = 'selected' AND (m.expires_at IS NULL OR m.expires_at > ?) ORDER BY m.updated_at DESC, m.id ASC LIMIT 20",
       tags: "SELECT m.id FROM memories m WHERE m.removed_at IS NULL AND (m.expires_at IS NULL OR m.expires_at > ?) AND m.id IN (SELECT memory_id FROM memory_tags WHERE tag IN ('common', 'rare') GROUP BY memory_id HAVING COUNT(DISTINCT tag) = 2) ORDER BY m.updated_at DESC, m.id ASC LIMIT 20",
-      source: "SELECT m.id FROM memories m WHERE m.removed_at IS NULL AND json_extract(m.metadata, '$.source') = 'pi' AND (m.expires_at IS NULL OR m.expires_at > ?) ORDER BY m.updated_at DESC, m.id ASC LIMIT 20",
+      source: "SELECT m.id FROM memories m WHERE m.removed_at IS NULL AND CASE WHEN json_valid(m.metadata) THEN json_extract(m.metadata, '$.source') END = 'pi' AND (m.expires_at IS NULL OR m.expires_at > ?) ORDER BY m.updated_at DESC, m.id ASC LIMIT 20",
+      source_count: "SELECT COUNT(*) FROM memories m WHERE m.removed_at IS NULL AND CASE WHEN json_valid(m.metadata) THEN json_extract(m.metadata, '$.source') END = 'pi' AND (m.expires_at IS NULL OR m.expires_at > ?)",
       count: 'SELECT COUNT(*) FROM memories m WHERE m.removed_at IS NULL AND (m.expires_at IS NULL OR m.expires_at > ?)',
     };
     const plans = Object.fromEntries(Object.entries(sql).map(([name, statement]) => [name, db.prepare('EXPLAIN QUERY PLAN ' + statement).all(new Date().toISOString()).map(row => row.detail)]));
     for (const score of ['bm25(memories_fts)', 'memories_fts.rank']) {
       plans[score] = db.prepare(`EXPLAIN QUERY PLAN SELECT m.id, ${score} AS score FROM memories m JOIN memories_fts ON memories_fts.rowid = m.rowid WHERE m.removed_at IS NULL AND memories_fts MATCH ? ORDER BY score ASC, m.importance DESC, m.id ASC LIMIT 20`).all('SQLite').map(row => row.detail);
     }
-    return { sqlite: db.prepare('SELECT sqlite_version() AS version').get().version, journal_mode: db.prepare('PRAGMA journal_mode').get().journal_mode, plans };
+    const rootpage = db.prepare("SELECT rootpage FROM sqlite_master WHERE name = 'memories'").get().rootpage;
+    const program = db.prepare('EXPLAIN ' + sql.source_count).all(new Date().toISOString());
+    const cursors = new Set(program.filter(row => row.opcode === 'OpenRead' && row.p2 === rootpage && row.p3 === 0).map(row => row.p1));
+    const source_count_canonical_column_reads = program.filter(row => row.opcode === 'Column' && cursors.has(row.p1)).length;
+    return { sqlite: db.prepare('SELECT sqlite_version() AS version').get().version, journal_mode: db.prepare('PRAGMA journal_mode').get().journal_mode, plans, source_count_canonical_column_reads };
   } finally { db.close(); }
 }
 

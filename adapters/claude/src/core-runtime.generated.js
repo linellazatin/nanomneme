@@ -60,16 +60,29 @@ var SCHEMA_COLUMNS = {
 };
 var MEMORY_SELECT = SCHEMA_COLUMNS.memories.map((column) => `m.${column}`).join(", ");
 var MIGRATIONS = /* @__PURE__ */ new Map();
-var PERFORMANCE_INDEX_NAME = "nmnm_perf_v1_live_updated";
-var PERFORMANCE_INDEX_SQL = `CREATE INDEX ${PERFORMANCE_INDEX_NAME} ON memories(updated_at DESC, id, expires_at, namespace) WHERE removed_at IS NULL`;
-function performanceIndex(db) {
-  return db.prepare("SELECT type, sql FROM sqlite_master WHERE name = ?").get(PERFORMANCE_INDEX_NAME);
+var LEGACY_PERFORMANCE_INDEX_NAME = "nmnm_perf_v1_live_updated";
+var PERFORMANCE_INDEX_NAME = "nmnm_perf_v2_live_updated_source";
+var SOURCE_EXPRESSION = "CASE WHEN json_valid(metadata) THEN json_extract(metadata, '$.source') END";
+var PERFORMANCE_INDEXES = new Map([
+  [LEGACY_PERFORMANCE_INDEX_NAME, "updated_at DESC, id, expires_at, namespace"],
+  [PERFORMANCE_INDEX_NAME, `updated_at DESC, id, expires_at, namespace, ${SOURCE_EXPRESSION}`]
+].map(([name, columns]) => [name, `CREATE INDEX ${name} ON memories(${columns}) WHERE removed_at IS NULL`]));
+function performanceIndex(db, name = PERFORMANCE_INDEX_NAME) {
+  return db.prepare("SELECT type, sql FROM sqlite_master WHERE name = ? COLLATE NOCASE").get(name);
+}
+function normalizedIndexSql(sql) {
+  return sql?.split(/('(?:''|[^'])*')/).map((part, index) => index % 2 ? part : part.replace(/["`\[]([a-z_][a-z_0-9]*)["`\]]/gi, "$1").replace(/\s+/g, " ").toLowerCase()).join("").trim();
+}
+function matchesPerformanceIndex(index, name) {
+  return index?.type === "index" && normalizedIndexSql(index.sql) === normalizedIndexSql(PERFORMANCE_INDEXES.get(name));
 }
 function ensurePerformanceIndex(db) {
-  if (performanceIndex(db)) return;
+  const current = performanceIndex(db);
+  if (current && (!matchesPerformanceIndex(current, PERFORMANCE_INDEX_NAME) || !matchesPerformanceIndex(performanceIndex(db, LEGACY_PERFORMANCE_INDEX_NAME), LEGACY_PERFORMANCE_INDEX_NAME))) return;
   db.exec("BEGIN IMMEDIATE");
   try {
-    if (!performanceIndex(db)) db.exec(PERFORMANCE_INDEX_SQL);
+    if (!performanceIndex(db)) db.exec(PERFORMANCE_INDEXES.get(PERFORMANCE_INDEX_NAME));
+    if (matchesPerformanceIndex(performanceIndex(db), PERFORMANCE_INDEX_NAME) && matchesPerformanceIndex(performanceIndex(db, LEGACY_PERFORMANCE_INDEX_NAME), LEGACY_PERFORMANCE_INDEX_NAME)) db.exec(`DROP INDEX ${LEGACY_PERFORMANCE_INDEX_NAME}`);
     db.exec("COMMIT");
   } catch (error) {
     try {
@@ -533,14 +546,16 @@ function open(path, { create = true, readOnly = false } = {}) {
         parameters.push(query);
       }
       if (source) {
-        where.push("json_extract(m.metadata, '$.source') = ?");
+        where.push(`${query ? "json_extract(m.metadata, '$.source')" : SOURCE_EXPRESSION} = ?`);
         parameters.push(source);
       }
+      let coveredCount = !query;
       for (const [field, value] of [["kind", selector.kind], ["scope", selector.scope], ["namespace", selector.namespace]]) {
         const values = list(value, field);
         if (field === "kind") values.forEach(kind);
         if (field === "scope") values.forEach(scope);
         if (field === "namespace") values.forEach((value2) => slug(value2, "namespace"));
+        if (field !== "namespace" && values.length) coveredCount = false;
         if (values.length) {
           where.push(`m.${field} IN (${values.map(() => "?").join(", ")})`);
           parameters.push(...values);
@@ -548,11 +563,13 @@ function open(path, { create = true, readOnly = false } = {}) {
       }
       const wantedTags = tags(selector.tags);
       if (wantedTags.length) {
+        coveredCount = false;
         where.push(`m.id IN (SELECT memory_id FROM memory_tags WHERE tag IN (${wantedTags.map(() => "?").join(", ")}) GROUP BY memory_id HAVING COUNT(DISTINCT tag) = ?)`);
         parameters.push(...wantedTags, wantedTags.length);
       }
       for (const [field, value] of [["importance", selector.importance], ["confidence", selector.confidence]]) {
         for (const [operator, target] of range(value, field)) {
+          coveredCount = false;
           where.push(`m.${field} ${operator} ?`);
           parameters.push(target);
         }
@@ -563,7 +580,8 @@ function open(path, { create = true, readOnly = false } = {}) {
       const condition = where.join(" AND ");
       if (unmatched) return { total: 0, items: [] };
       return transaction(() => {
-        const total = db.prepare(`SELECT COUNT(*) AS total FROM memories m ${join2} WHERE ${condition}`).get(...parameters).total;
+        const countIndex = coveredCount && matchesPerformanceIndex(performanceIndex(db), PERFORMANCE_INDEX_NAME) ? `INDEXED BY ${PERFORMANCE_INDEX_NAME}` : "";
+        const total = db.prepare(`SELECT COUNT(*) AS total FROM memories m ${countIndex} ${join2} WHERE ${condition}`).get(...parameters).total;
         const rows = db.prepare(`SELECT ${MEMORY_SELECT}, ${query ? "bm25(memories_fts) AS score" : "NULL AS score"} FROM memories m ${join2} WHERE ${condition} ORDER BY ${ordering} LIMIT ? OFFSET ?`).all(...parameters, limit, offset);
         return { total, items: hydrateMany(rows) };
       }, "DEFERRED");
@@ -604,9 +622,10 @@ function open(path, { create = true, readOnly = false } = {}) {
     verify() {
       return transaction(() => {
         const report = issueReporter();
-        const index = performanceIndex(db);
-        const normalizedSql = (sql) => sql?.replace(/\s+/g, " ").trim().toLowerCase();
-        if (index && (index.type !== "index" || normalizedSql(index.sql) !== normalizedSql(PERFORMANCE_INDEX_SQL))) report.add("performance_index", PERFORMANCE_INDEX_NAME);
+        for (const name of PERFORMANCE_INDEXES.keys()) {
+          const index = performanceIndex(db, name);
+          if (index && !matchesPerformanceIndex(index, name)) report.add("performance_index", name);
+        }
         if (permissionsPath !== null && process.platform !== "win32") {
           for (const [label, suffix] of [["database", ""], ["journal", "-journal"], ["wal", "-wal"], ["shm", "-shm"]]) {
             try {
@@ -625,7 +644,7 @@ function open(path, { create = true, readOnly = false } = {}) {
           }
           const actual = db.prepare(`PRAGMA table_info(${table})`).all().map(({ name }) => name);
           tableColumns.set(table, actual);
-          if (actual.length !== columns.length || columns.some((column, index2) => actual[index2] !== column)) report.add("schema_columns", table);
+          if (actual.length !== columns.length || columns.some((column, index) => actual[index] !== column)) report.add("schema_columns", table);
         }
         const ftsSchema = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'memories_fts'").get();
         const validFts = ftsSchema && /^CREATE VIRTUAL TABLE\s+memories_fts\s+USING\s+fts5\b/i.test(ftsSchema.sql);

@@ -68,9 +68,9 @@ test('release metadata aligns core improvements and dependency-only adapter patc
   assert.equal(root.engines.node, '>=22.19.0');
   assert.equal(pi.engines.node, '>=22.19.0');
   assert.equal(root.devDependencies['@earendil-works/pi-coding-agent'], '>=0.87.0');
-  // Development host policy is ~1.5.0; npm ci still uses an exact lockfile resolution.
+  // Development host policy is ~1.6.0; npm ci still uses an exact lockfile resolution.
   assert.match(lock.packages['node_modules/@earendil-works/pi-coding-agent'].version,
-    /^1\.5\.(0|[1-9]\d*)(?:\+[0-9A-Za-z.-]+)?$/, 'Pi test host must satisfy ~1.5.0');
+    /^1\.6\.(0|[1-9]\d*)(?:\+[0-9A-Za-z.-]+)?$/, 'Pi test host must satisfy ~1.6.0');
   assert.deepEqual(pi.peerDependencies, {
     '@earendil-works/pi-tui': '*',
     typebox: '*',
@@ -160,9 +160,9 @@ test('shared validation gates CI and release on Pi compatibility alongside locke
   const release = readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
   assert.match(ci, /pi-compatibility:/);
   assert.match(ci, /fail-fast: false/);
-  for (const host of ['0.87.0', '~0.87.0', '~0.99.0', '~1.2.0', '~1.5.0']) assert.ok(ci.includes(`'${host}'`));
+  for (const host of ['0.87.0', '~0.87.0', '~0.99.0', '~1.2.0', '~1.5.0', '~1.6.0']) assert.ok(ci.includes(`'${host}'`));
   assert.match(ci, /node scripts\/check-pi-compatibility\.js/);
-  assert.match(ci, /NMNM_PI_REQUIRE_THREADING_TESTS: \$\{\{ matrix\.host == '~1\.5\.0' && '1' \|\| '0' \}\}/);
+  assert.match(ci, /NMNM_PI_REQUIRE_THREADING_TESTS: \$\{\{ \(matrix\.host == '~1\.5\.0' \|\| matrix\.host == '~1\.6\.0'\) && '1' \|\| '0' \}\}/);
   const compatibility = readFileSync(new URL('../scripts/check-pi-compatibility.js', import.meta.url), 'utf8');
   assert.match(compatibility, /NMNM_PI_REQUIRE_THREADING_TESTS/);
   assert.match(compatibility, /host-threading\.test\.js/);

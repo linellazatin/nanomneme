@@ -650,6 +650,9 @@ export function open(path, { create = true, readOnly = false } = {}) {
         const ftsSchema = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'memories_fts'").get();
         const validFts = ftsSchema && /^CREATE VIRTUAL TABLE\s+memories_fts\s+USING\s+fts5\b/i.test(ftsSchema.sql);
         if (ftsSchema && !validFts) report.add('schema_fts', 'memories_fts');
+        // Open an FTS cursor in this snapshot before its integrity callback runs.
+        // Otherwise another connection's writes can leave FTS using cached segments.
+        if (validFts) db.prepare('SELECT rowid FROM memories_fts LIMIT 1').get();
         for (const row of db.prepare('PRAGMA integrity_check').all()) {
           const value = Object.values(row)[0];
           if (value !== 'ok') report.add('sqlite_integrity');

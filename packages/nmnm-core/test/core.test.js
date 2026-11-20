@@ -838,6 +838,84 @@ test('open rejects an existing unversioned database', async () => {
   assert.throws(() => open(path), /not a versioned nanomneme database/);
 });
 
+for (const readOnly of [false, true]) for (const mutation of ['content', 'remove', 'insert']) {
+  test(`verify refreshes cached FTS after another writer's ${mutation} (${readOnly ? 'read-only' : 'writable'} reader)`, async (t) => {
+    const directory = await mkdtemp(join(tmpdir(), 'nmnm-verify-cached-fts-'));
+    const path = join(directory, 'memory.db');
+    const writer = open(path);
+    const memory = writer.retain({ content: 'Original cached SQLite content' });
+    const reader = open(path, { readOnly });
+    t.after(() => { reader.close(); writer.close(); rmSync(directory, { recursive: true, force: true }); });
+    assert.equal(reader.retrieve({ query: 'SQLite' }).total, 1);
+    assert.equal(reader.verify().ok, true);
+    if (mutation === 'content') writer.retain({ id: memory.id, content: 'Changed cached SQLite content' });
+    else if (mutation === 'remove') writer.remove({ id: memory.id });
+    else writer.retain({ content: 'Additional SQLite content' });
+    const before = readFileSync(path);
+    const files = readdirSync(directory);
+    assert.deepEqual(reader.verify(), { ok: true, schema_version: 1, issues: [] });
+    assert.deepEqual(readFileSync(path), before, 'verification must not write or repair FTS');
+    assert.deepEqual(readdirSync(directory), files);
+    assert.deepEqual(reader.retrieve({ query: 'SQLite' }), writer.retrieve({ query: 'SQLite' }));
+  });
+}
+
+test('verify keeps the FTS refresh and integrity check in one WAL snapshot', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-verify-fts-snapshot-'));
+  const path = join(directory, 'memory.db');
+  const writer = open(path);
+  const raw = new DatabaseSync(path);
+  raw.exec('PRAGMA journal_mode = WAL');
+  const memory = writer.retain({ content: 'Original snapshot SQLite content' });
+  const reader = open(path, { readOnly: true });
+  t.after(() => { reader.close(); raw.close(); writer.close(); rmSync(directory, { recursive: true, force: true }); });
+  reader.retrieve({ query: 'SQLite' });
+  const result = afterSqlRead(
+    sql => sql === 'SELECT rowid FROM memories_fts LIMIT 1',
+    () => writer.retain({ id: memory.id, content: 'Changed snapshot SQLite content' }),
+    () => reader.verify(),
+  );
+  assert.deepEqual(result, { ok: true, schema_version: 1, issues: [] });
+  assert.equal(reader.verify().ok, true);
+  assert.equal(reader.retrieve({ query: 'Changed' }).total, 1);
+});
+
+for (const condition of ['id > 10', 'id = 10']) test(`verify still reports corrupt FTS blocks (${condition}) without repairing`, async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-verify-fts-corrupt-'));
+  const path = join(directory, 'memory.db');
+  const writer = open(path);
+  writer.retain({ content: 'Searchable SQLite corruption target' });
+  const reader = open(path, { readOnly: true });
+  const raw = new DatabaseSync(path);
+  t.after(() => { raw.close(); reader.close(); writer.close(); rmSync(directory, { recursive: true, force: true }); });
+  reader.retrieve({ query: 'SQLite' });
+  raw.enableDefensive?.(false);
+  assert(raw.prepare(`UPDATE memories_fts_data SET block = zeroblob(length(block)) WHERE ${condition}`).run().changes > 0);
+  const before = readFileSync(path);
+  assert.deepEqual(reader.verify().issues, [{ code: 'sqlite_integrity', count: 1, ids: [] }]);
+  const fresh = open(path, { readOnly: true });
+  try { assert.equal(fresh.verify().ok, false); } finally { fresh.close(); }
+  assert.deepEqual(readFileSync(path), before);
+});
+
+test('verify still reports a damaged ordinary SQLite index', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-verify-index-corrupt-'));
+  const path = join(directory, 'memory.db');
+  const writer = open(path);
+  writer.retain({ content: 'SQLite secondary index target' });
+  writer.close();
+  const raw = new DatabaseSync(path);
+  raw.enableDefensive?.(false);
+  raw.exec('CREATE INDEX damaged_index ON memories(content); PRAGMA writable_schema = ON');
+  raw.prepare('UPDATE sqlite_master SET sql = ? WHERE name = ?').run('CREATE INDEX damaged_index ON memories(kind)', 'damaged_index');
+  raw.close();
+  const reader = open(path, { readOnly: true });
+  t.after(() => { reader.close(); rmSync(directory, { recursive: true, force: true }); });
+  const before = readFileSync(path);
+  assert(reader.verify().issues.some(issue => issue.code === 'sqlite_integrity'));
+  assert.deepEqual(readFileSync(path), before);
+});
+
 test('verify reports a healthy database without modifying it', async (t) => {
   const store = await createStore(t);
   const memory = store.retain({ content: 'Verify target', tags: ['integrity'] });

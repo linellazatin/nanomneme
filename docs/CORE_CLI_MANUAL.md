@@ -32,6 +32,7 @@ Use the agent path for deterministic CLI calls, stable JSON responses, explicit 
 | Agent guide | Agents | Produce deterministic commands and consume JSON results. |
 | Pi Adapter Manual | Pi users | Install the adapter and manage the complete JSONC settings template, store-validated JSON pins, automatic context, file lifecycle, combined list, and safe soft removal. |
 | Portability and recovery | Both | Export, import, back up, verify, repair, and restore. |
+| Enhancement quantification and evidence | Both | Inspect measured operation costs, correctness evidence, tradeoffs, and reproduction limits. |
 | Troubleshooting | Both | Diagnose common input, storage, FTS, and schema failures. |
 
 ## Getting started
@@ -171,6 +172,16 @@ try {
 
 `open(path)` creates a missing database and applies registered forward migrations. `open(path, { create: false })` requires an existing database. Use `open(path, { readOnly: true })` for reads that must neither create nor migrate storage; SQLite rejects mutation methods on that connection.
 
+### Optional-index upgrades
+
+Writable opens install `nmnm_perf_v3_live_recency_counts` over non-removed records, covering recency ordering and expiry/namespace/source/kind/scope/importance/confidence counts. Installation and retirement of recognized `nmnm_perf_v1_live_updated` / `nmnm_perf_v2_live_updated_source` definitions are atomic; conflicting reserved objects remain untouched. Canonical schema 1 and timestamp text stay unchanged; the epoch-seconds key preserves UTC millisecond ordering and UUID ties. Previously compatible cores still read/write without export/import or canonical migration.
+
+Read-only opens neither install nor replace indexes; missing/legacy indexes remain valid. V3 benefits require a successful writable open; read-only v2 retains its source-count hint. Older writers may reinstall a recognized legacy index, retired on the next current writable open. No automatic statistics maintenance is required.
+
+The first writable open may build/replace synchronously under one write lock; allow time, disk and transient journal space on large stores. The five-second busy timeout bounds waiting, not build duration. Failure rolls back the whole index transaction, fails that open and leaves the previous state readable. Retired pages are reusable without shrinking the file; steady-state timings exclude this build cost.
+
+CLI 4Rs and `retrieve --both` open writable (`--both` only existing stores), so reads can upgrade the index. CLI `verify`/`export`, adapter reads/context hooks and Workbench registration are read-only. Enabling Workbench editing opens a writer and can upgrade before any memory changes. See [measured benefits and costs](#enhancement-quantification-and-evidence).
+
 ### Core API
 
 | Method | Input | Return |
@@ -185,7 +196,7 @@ try {
 | `rebuildFts()` | None | `{ mode: 'rebuild-fts', rebuilt }`. |
 | `close()` | None | Closes the SQLite connection. |
 
-New `retain` inputs require `content`. Optional fields are `kind`, `scope`, `namespace`, `importance`, `confidence`, `expires_at`, `metadata`, and `tags`. The core generates the ID and timestamps. Passing `id` switches retain to patch/restore mode and never performs content-based deduplication.
+New `retain` inputs require `content`. Optional fields are `kind`, `scope`, `namespace`, `importance`, `confidence`, `expires_at`, `metadata`, and `tags`. The core generates the ID and timestamps. Passing `id` switches retain to patch/restore mode and never performs content-based deduplication. Patches replace tags only when their normalized set changes; FTS refreshes when content changes or a removed record is restored, including an expired record. Unchanged patches still advance timestamps. Retrieval and export hydrate tags in bounded batches within the same read snapshot. Search ordering, exact totals, portability fields, and canonical schema version remain unchanged; use explicit FTS repair for corrupted derived state. See [optional-index upgrades](#optional-index-upgrades) for writable-open side effects and compatibility.
 
 Text inputs must contain well-formed Unicode. Unpaired surrogates produce a validation error before a retain write or import batch; valid Unicode pairs are preserved instead of being silently replaced by SQLite.
 
@@ -411,9 +422,13 @@ Restore only while the destination is closed, and preserve the current file sepa
 
 ### Verify and repair
 
-Run `verify` before transfer, after import or restore, and whenever direct inspection or an interrupted filesystem operation makes integrity uncertain. Verification is read-only and reports exact schema-column, SQLite integrity, foreign-key, canonical-field and timestamp-ordering, tag, and FTS issues. Stored fields and tags requiring trimming are reported as `memory_field` or `tag_field`, without normalization or repair. It skips unsafe table queries when required columns are missing, so malformed schemas remain structured diagnostic results.
+Run `verify` before transfer, after import or restore, and whenever direct inspection or an interrupted filesystem operation makes integrity uncertain. Verification is read-only and reports exact schema-column, SQLite integrity, foreign-key, canonical-field and timestamp-ordering, tag, FTS, and optional-index definition issues. Stored fields and tags requiring trimming are reported as `memory_field` or `tag_field`, without normalization or repair. It skips unsafe table queries when required columns are missing, so malformed schemas remain structured diagnostic results.
+
+Verification opens a bounded FTS cursor within its existing read snapshot before SQLite's integrity check. This refreshes connection-local FTS state after another writer commits, preventing the reproduced cached-segment false alarm without writes, repair, a separate snapshot or suppression of real integrity failures.
 
 On POSIX systems, `file_permissions` reports group/other access on the database or existing journal, WAL, and shared-memory files using the labels `database`, `journal`, `wal`, and `shm`. Checks use SQLite's effective database filename so file/directory symlink aliases and later working-directory changes do not hide real sidecars. Verification does not change permissions. CLI verification exits with status `1` when these issues are present; inspect intentional sharing and manually restrict the affected files before verifying again. FTS repair does not fix permissions.
+
+A missing optional performance index is healthy, including a legacy recency store awaiting the current covering index. Reserved names `nmnm_perf_v1_live_updated`, `nmnm_perf_v2_live_updated_source` and `nmnm_perf_v3_live_recency_counts` are matched case-insensitively. Conflicting definitions are reported as `performance_index`; JSON-path string literals remain case-sensitive when comparing definitions. Verification and FTS repair do not drop or repair conflicting objects. Review them against a backup before further writes. Repair's writable open can install or upgrade the optional index, but this is separate from rebuilding FTS.
 
 Use repair only for derived full-text drift:
 
@@ -440,6 +455,76 @@ Writable core connections enable and check SQLite `PRAGMA secure_delete = ON`. E
 
 These protections apply to subsequent updates/deletes, not old remnants or separate copies. WAL/journal history, existing reader snapshots, exports, backups, filesystem snapshots, and storage hardware remain outside the purge guarantee. Core does not automatically checkpoint, vacuum, rewrite historical data, or delete external copies. Any historical cleanup workflow requires a separate reviewed design and explicit operator approval.
 
+## Enhancement quantification and evidence
+
+### Measurement scope
+
+The [initial snapshot](benchmarks/core-sqlite-evidence.json) and [v2 correction evidence](benchmarks/core-p2-fixes.json) cover synthetic local runs at 100/1,000/10,000/100,000 records: Apple M2 Mac14,7, 16 GiB, Darwin 27.2.0 arm64, Node 22.23.2, SQLite 3.51.3. Baseline: `41fbfea`; optimizations: working-tree measurements, not released-package/native-host results or proof across all supported runtimes. Evidence includes input hashes, fixture/result digests, timestamps, connection modes and database bytes.
+
+Main runs use five warmups and 30 samples per operation: `p50` = median, `p95` = 95th-percentile sample. Reused keeps a writable connection; cold opens/closes one per operation, not cold disk: both use the warmed OS cache. Timings exclude fixture creation, correctness checks, plan inspection and remove/restore preparation; retrieval includes exact counts and tag hydration. Mutations are sequential on disposable stores, not independent pristine samples.
+
+Fixtures combine deterministic IDs, varied technical content lengths, uneven namespaces/sources, tagless/tagged rows, expiry, soft removals and ranking ties. No personal stores/model calls. Unless noted, figures below are elapsed milliseconds at 100,000 records with a reused connection; snapshots cover both modes at every size.
+
+### Historical optimization stages
+
+Initial recency-only index (v1), before the source-covering v2 and compact count-covering v3 replacements:
+
+| Operation | Baseline p50 | Conditional writes and batched tags p50 | Plus optional covering index p50 | Baseline → indexed p95 |
+|---|---:|---:|---:|---:|
+| Recent retrieval, 20 rows | 48.883 | 50.361 | 4.565 | 50.001 → 5.063 |
+| Namespace retrieval, 20 rows | 48.502 | 50.231 | 6.222 | 50.400 → 6.721 |
+| Full canonical export | 874.778 | 673.845 | 676.124 | 995.227 → 792.608 |
+| Importance-only patch | 0.652 | 0.294 | 0.329 | 0.878 → 0.599 |
+| Metadata-only patch | 0.653 | 0.298 | 0.337 | 0.818 → 0.356 |
+| Create | 0.708 | 0.696 | 0.740 | 1.709 → 1.655 |
+| Content patch | 0.554 | 0.539 | 0.567 | 0.795 → 0.782 |
+
+Indexed medians versus baseline: recent ~−91%, namespace ~−87%, export ~−23%, score/metadata patches ~−50%/−48%. Batching alone left large unindexed recent retrieval dominated by exact counting/ordering. Expiry/namespace after the ordering keys cover counts without changing default page order.
+
+Size: 202,170,368 → 210,837,504 bytes (+4.3%), without WAL/journal sidecars. Versus batching-only, reused create/content-patch medians rose ~6%/5%. Two initial cold writes slightly exceeded the provisional 20% budget; three additional 100-sample paired runs stayed within budget. Initial Phase 1 p95 candidates also disappeared across three pairs. These repetitions show variability, not population-wide speed guarantees.
+
+### Source-count correction and current results
+
+Historical v2 correction (`0873e9c`); v3 results follow below.
+
+V1's non-covering count scan regressed source retrieval 59.090 → 101.316 ms. V2 appended a guarded source expression without changing key order. Fully covered non-text counts hint only recognized definitions; tag/FTS candidates and uncovered filters retain planner choice. FTS keeps its original source expression. No automatic `ANALYZE` or persistent-statistics maintenance.
+
+Final v2 reused medians: recent/namespace/source 5.372/6.805/7.180 ms; export 716.390 ms. Size: 211,542,016 bytes (+4.6% versus baseline). Three alternating read-only pairs on identical records: legacy source medians 110.540–113.077 → 6.705–7.267 ms. Source-count bytecode read zero canonical columns across all eight size/mode combinations; tests also cover analyzed stores and sparse visibility.
+
+Three alternating 100-sample write pairs versus an indexless conditional-write control: median create/content overhead 15.7%/6.3% reused, 16.2%/15.1% cold. One cold-create pair reached 20.46%; the other two and median stayed below 20%. Unaffected latency candidates against v1 did not persist across three 100-sample pairs. Rejected: a second source index (worse write costs) and forced table scans (removed-heavy regressions).
+
+Warm-cache setup probes: six populated indexless-store builds at 89–99 ms; one legacy replacement at 168 ms, leaving reusable pages and a larger file. These local observations do not guarantee lock duration or cold-disk latency.
+
+V2 reassessment found inherited non-covering counts: kind/scope/importance retrieval ~59–62 → 96–99 ms (indexless → indexed three-pair medians), plus a cached-FTS integrity false alarm. Both are addressed below.
+
+### Verification and count follow-up
+
+Verification opens an FTS cursor before integrity checking, within the same snapshot. Tests cover external content changes, insertion, removal to empty FTS, read-only readers, concurrent WAL snapshots, unchanged bytes, malformed schemas and genuine FTS/ordinary-index corruption.
+
+V3 offsets added count fields with a smaller epoch-seconds key: adjacent canonical milliseconds remain distinct through years 0000–9999, with unchanged UUID ties. The constant-null removal field makes ordinary counts visibly covering to SQLite. Kind/scope/score filters retain planner choice, including selective user indexes; tag/FTS planning and the source expression are unchanged. Source/namespace/recency hints require a recognized current index; read-only legacy v2 keeps its hint.
+
+Rejected: bounded statistics (stale estimates slowed removed-heavy cases; fresh estimates could hurt expired-heavy cases) and a wider text-timestamp index (write-budget failure). Post-analysis plans vary by SQLite build: sequential canonical scans are allowed; tests reject non-covering recency scans.
+
+The [v3 evidence](benchmarks/core-followup-fixes.json) compares dense/removed-heavy/expired-heavy stores × absent/bounded-analysis/deliberately stale statistics in three rotating pairs. On Node 22.23.2 / SQLite 3.51.3, dense unanalysed kind/scope/importance/confidence medians fell 102.996/106.194/102.393/106.716 → 6.184/6.813/6.156/6.774 ms. No read p50/p95 regression exceeded both 20% and 0.2 ms across all three pairs. Removed-heavy stale-statistics counts: ~0.2 ms versus 23–25 ms before.
+
+Versus the indexless conditional-write control, median paired create/content overhead was 10.49%/6.32% reused, 4.61%/11.56% cold. One reused-content pair reached 30.14%; the other two and median stayed below 20%. Dense indexless → v3 clone: 202,170,368 → 210,849,792 bytes (+4.29%); one warm-cache upgrade took 161 ms. Neither first-open lock duration nor cold-disk latency is guaranteed.
+
+The four-scale main run preserved every original fixture/read-result digest; added kind/scope/score digests remain separate. Reused recent/namespace/source: 5.080/6.943/7.797 ms; export: 760.991 ms. Fresh indexed store: 212,676,608 bytes (+5.2%); insertion/build history explains the difference from the clone. All five count shapes read zero canonical columns across eight size/mode combinations. None of 81 initial v2-comparison median/p95 candidates persisted above both thresholds in three alternating 100-sample pairs. Validation: root/frozen 603 tests (597 passes, six expected skips), three Node/SQLite suites at 137 passes each, five fresh Pi lanes passed. OpenCode-native/rendered-browser evidence remains historical.
+
+### Correctness and rejected candidates
+
+All four sizes preserved initial digests across baseline/batching/indexed stages: totals, ordering, fields, tags and transient text scores. Exports matched fixtures. Tests cover rollback, cross-tag-batch snapshots, timestamp advancement, unchanged normalized tags/content, changed-content indexing, expired-record restoration, secure deletion, indexless read-only bytes, installation failure and concurrent installation. SQL instrumentation: tagged score-only patch, five → zero explicit tag/FTS writes; 1,201-record export, 1,201 → three bounded tag queries. Canonical writes/timestamp advancement remain.
+
+[Index upgrades](#optional-index-upgrades) preserve canonical schema; recognized legacy retirement and creation roll back together. Original/current/generated cores matched across 197 selectors, 788 reads and 32 mutations. An original-core writer preserved upgraded-store source totals/FTS results; verification after refreshed MATCH passed (cached-state fix above). Read-only stores need no installation; writable installation is transactional. These probes and adapter unit tests establish neither native registration nor provider behavior.
+
+Rejected: reverse-tag index (helped rare single tags, hurt common-plus-rare all-tag queries) and extra namespace indexes (write-budget failures; one covering recency index sufficed). BM25/hidden FTS rank still required a temporary sort with importance/ID ties, not a demonstrated shortcut. No new ranking, query expansion, deduplication, count-free API or automatic context-selection policy; relevance labels require review before quality changes.
+
+### Reproduce and interpret
+
+From repository root, run `node packages/nmnm-core/bench/retrieval.js /tmp/nmnm-core-measurements`; smaller run: `node packages/nmnm-core/bench/retrieval.js /tmp/nmnm-core-small 100,1000 30`. Use fresh output directories; results never overwrite files and temporary databases are removed. The [benchmark guide](../packages/nmnm-core/bench/README.md) covers step-by-step comparisons, fixtures, metrics and budgets. Tooling is development-only, excluded from published core files.
+
+Match fixtures, workload, runtime, hardware and modes; assess p50/p95, writes, bytes and regressions together. Baseline reproduction uses the same harness with baseline core in a disposable tree, never installed adapters/personal stores. Reviewed snapshots suffice without ephemeral full-run logs. OpenCode startup, read-only adapter opens, native hosts, network storage, automatic context and relevance need separate evidence. Faster exports may benefit UI without changing literal search.
+
 ## Troubleshooting
 
 | Symptom | Check | Action |
@@ -451,6 +536,7 @@ These protections apply to subsequent updates/deletes, not old remnants or separ
 | Import is rejected | Header, canonical fields, duplicate IDs, and destination conflicts | Correct the complete JSONL input; imports never partially commit. |
 | Verification reports only FTS issues | `fts_*` issue groups | Run `repair --rebuild-fts`, then verify again. |
 | Verification reports permission issues | `file_permissions` and affected file labels | Review intentional sharing, manually restrict affected file permissions, then verify again. |
+| Verification reports an optional-index conflict | `performance_index` and its reserved object name | Canonical reads remain available. Review the conflicting object against a backup; core does not drop or repair it automatically. |
 | Verification reports other issues | Schema, integrity, fields, foreign keys, or tags | Stop writes and restore a verified backup or export. |
 
 The `node:sqlite` experimental warning can appear on supported Node versions and does not by itself indicate command failure. Use the process exit status and documented output instead. On platforms where `--global` is unsupported, use an explicit `--db <path>`.

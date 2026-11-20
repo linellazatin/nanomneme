@@ -1,6 +1,6 @@
 {
   "name": "@openlines/nmnm-pi",
-  "version": "0.4.8",
+  "version": "0.4.9",
   "description": "Pi coding agent adapter for nanomneme local SQLite memory",
   "type": "module",
   "keywords": [
@@ -28,7 +28,7 @@
   ],
   "dependencies": {
     "jsonc-parser": "3.3.1",
-    "@openlines/nmnm-core": "^0.3.2"
+    "@openlines/nmnm-core": "^0.3.3"
   },
   "peerDependencies": {
     "@earendil-works/pi-tui": "*",

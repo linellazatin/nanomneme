@@ -1,0 +1,274 @@
+{
+  "label_status": "Proposed relevance judgments; operator review required before Gate R quality acceptance.",
+  "records": [
+    {
+      "scope": "project",
+      "namespace": "default",
+      "importance": 0.5,
+      "confidence": 1,
+      "created_at": "2000-01-01T00:00:00.000Z",
+      "updated_at": "2026-01-02T00:00:00.000Z",
+      "expires_at": null,
+      "removed_at": null,
+      "metadata": {
+        "source": "fixture"
+      },
+      "tags": [],
+      "id": "10000000-0000-4000-8000-000000000001",
+      "content": "SQLite is the authoritative persistence layer. No external database.",
+      "kind": "decision"
+    },
+    {
+      "scope": "project",
+      "namespace": "default",
+      "importance": 0.5,
+      "confidence": 1,
+      "created_at": "2000-01-01T00:00:00.000Z",
+      "updated_at": "2026-01-02T00:00:00.000Z",
+      "expires_at": null,
+      "removed_at": null,
+      "metadata": {
+        "source": "fixture"
+      },
+      "tags": [],
+      "id": "10000000-0000-4000-8000-000000000002",
+      "content": "PostgreSQL is used only by the analytics service.",
+      "kind": "fact"
+    },
+    {
+      "scope": "project",
+      "namespace": "default",
+      "importance": 0.5,
+      "confidence": 1,
+      "created_at": "2000-01-01T00:00:00.000Z",
+      "updated_at": "2026-01-02T00:00:00.000Z",
+      "expires_at": null,
+      "removed_at": null,
+      "metadata": {
+        "source": "fixture"
+      },
+      "tags": [],
+      "id": "10000000-0000-4000-8000-000000000003",
+      "content": "Old architecture decision: preserve snapshot reads during concurrent writes.",
+      "kind": "decision"
+    },
+    {
+      "scope": "project",
+      "namespace": "default",
+      "importance": 0.5,
+      "confidence": 1,
+      "created_at": "2000-01-01T00:00:00.000Z",
+      "updated_at": "2026-01-02T00:00:00.000Z",
+      "expires_at": null,
+      "removed_at": null,
+      "metadata": {
+        "source": "fixture"
+      },
+      "tags": [],
+      "id": "10000000-0000-4000-8000-000000000004",
+      "content": "Use DatabaseSync from node:sqlite for local memory storage.",
+      "kind": "instruction"
+    },
+    {
+      "scope": "project",
+      "namespace": "default",
+      "importance": 0.5,
+      "confidence": 1,
+      "created_at": "2000-01-01T00:00:00.000Z",
+      "updated_at": "2026-01-02T00:00:00.000Z",
+      "expires_at": null,
+      "removed_at": null,
+      "metadata": {
+        "source": "fixture"
+      },
+      "tags": [],
+      "id": "10000000-0000-4000-8000-000000000005",
+      "content": "The config.toml file controls llama-server --fit-target settings.",
+      "kind": "note"
+    },
+    {
+      "scope": "project",
+      "namespace": "default",
+      "importance": 0.5,
+      "confidence": 0.2,
+      "created_at": "2000-01-01T00:00:00.000Z",
+      "updated_at": "2026-01-02T00:00:00.000Z",
+      "expires_at": null,
+      "removed_at": null,
+      "metadata": {
+        "source": "fixture"
+      },
+      "tags": [],
+      "id": "10000000-0000-4000-8000-000000000006",
+      "content": "Debugging observation: SQLite startup sometimes blocks during a writer lock.",
+      "kind": "note"
+    },
+    {
+      "scope": "project",
+      "namespace": "default",
+      "importance": 0.5,
+      "confidence": 1,
+      "created_at": "2000-01-01T00:00:00.000Z",
+      "updated_at": "2026-01-02T00:00:00.000Z",
+      "expires_at": null,
+      "removed_at": null,
+      "metadata": {
+        "source": "fixture"
+      },
+      "tags": [],
+      "id": "10000000-0000-4000-8000-000000000007",
+      "content": "Store access tokens in a credential manager, never in memory.",
+      "kind": "instruction"
+    },
+    {
+      "scope": "project",
+      "namespace": "default",
+      "importance": 0.5,
+      "confidence": 1,
+      "created_at": "2000-01-01T00:00:00.000Z",
+      "updated_at": "2026-01-02T00:00:00.000Z",
+      "expires_at": null,
+      "removed_at": null,
+      "metadata": {
+        "source": "fixture"
+      },
+      "tags": [],
+      "id": "10000000-0000-4000-8000-000000000008",
+      "content": "Database backups must preserve a consistent snapshot.",
+      "kind": "instruction"
+    },
+    {
+      "scope": "project",
+      "namespace": "default",
+      "importance": 0.5,
+      "confidence": 1,
+      "created_at": "2000-01-01T00:00:00.000Z",
+      "updated_at": "2026-01-02T00:00:00.000Z",
+      "expires_at": null,
+      "removed_at": null,
+      "metadata": {
+        "source": "fixture"
+      },
+      "tags": [],
+      "id": "10000000-0000-4000-8000-000000000009",
+      "content": "Memory storage experiments using a remote database were rejected.",
+      "kind": "note"
+    },
+    {
+      "scope": "project",
+      "namespace": "default",
+      "importance": 0.5,
+      "confidence": 1,
+      "created_at": "2000-01-01T00:00:00.000Z",
+      "updated_at": "2026-01-02T00:00:00.000Z",
+      "expires_at": null,
+      "removed_at": "2026-01-02T00:00:00.000Z",
+      "metadata": {
+        "source": "fixture"
+      },
+      "tags": [],
+      "id": "10000000-0000-4000-8000-000000000010",
+      "content": "SQLite is obsolete, use a remote database.",
+      "kind": "note"
+    },
+    {
+      "scope": "project",
+      "namespace": "default",
+      "importance": 0.5,
+      "confidence": 1,
+      "created_at": "2000-01-01T00:00:00.000Z",
+      "updated_at": "2026-01-02T00:00:00.000Z",
+      "expires_at": "2000-01-01T00:00:00.000Z",
+      "removed_at": null,
+      "metadata": {
+        "source": "fixture"
+      },
+      "tags": [],
+      "id": "10000000-0000-4000-8000-000000000011",
+      "content": "Temporary workaround: disable snapshot reads.",
+      "kind": "note"
+    }
+  ],
+  "queries": [
+    {
+      "split": "development",
+      "stratum": "lexical",
+      "query": "SQLite",
+      "relevant": [
+        "10000000-0000-4000-8000-000000000001",
+        "10000000-0000-4000-8000-000000000004",
+        "10000000-0000-4000-8000-000000000006"
+      ]
+    },
+    {
+      "split": "development",
+      "stratum": "alias",
+      "query": "postgres",
+      "relevant": [
+        "10000000-0000-4000-8000-000000000002"
+      ]
+    },
+    {
+      "split": "development",
+      "stratum": "authority",
+      "query": "snapshot reads",
+      "relevant": [
+        "10000000-0000-4000-8000-000000000003"
+      ]
+    },
+    {
+      "split": "development",
+      "stratum": "punctuation",
+      "query": "config.toml",
+      "relevant": [
+        "10000000-0000-4000-8000-000000000005"
+      ]
+    },
+    {
+      "split": "development",
+      "stratum": "zero-hit",
+      "query": "!!!",
+      "relevant": []
+    },
+    {
+      "split": "held-out",
+      "stratum": "identifier",
+      "query": "DatabaseSync",
+      "relevant": [
+        "10000000-0000-4000-8000-000000000004"
+      ]
+    },
+    {
+      "split": "held-out",
+      "stratum": "alias",
+      "query": "db backups",
+      "relevant": [
+        "10000000-0000-4000-8000-000000000008"
+      ]
+    },
+    {
+      "split": "held-out",
+      "stratum": "lexical",
+      "query": "credential manager",
+      "relevant": [
+        "10000000-0000-4000-8000-000000000007"
+      ]
+    },
+    {
+      "split": "held-out",
+      "stratum": "semantic-gap",
+      "query": "storage decision",
+      "relevant": [
+        "10000000-0000-4000-8000-000000000001"
+      ]
+    },
+    {
+      "split": "held-out",
+      "stratum": "advanced",
+      "query": "\"snapshot reads\" NOT debugging",
+      "relevant": [
+        "10000000-0000-4000-8000-000000000003"
+      ]
+    }
+  ]
+}

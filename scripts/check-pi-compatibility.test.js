@@ -25,13 +25,13 @@ test('required Pi threading coverage rejects skipped, empty, missing, or failing
     writeFileSync(join(root, 'scripts/check-pi-compatibility.js'), readFileSync(script));
     // Stub registry/install commands only. The real runner and Node TAP checks execute.
     writeFileSync(join(root, 'bin/npm'), `#!/usr/bin/env node
-if (process.argv[2] === 'view') console.log(JSON.stringify(process.argv[4] === 'version' ? '1.5.1' : { typebox: '1.3.27' }));
+if (process.argv[2] === 'view') console.log(JSON.stringify(process.argv[4] === 'version' ? '1.6.0' : { typebox: '1.3.27' }));
 else if (process.argv[2] !== 'install') process.exit(1);
 `, { mode: 0o755 });
     for (const name of ['@earendil-works/pi-coding-agent', '@earendil-works/pi-tui', '@earendil-works/pi-ai', 'typebox']) {
       const directory = join(root, 'node_modules', name);
       mkdirSync(directory, { recursive: true });
-      writeFileSync(join(directory, 'package.json'), JSON.stringify({ version: name === 'typebox' ? '1.3.27' : '1.5.1' }));
+      writeFileSync(join(directory, 'package.json'), JSON.stringify({ version: name === 'typebox' ? '1.3.27' : '1.6.0' }));
     }
     const threading = join(root, 'adapters/pi/test/host-threading.test.js');
     const env = { ...process.env, PATH: `${join(root, 'bin')}:${process.env.PATH}`, NMNM_PI_REQUIRE_THREADING_TESTS: '1' };
@@ -46,7 +46,7 @@ else if (process.argv[2] !== 'install') process.exit(1);
     ]) {
       if (source === null) rmSync(threading);
       else writeFileSync(threading, source);
-      const result = spawnSync(process.execPath, [join(root, 'scripts/check-pi-compatibility.js'), '~1.5.0'], {
+      const result = spawnSync(process.execPath, [join(root, 'scripts/check-pi-compatibility.js'), '~1.6.0'], {
         encoding: 'utf8',
         env,
       });

@@ -127,7 +127,7 @@ Browse local folders and select an existing Nanomneme database.
 - `(store, id)` identifies a record; resolved paths remain visible in rows and details.
 - Selecting a database does not rewrite record scope or provenance.
 - Uncheck a store to exclude it from browsing. Unchecking does not disable editing; use Disable editing separately.
-- Registration opens read-only with `create: false` and checks core verification results for schema/SQLite integrity failures. Missing, unreadable, unrelated, or structurally incompatible databases report errors without registration or mutation. Enabling editing repeats this check before opening a writer.
+- Registration opens read-only with `create: false` and checks core verification results for schema/SQLite integrity failures. Missing, unreadable, unrelated, or structurally incompatible databases report errors without registration or mutation. Enabling editing repeats this check before opening a writer. That writable open can install or upgrade core's optional performance index before a memory is changed; read-only registration does neither. See [core upgrade behavior](../../docs/CORE_CLI_MANUAL.md#optional-index-upgrades).
 - No recursive workspace discovery, database creation, or schema migration during registration.
 
 ## Source, search, and filters
@@ -243,7 +243,7 @@ The Removed view exposes restore and permanent purge actions.
 - **Independent snapshots:** combined stores are read separately; there is no cross-store atomic snapshot.
 - **Concurrent writers:** stale checks are separate from mutation. A harness can write between them; the UI cannot guarantee atomic conflict rejection. Core patch/transaction semantics still apply.
 - **Blocking reads:** synchronous core work runs in the foreground Node server; large exports or SQLite contention can delay browser requests.
-- **Scoped verification gate:** registration and editing authorization reject schema/SQLite integrity failures from core `verify()`. Other reported issues, such as permissions, canonical values, tags, or FTS contents, do not establish file identity and are not blanket registration blockers. Use CLI verification for a full health report; the UI does not repair files.
+- **Scoped verification gate:** registration and editing authorization reject schema/SQLite integrity failures from core `verify()`. Other reported issues, such as permissions, canonical values, tags, FTS contents, or optional-index conflicts, do not establish file identity and are not blanket registration blockers. Use CLI verification for a full health report; the UI does not repair files.
 - **Lifecycle restrictions:** expired records cannot be soft-removed; removed records require restoration before editing.
 - **Session-only configuration:** store registrations are not saved to disk; browser reload resets selection/filter state. Other browser tabs do not automatically synchronize their displayed editing state.
 - **Platform coverage:** Linux/macOS have standard global-path selection. Other platforms need explicit custom paths; comprehensive Windows validation is not claimed.

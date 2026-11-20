@@ -35,6 +35,58 @@ const SCHEMA_COLUMNS = {
 };
 const MEMORY_SELECT = SCHEMA_COLUMNS.memories.map((column) => `m.${column}`).join(', ');
 const MIGRATIONS = new Map();
+// Optional and backward-readable: indexless schema-1 stores remain valid.
+const LEGACY_PERFORMANCE_INDEX_NAME = 'nmnm_perf_v1_live_updated';
+const SOURCE_PERFORMANCE_INDEX_NAME = 'nmnm_perf_v2_live_updated_source';
+const PERFORMANCE_INDEX_NAME = 'nmnm_perf_v3_live_recency_counts';
+const SOURCE_EXPRESSION = "CASE WHEN json_valid(metadata) THEN json_extract(metadata, '$.source') END";
+// Canonical UTC milliseconds remain strictly ordered as epoch seconds, including years 0000–9999.
+const RECENCY_EXPRESSION = "unixepoch(updated_at, 'subsec')";
+const PERFORMANCE_INDEXES = new Map([
+  [LEGACY_PERFORMANCE_INDEX_NAME, 'updated_at DESC, id, expires_at, namespace'],
+  [SOURCE_PERFORMANCE_INDEX_NAME, `updated_at DESC, id, expires_at, namespace, ${SOURCE_EXPRESSION}`],
+  [PERFORMANCE_INDEX_NAME, `${RECENCY_EXPRESSION} DESC, id, expires_at, namespace, ${SOURCE_EXPRESSION}, kind, scope, importance, confidence, removed_at`],
+].map(([name, columns]) => [name, `CREATE INDEX ${name} ON memories(${columns}) WHERE removed_at IS NULL`]));
+
+function performanceIndex(db, name = PERFORMANCE_INDEX_NAME) {
+  return db.prepare('SELECT type, sql FROM sqlite_master WHERE name = ? COLLATE NOCASE').get(name);
+}
+
+function normalizedIndexSql(sql) {
+  return sql?.split(/('(?:''|[^'])*')/).map((part, index) => index % 2 ? part : part.replace(/["`\[]([a-z_][a-z_0-9]*)["`\]]/gi, '$1').replace(/\s+/g, ' ').toLowerCase()).join('').trim();
+}
+
+const NORMALIZED_PERFORMANCE_INDEXES = new Map([...PERFORMANCE_INDEXES].map(([name, sql]) => [name, normalizedIndexSql(sql)]));
+
+function matchesPerformanceIndex(index, name) {
+  return index?.type === 'index' && normalizedIndexSql(index.sql) === NORMALIZED_PERFORMANCE_INDEXES.get(name);
+}
+
+function ensurePerformanceIndex(db) {
+  const readIndexes = () => db.prepare('SELECT name, type, sql FROM sqlite_master WHERE name COLLATE NOCASE IN (?, ?, ?)').all(...PERFORMANCE_INDEXES.keys());
+  let indexes = readIndexes();
+  let current = indexes.find(index => index.name.toLowerCase() === PERFORMANCE_INDEX_NAME);
+  const legacy = indexes.filter(index => index.name.toLowerCase() !== PERFORMANCE_INDEX_NAME);
+  // An ordinary reopen needs neither another schema read nor definition normalization.
+  if (current && (!legacy.length || !matchesPerformanceIndex(current, PERFORMANCE_INDEX_NAME) || legacy.some(index => !matchesPerformanceIndex(index, index.name.toLowerCase())))) return;
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    // Recheck under the lock and retire only recognized older definitions.
+    indexes = readIndexes();
+    current = indexes.find(index => index.name.toLowerCase() === PERFORMANCE_INDEX_NAME);
+    if (!current) db.exec(PERFORMANCE_INDEXES.get(PERFORMANCE_INDEX_NAME));
+    if (!current || matchesPerformanceIndex(current, PERFORMANCE_INDEX_NAME)) {
+      for (const index of indexes) {
+        const name = index.name.toLowerCase();
+        if (name !== PERFORMANCE_INDEX_NAME && matchesPerformanceIndex(index, name)) db.exec(`DROP INDEX ${name}`);
+      }
+    }
+    db.exec('COMMIT');
+  } catch (error) {
+    try { db.exec('ROLLBACK'); } catch {}
+    throw error;
+  }
+}
 
 function text(value, name) {
   if (typeof value !== 'string' || !value.trim()) throw new TypeError(`${name} must be a non-empty string`);
@@ -372,7 +424,10 @@ export function open(path, { create = true, readOnly = false } = {}) {
     const version = path === ':memory:' ? (db.exec(SCHEMA), SCHEMA_VERSION) : schemaVersion(db);
     if (version > SCHEMA_VERSION) throw new Error(`database schema version ${version} is newer than this version of nanomneme`);
     if (readOnly && version < SCHEMA_VERSION) throw new Error(`database schema version ${version} requires migration before read-only use`);
-    if (!readOnly) migrate(db, version);
+    if (!readOnly) {
+      migrate(db, version);
+      ensurePerformanceIndex(db);
+    }
   } catch (error) {
     db.close();
     if (fresh && /fts5/i.test(error.message)) throw new Error('SQLite FTS5 support is required', { cause: error });
@@ -380,11 +435,22 @@ export function open(path, { create = true, readOnly = false } = {}) {
   }
 
   const active = 'm.removed_at IS NULL AND (m.expires_at IS NULL OR m.expires_at > ?)';
-  const hydrate = (row) => {
-    const memoryTags = db.prepare('SELECT tag FROM memory_tags WHERE memory_id = ? ORDER BY tag').all(row.id).map(({ tag }) => tag);
+  const hydrate = (row, memoryTags = db.prepare('SELECT tag FROM memory_tags WHERE memory_id = ? ORDER BY tag').all(row.id).map(({ tag }) => tag)) => {
     const memory = { ...row, metadata: JSON.parse(row.metadata), tags: memoryTags };
     if (memory.score == null) delete memory.score;
     return memory;
+  };
+  const hydrateMany = (rows) => {
+    const tagsById = new Map();
+    for (let offset = 0; offset < rows.length; offset += 500) {
+      const ids = rows.slice(offset, offset + 500).map(row => row.id);
+      const memoryTags = db.prepare(`SELECT memory_id, tag FROM memory_tags WHERE memory_id IN (${ids.map(() => '?').join(', ')}) ORDER BY memory_id, tag`).all(...ids);
+      for (const { memory_id, tag } of memoryTags) {
+        if (!tagsById.has(memory_id)) tagsById.set(memory_id, []);
+        tagsById.get(memory_id).push(tag);
+      }
+    }
+    return rows.map(row => hydrate(row, tagsById.get(row.id) ?? []));
   };
   const read = (id, activeOnly = true) => {
     const targetId = memoryId(id);
@@ -448,8 +514,8 @@ export function open(path, { create = true, readOnly = false } = {}) {
           const now = mutationTimestamp(current);
           db.prepare(`UPDATE memories SET content = ?, kind = ?, scope = ?, namespace = ?, importance = ?, confidence = ?, updated_at = ?, expires_at = ?, removed_at = NULL, metadata = ? WHERE id = ?`)
             .run(next.content, next.kind, next.scope, next.namespace, next.importance, next.confidence, now, next.expires_at, JSON.stringify(next.metadata), id);
-          writeTags(id, next.tags);
-          syncFts(id, next.content);
+          if (next.tags.length !== current.tags.length || next.tags.some((tag, index) => tag !== current.tags[index])) writeTags(id, next.tags);
+          if (current.removed_at != null || next.content !== current.content) syncFts(id, next.content);
           return read(id, false);
         });
       }
@@ -493,21 +559,26 @@ export function open(path, { create = true, readOnly = false } = {}) {
       }
       const join = query ? 'JOIN memories_fts ON memories_fts.rowid = m.rowid' : '';
       if (query) { where.push('memories_fts MATCH ?'); parameters.push(query); }
-      if (source) { where.push("json_extract(m.metadata, '$.source') = ?"); parameters.push(source); }
+      // Keep FTS source filtering on its original expression so the source index cannot
+      // displace MATCH as the candidate driver without statistics on a new store.
+      if (source) { where.push(`${query ? "json_extract(m.metadata, '$.source')" : SOURCE_EXPRESSION} = ?`); parameters.push(source); }
+      let preferCountIndex = !query;
       for (const [field, value] of [['kind', selector.kind], ['scope', selector.scope], ['namespace', selector.namespace]]) {
         const values = list(value, field);
         if (field === 'kind') values.forEach(kind);
         if (field === 'scope') values.forEach(scope);
         if (field === 'namespace') values.forEach((value) => slug(value, 'namespace'));
+        if (field !== 'namespace' && values.length) preferCountIndex = false;
         if (values.length) { where.push(`m.${field} IN (${values.map(() => '?').join(', ')})`); parameters.push(...values); }
       }
       const wantedTags = tags(selector.tags);
       if (wantedTags.length) {
+        preferCountIndex = false;
         where.push(`m.id IN (SELECT memory_id FROM memory_tags WHERE tag IN (${wantedTags.map(() => '?').join(', ')}) GROUP BY memory_id HAVING COUNT(DISTINCT tag) = ?)`);
         parameters.push(...wantedTags, wantedTags.length);
       }
       for (const [field, value] of [['importance', selector.importance], ['confidence', selector.confidence]]) {
-        for (const [operator, target] of range(value, field)) { where.push(`m.${field} ${operator} ?`); parameters.push(target); }
+        for (const [operator, target] of range(value, field)) { preferCountIndex = false; where.push(`m.${field} ${operator} ?`); parameters.push(target); }
       }
       const orderBy = selector.order_by ?? (query ? 'relevance' : 'updated_at');
       const ordering = orderBy === 'relevance' && rawQuery != null
@@ -519,15 +590,22 @@ export function open(path, { create = true, readOnly = false } = {}) {
       const condition = where.join(' AND ');
       if (unmatched) return { total: 0, items: [] };
       return transaction(() => {
-        const total = db.prepare(`SELECT COUNT(*) AS total FROM memories m ${join} WHERE ${condition}`).get(...parameters).total;
-        const rows = db.prepare(`SELECT ${MEMORY_SELECT}, ${query ? 'bm25(memories_fts) AS score' : 'NULL AS score'} FROM memories m ${join} WHERE ${condition} ORDER BY ${ordering} LIMIT ? OFFSET ?`)
+        const currentIndex = matchesPerformanceIndex(performanceIndex(db), PERFORMANCE_INDEX_NAME);
+        // Keep the original recency/namespace/source hints: SQLite can mis-cost
+        // expression coverage after ANALYZE. Newly covered filters retain planner choice.
+        const countIndexName = preferCountIndex && (currentIndex ? PERFORMANCE_INDEX_NAME
+          : matchesPerformanceIndex(performanceIndex(db, SOURCE_PERFORMANCE_INDEX_NAME), SOURCE_PERFORMANCE_INDEX_NAME) ? SOURCE_PERFORMANCE_INDEX_NAME : null);
+        const countIndex = countIndexName ? `INDEXED BY ${countIndexName}` : '';
+        const pageOrdering = currentIndex && orderBy === 'updated_at' ? `${RECENCY_EXPRESSION} DESC, m.id ASC` : ordering;
+        const total = db.prepare(`SELECT COUNT(*) AS total FROM memories m ${countIndex} ${join} WHERE ${condition}`).get(...parameters).total;
+        const rows = db.prepare(`SELECT ${MEMORY_SELECT}, ${query ? 'bm25(memories_fts) AS score' : 'NULL AS score'} FROM memories m ${join} WHERE ${condition} ORDER BY ${pageOrdering} LIMIT ? OFFSET ?`)
           .all(...parameters, limit, offset);
-        return { total, items: rows.map(hydrate) };
+        return { total, items: hydrateMany(rows) };
       }, 'DEFERRED');
     },
 
     export() {
-      return transaction(() => db.prepare(`SELECT ${MEMORY_SELECT} FROM memories m ORDER BY m.id`).all().map(hydrate), 'DEFERRED');
+      return transaction(() => hydrateMany(db.prepare(`SELECT ${MEMORY_SELECT} FROM memories m ORDER BY m.id`).all()), 'DEFERRED');
     },
 
     import(records) {
@@ -566,6 +644,10 @@ export function open(path, { create = true, readOnly = false } = {}) {
     verify() {
       return transaction(() => {
         const report = issueReporter();
+        for (const name of PERFORMANCE_INDEXES.keys()) {
+          const index = performanceIndex(db, name);
+          if (index && !matchesPerformanceIndex(index, name)) report.add('performance_index', name);
+        }
         if (permissionsPath !== null && process.platform !== 'win32') {
           for (const [label, suffix] of [['database', ''], ['journal', '-journal'], ['wal', '-wal'], ['shm', '-shm']]) {
             try {
@@ -589,6 +671,9 @@ export function open(path, { create = true, readOnly = false } = {}) {
         const ftsSchema = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'memories_fts'").get();
         const validFts = ftsSchema && /^CREATE VIRTUAL TABLE\s+memories_fts\s+USING\s+fts5\b/i.test(ftsSchema.sql);
         if (ftsSchema && !validFts) report.add('schema_fts', 'memories_fts');
+        // Open an FTS cursor in this snapshot before its integrity callback runs.
+        // Otherwise another connection's writes can leave FTS using cached segments.
+        if (validFts) db.prepare('SELECT rowid FROM memories_fts LIMIT 1').get();
         for (const row of db.prepare('PRAGMA integrity_check').all()) {
           const value = Object.values(row)[0];
           if (value !== 'ok') report.add('sqlite_integrity');

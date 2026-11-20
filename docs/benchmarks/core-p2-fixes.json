@@ -1,0 +1,2883 @@
+{
+  "description": "Post-review case-name and source-count fixes; final single source-covering recency index, not a release or provider acceptance claim.",
+  "provenance": {
+    "baseline_revision": "41fbfeae776644981cb03d3535dd176b3cd37d3d",
+    "legacy_revision": "6a19822060a0e1de099e65582632e724a6af04cf",
+    "working_tree_sha256": {
+      "packages/nmnm-core/src/index.js": "c127e243cf11d2f6b52c27662dc7f300afea80375275c5250acc5e88420b0f04",
+      "packages/nmnm-core/bench/retrieval.js": "9854e05fcd00d2e3cf794b82523796f18f9718f57fe7beb2a0ac4ca9f790e855",
+      "packages/nmnm-core/bench/fixtures.js": "0e86a90fce12b10c70f93991d84938eeb017ccaf51ec4b2b9eaf90a9b7769589",
+      "packages/nmnm-core/bench/fixtures/quality.json": "b785ee490c70bf16df6e2c161db98fa188158869e0785a2dd905d346e87300c2",
+      "adapters/claude/src/core-runtime.generated.js": "a76b94987a5053d7f747f29412ff8bd5e73c343a739735bcb20d7f912c5939f1"
+    },
+    "probe_sha256": {
+      "/tmp/nmnm-p2-indexed-control.mjs": "e6a038abe4874225e7d6b5987ebf53bf29584b5c456f364c0fefdbc1fd85cebb",
+      "/tmp/nmnm-p2-indexless-control.mjs": "a5a91dea086ea0022619087127369660f8c34f9a98d9495e99b91f1c254faa6e",
+      "/tmp/nmnm-p2-paired.mjs": "129aadff84850dbb345db93825e61bfd7394b2cca06c2fd202cbf96e4762f7a3",
+      "/tmp/nmnm-p2-extra-bench.mjs": "fe8ae884d0781b0f1c506c4732e82e9e7bfdeeb78144cebdaed3a9316e00aedd",
+      "/tmp/nmnm-p2-tail-pairs.mjs": "46ee6428b255b19abd28d15f5dc1213dcce6560cee6126c1fd34d3ecd15260f0"
+    }
+  },
+  "sampling": {
+    "main_samples": 30,
+    "main_warmups": 5,
+    "source_samples": 30,
+    "source_warmups": 5,
+    "write_and_tail_samples": 100,
+    "write_and_tail_warmups": 5,
+    "cold": "fresh writable connection, warm OS cache",
+    "paired_source": "read-only connections after one writable upgrade"
+  },
+  "methodology": {
+    "historical_snapshot": "core-sqlite-evidence.json",
+    "indexless_write_control": "Legacy core with only the ensurePerformanceIndex(db) call removed; no other behavior changed.",
+    "source_probe": "Seed legacy core with 100000 deterministic records, clone the closed store, upgrade the clone with current core, compare exports/results, alternate measurement order across three pairs.",
+    "visibility_probe": "For each 100000-record fixture, all indices not divisible by 101 are either soft-removed or expired; compare legacy and upgraded stores in active, expired, any and FTS source modes.",
+    "write_probe": "Three alternating pairs, reused/cold connections, 100 measured create/content patches per side against identical populated indexless versus upgraded stores; setup outside timings.",
+    "tail_probe": "Fresh incrementally indexed legacy/current seeds at affected sizes, three alternating pairs of 100 samples for each single-run regression candidate.",
+    "upgrade_probe": "Six warm-cache indexless-to-current writable opens and one legacy-index replacement; excludes real competing-writer contention and cold disk.",
+    "budgets": "25% database size; 20% median create/content overhead across paired ratios; reject unaffected regressions exceeding both 20% and 0.2ms when reproduced in all three pairs.",
+    "caveats": "One cold-create pair exceeded 20%; the other two and the three-pair median did not. Initial tail candidates did not persist across three pairs. No automatic ANALYZE or persistent-statistics maintenance was introduced."
+  },
+  "final": {
+    "100": {
+      "timestamp": "2026-11-19T16:07:56.993Z",
+      "node": "v22.23.2",
+      "platform": "darwin",
+      "arch": "arm64",
+      "fixture_digest": "19fc82b46691b5d86e43aa9ebf346ba39a3775a34c6783459a097e1e8e8d9637",
+      "modes": {
+        "reused": {
+          "sqlite": "3.51.3",
+          "journal_mode": "delete",
+          "result_digest": "31c55eab292636d0d25c5fda097eb530e072247646ebd171ea10faea67f33db7",
+          "bytes": {
+            "database": 245760,
+            "-journal": 0,
+            "-wal": 0,
+            "-shm": 0
+          },
+          "final_bytes": {
+            "database": 274432,
+            "-journal": 0,
+            "-wal": 0,
+            "-shm": 0
+          },
+          "import_ms": 4.3089590000000015,
+          "source_count_canonical_column_reads": 0,
+          "plans": {
+            "recent": [
+              "SCAN m USING INDEX nmnm_perf_v2_live_updated_source"
+            ],
+            "namespace": [
+              "SCAN m USING INDEX nmnm_perf_v2_live_updated_source"
+            ],
+            "tags": [
+              "SEARCH m USING INDEX sqlite_autoindex_memories_1 (id=?)",
+              "LIST SUBQUERY 1",
+              "SCAN memory_tags USING COVERING INDEX sqlite_autoindex_memory_tags_1",
+              "CREATE BLOOM FILTER",
+              "USE TEMP B-TREE FOR ORDER BY"
+            ],
+            "source": [
+              "SCAN m USING INDEX nmnm_perf_v2_live_updated_source"
+            ],
+            "source_count": [
+              "SCAN m USING INDEX nmnm_perf_v2_live_updated_source"
+            ],
+            "count": [
+              "SCAN m USING INDEX nmnm_perf_v2_live_updated_source"
+            ],
+            "bm25(memories_fts)": [
+              "SCAN memories_fts VIRTUAL TABLE INDEX 0:M1",
+              "SEARCH m USING INTEGER PRIMARY KEY (rowid=?)",
+              "USE TEMP B-TREE FOR ORDER BY"
+            ],
+            "memories_fts.rank": [
+              "SCAN memories_fts VIRTUAL TABLE INDEX 0:M1",
+              "SEARCH m USING INTEGER PRIMARY KEY (rowid=?)",
+              "USE TEMP B-TREE FOR ORDER BY"
+            ]
+          },
+          "timings": {
+            "recall": {
+              "p50_ms": 0.026417000000002133,
+              "p95_ms": 0.031582999999997696
+            },
+            "recent": {
+              "p50_ms": 0.14383399999999824,
+              "p95_ms": 0.1611249999999984
+            },
+            "namespace": {
+              "p50_ms": 0.10079200000000554,
+              "p95_ms": 0.1314999999999955
+            },
+            "source": {
+              "p50_ms": 0.14704100000000153,
+              "p95_ms": 0.2612090000000009
+            },
+            "tags": {
+              "p50_ms": 0.08779199999999321,
+              "p95_ms": 0.09037499999999454
+            },
+            "page": {
+              "p50_ms": 0.21716599999999175,
+              "p95_ms": 0.37795799999999247
+            },
+            "strict": {
+              "p50_ms": 0.1750420000000048,
+              "p95_ms": 0.22683400000001086
+            },
+            "prefix": {
+              "p50_ms": 0.16433400000001086,
+              "p95_ms": 0.23220799999999997
+            },
+            "boolean": {
+              "p50_ms": 0.18691599999999653,
+              "p95_ms": 0.22445899999999597
+            },
+            "phrase": {
+              "p50_ms": 0.16245899999999835,
+              "p95_ms": 0.1857080000000053
+            },
+            "near": {
+              "p50_ms": 0.16579199999999616,
+              "p95_ms": 0.19079200000000185
+            },
+            "broad": {
+              "p50_ms": 0.23766700000000185,
+              "p95_ms": 0.27866699999999867
+            },
+            "narrow": {
+              "p50_ms": 0.05958299999998928,
+              "p95_ms": 0.06425000000000125
+            },
+            "punctuation": {
+              "p50_ms": 0.16370900000001143,
+              "p95_ms": 0.18475000000000819
+            },
+            "export": {
+              "p50_ms": 0.39829199999999787,
+              "p95_ms": 0.5401659999999993
+            },
+            "create": {
+              "p50_ms": 0.4959170000000199,
+              "p95_ms": 0.5678339999999764
+            },
+            "patch_content": {
+              "p50_ms": 0.5184999999999889,
+              "p95_ms": 0.8212919999999997
+            },
+            "patch_tags": {
+              "p50_ms": 0.41458299999999326,
+              "p95_ms": 0.47800000000000864
+            },
+            "patch_metadata": {
+              "p50_ms": 0.3423750000000041,
+              "p95_ms": 0.4135829999999885
+            },
+            "patch_score": {
+              "p50_ms": 0.3494579999999985,
+              "p95_ms": 0.44950000000000045
+            },
+            "patch_expiry": {
+              "p50_ms": 0.33758399999999256,
+              "p95_ms": 0.3538330000000087
+            },
+            "remove": {
+              "p50_ms": 0.4384170000000154,
+              "p95_ms": 0.5614999999999952
+            },
+            "restore": {
+              "p50_ms": 0.45729199999999537,
+              "p95_ms": 0.5139169999999922
+            }
+          }
+        },
+        "cold": {
+          "sqlite": "3.51.3",
+          "journal_mode": "delete",
+          "result_digest": "31c55eab292636d0d25c5fda097eb530e072247646ebd171ea10faea67f33db7",
+          "bytes": {
+            "database": 245760,
+            "-journal": 0,
+            "-wal": 0,
+            "-shm": 0
+          },
+          "final_bytes": {
+            "database": 274432,
+            "-journal": 0,
+            "-wal": 0,
+            "-shm": 0
+          },
+          "import_ms": 3.5184169999999995,
+          "source_count_canonical_column_reads": 0,
+          "plans": {
+            "recent": [
+              "SCAN m USING INDEX nmnm_perf_v2_live_updated_source"
+            ],
+            "namespace": [
+              "SCAN m USING INDEX nmnm_perf_v2_live_updated_source"
+            ],
+            "tags": [
+              "SEARCH m USING INDEX sqlite_autoindex_memories_1 (id=?)",
+              "LIST SUBQUERY 1",
+              "SCAN memory_tags USING COVERING INDEX sqlite_autoindex_memory_tags_1",
+              "CREATE BLOOM FILTER",
+              "USE TEMP B-TREE FOR ORDER BY"
+            ],
+            "source": [
+              "SCAN m USING INDEX nmnm_perf_v2_live_updated_source"
+            ],
+            "source_count": [
+              "SCAN m USING INDEX nmnm_perf_v2_live_updated_source"
+            ],
+            "count": [
+              "SCAN m USING INDEX nmnm_perf_v2_live_updated_source"
+            ],
+            "bm25(memories_fts)": [
+              "SCAN memories_fts VIRTUAL TABLE INDEX 0:M1",
+              "SEARCH m USING INTEGER PRIMARY KEY (rowid=?)",
+              "USE TEMP B-TREE FOR ORDER BY"
+            ],
+            "memories_fts.rank": [
+              "SCAN memories_fts VIRTUAL TABLE INDEX 0:M1",
+              "SEARCH m USING INTEGER PRIMARY KEY (rowid=?)",
+              "USE TEMP B-TREE FOR ORDER BY"
+            ]
+          },
+          "timings": {
+            "recall": {
+              "p50_ms": 0.14962500000001455,
+              "p95_ms": 0.19916599999999107
+            },
+            "recent": {
+              "p50_ms": 0.27933300000000827,
+              "p95_ms": 0.4135830000000169
+            },
+            "namespace": {
+              "p50_ms": 0.23245900000000574,
+              "p95_ms": 0.34162500000002183
+            },
+            "source": {
+              "p50_ms": 0.27804099999997334,
+              "p95_ms": 0.41029099999997243
+            },
+            "tags": {
+              "p50_ms": 0.196124999999995,
+              "p95_ms": 0.2334589999999821
+            },
+            "page": {
+              "p50_ms": 0.3630829999999605,
+              "p95_ms": 0.4832499999999982
+            },
+            "strict": {
+              "p50_ms": 0.3234170000000063,
+              "p95_ms": 0.4261250000000132
+            },
+            "prefix": {
+              "p50_ms": 0.3337919999999599,
+              "p95_ms": 0.6140000000000327
+            },
+            "boolean": {
+              "p50_ms": 0.33808299999998326,
+              "p95_ms": 0.4048750000000041
+            },
+            "phrase": {
+              "p50_ms": 0.33958300000000463,
+              "p95_ms": 0.38945799999999053
+            },
+            "near": {
+              "p50_ms": 0.3332089999999539,
+              "p95_ms": 0.5464170000000195
+            },
+            "broad": {
+              "p50_ms": 0.41083299999996825,
+              "p95_ms": 0.5487080000000333
+            },
+            "narrow": {
+              "p50_ms": 0.2055000000000291,
+              "p95_ms": 0.2357499999999959
+            },
+            "punctuation": {
+              "p50_ms": 0.320666000000017,
+              "p95_ms": 0.34620899999998755
+            },
+            "export": {
+              "p50_ms": 0.5320419999999899,
+              "p95_ms": 0.6179579999999874
+            },
+            "create": {
+              "p50_ms": 0.6904999999999859,
+              "p95_ms": 0.8826669999999694
+            },
+            "patch_content": {
+              "p50_ms": 0.6702910000000202,
+              "p95_ms": 0.7817499999999313
+            },
+            "patch_tags": {
+              "p50_ms": 0.5843750000000227,
+              "p95_ms": 0.6857909999999947
+            },
+            "patch_metadata": {
+              "p50_ms": 0.4847090000000662,
+              "p95_ms": 0.6003330000000915
+            },
+            "patch_score": {
+              "p50_ms": 0.5315419999999449,
+              "p95_ms": 0.6349579999999833
+            },
+            "patch_expiry": {
+              "p50_ms": 0.5139580000000024,
+              "p95_ms": 0.626166000000012
+            },
+            "remove": {
+              "p50_ms": 0.6687079999999241,
+              "p95_ms": 0.817209000000048
+            },
+            "restore": {
+              "p50_ms": 0.6296670000000404,
+              "p95_ms": 0.8257499999999709
+            }
+          }
+        }
+      }
+    },
+    "1000": {
+      "timestamp": "2026-11-19T16:07:57.664Z",
+      "node": "v22.23.2",
+      "platform": "darwin",
+      "arch": "arm64",
+      "fixture_digest": "e0afcdd0225c413c35c5873deaa9dcbb00b3514d2e66fe2264f62d5667e8bfb9",
+      "modes": {
+        "reused": {
+          "sqlite": "3.51.3",
+          "journal_mode": "delete",
+          "result_digest": "463dfbbbc69d13c294b2dc50154c99bd0255109cc739dadeeac7e7fce47c3118",
+          "bytes": {
+            "database": 2154496,
+            "-journal": 0,
+            "-wal": 0,
+            "-shm": 0
+          },
+          "final_bytes": {
+            "database": 2256896,
+            "-journal": 0,
+            "-wal": 0,
+            "-shm": 0
+          },
+          "import_ms": 35.180582999999956,
+          "source_count_canonical_column_reads": 0,
+          "plans": {
+            "recent": [
+              "SCAN m USING INDEX nmnm_perf_v2_live_updated_source"
+            ],
+            "namespace": [
+              "SCAN m USING INDEX nmnm_perf_v2_live_updated_source"
+            ],
+            "tags": [
+              "SEARCH m USING INDEX sqlite_autoindex_memories_1 (id=?)",
+              "LIST SUBQUERY 1",
+              "SCAN memory_tags USING COVERING INDEX sqlite_autoindex_memory_tags_1",
+              "CREATE BLOOM FILTER",
+              "USE TEMP B-TREE FOR ORDER BY"
+            ],
+            "source": [
+              "SCAN m USING INDEX nmnm_perf_v2_live_updated_source"
+            ],
+            "source_count": [
+              "SCAN m USING INDEX nmnm_perf_v2_live_updated_source"
+            ],
+            "count": [
+              "SCAN m USING INDEX nmnm_perf_v2_live_updated_source"
+            ],
+            "bm25(memories_fts)": [
+              "SCAN memories_fts VIRTUAL TABLE INDEX 0:M1",
+              "SEARCH m USING INTEGER PRIMARY KEY (rowid=?)",
+              "USE TEMP B-TREE FOR ORDER BY"
+            ],
+            "memories_fts.rank": [
+              "SCAN memories_fts VIRTUAL TABLE INDEX 0:M1",
+              "SEARCH m USING INTEGER PRIMARY KEY (rowid=?)",
+              "USE TEMP B-TREE FOR ORDER BY"
+            ]
+          },
+          "timings": {
+            "recall": {
+              "p50_ms": 0.023500000000012733,
+              "p95_ms": 0.025500000000079126
+            },
+            "recent": {
+              "p50_ms": 0.17420900000001893,
+              "p95_ms": 0.2186659999999847
+            },
+            "namespace": {
+              "p50_ms": 0.21079099999997197,
+              "p95_ms": 0.22662500000001273
+            },
+            "source": {
+              "p50_ms": 0.2117919999999458,
+              "p95_ms": 0.22466700000006767
+            },
+            "tags": {
+              "p50_ms": 0.3273750000000746,
+              "p95_ms": 0.3591669999999567
+            },
+            "page": {
+              "p50_ms": 0.3160000000000309,
+              "p95_ms": 0.3416670000000295
+            },
+            "strict": {
+              "p50_ms": 0.3647920000000795,
+              "p95_ms": 0.39887499999997544
+            },
+            "prefix": {
+              "p50_ms": 0.3282499999999118,
+              "p95_ms": 0.3670829999999796
+            },
+            "boolean": {
+              "p50_ms": 0.4502500000000964,
+              "p95_ms": 0.49154200000009496
+            },
+            "phrase": {
+              "p50_ms": 0.34741700000006404,
+              "p95_ms": 0.5331250000000409
+            },
+            "near": {
+              "p50_ms": 0.38049999999998363,
+              "p95_ms": 0.5270419999999376
+            },
+            "broad": {
+              "p50_ms": 0.9063329999999041,
+              "p95_ms": 1.0537500000000364
+            },
+            "narrow": {
+              "p50_ms": 0.0631669999999076,
+              "p95_ms": 0.09912499999995816
+            },
+            "punctuation": {
+              "p50_ms": 0.3530839999999671,
+              "p95_ms": 0.3757910000000493
+            },
+            "export": {
+              "p50_ms": 3.978417000000036,
+              "p95_ms": 4.82854199999997
+            },
+            "create": {
+              "p50_ms": 0.5855839999999262,
+              "p95_ms": 0.7180000000000746
+            },
+            "patch_content": {
+              "p50_ms": 0.504709000000048,
+              "p95_ms": 0.6599170000001777
+            },
+            "patch_tags": {
+              "p50_ms": 0.4124170000000049,
+              "p95_ms": 0.4730420000000777
+            },
+            "patch_metadata": {
+              "p50_ms": 0.35720800000012787,
+              "p95_ms": 0.43533300000012787
+            },
+            "patch_score": {
+              "p50_ms": 0.36075000000005275,
+              "p95_ms": 0.44337500000006
+            },
+            "patch_expiry": {
+              "p50_ms": 0.35520800000017516,
+              "p95_ms": 0.40258300000004965
+            },
+            "remove": {
+              "p50_ms": 0.43591700000001765,
+              "p95_ms": 0.5084590000001299
+            },
+            "restore": {
+              "p50_ms": 0.5042080000000624,
+              "p95_ms": 0.6110830000000078
+            }
+          }
+        },
+        "cold": {
+          "sqlite": "3.51.3",
+          "journal_mode": "delete",
+          "result_digest": "463dfbbbc69d13c294b2dc50154c99bd0255109cc739dadeeac7e7fce47c3118",
+          "bytes": {
+            "database": 2154496,
+            "-journal": 0,
+            "-wal": 0,
+            "-shm": 0
+          },
+          "final_bytes": {
+            "database": 2256896,
+            "-journal": 0,
+            "-wal": 0,
+            "-shm": 0
+          },
+          "import_ms": 30.776499999999942,
+          "source_count_canonical_column_reads": 0,
+          "plans": {
+            "recent": [
+              "SCAN m USING INDEX nmnm_perf_v2_live_updated_source"
+            ],
+            "namespace": [
+              "SCAN m USING INDEX nmnm_perf_v2_live_updated_source"
+            ],
+            "tags": [
+              "SEARCH m USING INDEX sqlite_autoindex_memories_1 (id=?)",
+              "LIST SUBQUERY 1",
+              "SCAN memory_tags USING COVERING INDEX sqlite_autoindex_memory_tags_1",
+              "CREATE BLOOM FILTER",
+              "USE TEMP B-TREE FOR ORDER BY"
+            ],
+            "source": [
+              "SCAN m USING INDEX nmnm_perf_v2_live_updated_source"
+            ],
+            "source_count": [
+              "SCAN m USING INDEX nmnm_perf_v2_live_updated_source"
+            ],
+            "count": [
+              "SCAN m USING INDEX nmnm_perf_v2_live_updated_source"
+            ],
+            "bm25(memories_fts)": [
+              "SCAN memories_fts VIRTUAL TABLE INDEX 0:M1",
+              "SEARCH m USING INTEGER PRIMARY KEY (rowid=?)",
+              "USE TEMP B-TREE FOR ORDER BY"
+            ],
+            "memories_fts.rank": [
+              "SCAN memories_fts VIRTUAL TABLE INDEX 0:M1",
+              "SEARCH m USING INTEGER PRIMARY KEY (rowid=?)",
+              "USE TEMP B-TREE FOR ORDER BY"
+            ]
+          },
+          "timings": {
+            "recall": {
+              "p50_ms": 0.15295900000000984,
+              "p95_ms": 0.20416599999998652
+            },
+            "recent": {
+              "p50_ms": 0.34074999999984357,
+              "p95_ms": 0.5145830000001297
+            },
+            "namespace": {
+              "p50_ms": 0.3447080000000824,
+              "p95_ms": 0.3805839999999989
+            },
+            "source": {
+              "p50_ms": 0.3402080000000751,
+              "p95_ms": 0.3847090000001572
+            },
+            "tags": {
+              "p50_ms": 0.38829099999998107,
+              "p95_ms": 0.41916700000001583
+            },
+            "page": {
+              "p50_ms": 0.4534590000000662,
+              "p95_ms": 0.5753749999998945
+            },
+            "strict": {
+              "p50_ms": 0.6230420000001686,
+              "p95_ms": 0.7238749999999072
+            },
+            "prefix": {
+              "p50_ms": 0.5797079999999823,
+              "p95_ms": 0.629165999999941
+            },
+            "boolean": {
+              "p50_ms": 0.7699159999999665,
+              "p95_ms": 1.0684170000001814
+            },
+            "phrase": {
+              "p50_ms": 0.6521670000001905,
+              "p95_ms": 0.7947079999999005
+            },
+            "near": {
+              "p50_ms": 0.6548749999999472,
+              "p95_ms": 0.8048750000000382
+            },
+            "broad": {
+              "p50_ms": 1.1752080000001115,
+              "p95_ms": 1.5792500000000018
+            },
+            "narrow": {
+              "p50_ms": 0.19716600000015205,
+              "p95_ms": 0.2239999999999327
+            },
+            "punctuation": {
+              "p50_ms": 0.6200839999999062,
+              "p95_ms": 0.8422499999999218
+            },
+            "export": {
+              "p50_ms": 4.344165999999859,
+              "p95_ms": 4.853875000000016
+            },
+            "create": {
+              "p50_ms": 0.7819590000001426,
+              "p95_ms": 0.9484160000001793
+            },
+            "patch_content": {
+              "p50_ms": 0.6974170000000868,
+              "p95_ms": 0.79037500000004
+            },
+            "patch_tags": {
+              "p50_ms": 0.5814579999998841,
+              "p95_ms": 0.6662919999998849
+            },
+            "patch_metadata": {
+              "p50_ms": 0.4949579999999969,
+              "p95_ms": 0.5853329999999914
+            },
+            "patch_score": {
+              "p50_ms": 0.4777910000000247,
+              "p95_ms": 0.5051670000000286
+            },
+            "patch_expiry": {
+              "p50_ms": 0.47233299999993505,
+              "p95_ms": 0.5515829999999369
+            },
+            "remove": {
+              "p50_ms": 0.662499999999909,
+              "p95_ms": 0.8209170000000086
+            },
+            "restore": {
+              "p50_ms": 0.6799580000001697,
+              "p95_ms": 0.8585419999999431
+            }
+          }
+        }
+      }
+    },
+    "10000": {
+      "timestamp": "2026-11-19T16:07:58.915Z",
+      "node": "v22.23.2",
+      "platform": "darwin",
+      "arch": "arm64",
+      "fixture_digest": "2315b4dec6a0917052d8b006ffb3494de88a3b3568097285a08687ba3086dbb7",
+      "modes": {
+        "reused": {
+          "sqlite": "3.51.3",
+          "journal_mode": "delete",
+          "result_digest": "d91c41778b41406ab05a321768b254948dcaace428ef05356e591b8d8b494a73",
+          "bytes": {
+            "database": 21098496,
+            "-journal": 0,
+            "-wal": 0,
+            "-shm": 0
+          },
+          "final_bytes": {
+            "database": 21962752,
+            "-journal": 0,
+            "-wal": 0,
+            "-shm": 0
+          },
+          "import_ms": 400.9250410000002,
+          "source_count_canonical_column_reads": 0,
+          "plans": {
+            "recent": [
+              "SCAN m USING INDEX nmnm_perf_v2_live_updated_source"
+            ],
+            "namespace": [
+              "SCAN m USING INDEX nmnm_perf_v2_live_updated_source"
+            ],
+            "tags": [
+              "SEARCH m USING INDEX sqlite_autoindex_memories_1 (id=?)",
+              "LIST SUBQUERY 1",
+              "SCAN memory_tags USING COVERING INDEX sqlite_autoindex_memory_tags_1",
+              "CREATE BLOOM FILTER",
+              "USE TEMP B-TREE FOR ORDER BY"
+            ],
+            "source": [
+              "SCAN m USING INDEX nmnm_perf_v2_live_updated_source"
+            ],
+            "source_count": [
+              "SCAN m USING INDEX nmnm_perf_v2_live_updated_source"
+            ],
+            "count": [
+              "SCAN m USING INDEX nmnm_perf_v2_live_updated_source"
+            ],
+            "bm25(memories_fts)": [
+              "SCAN memories_fts VIRTUAL TABLE INDEX 0:M1",
+              "SEARCH m USING INTEGER PRIMARY KEY (rowid=?)",
+              "USE TEMP B-TREE FOR ORDER BY"
+            ],
+            "memories_fts.rank": [
+              "SCAN memories_fts VIRTUAL TABLE INDEX 0:M1",
+              "SEARCH m USING INTEGER PRIMARY KEY (rowid=?)",
+              "USE TEMP B-TREE FOR ORDER BY"
+            ]
+          },
+          "timings": {
+            "recall": {
+              "p50_ms": 0.02383300000019517,
+              "p95_ms": 0.028458000000227912
+            },
+            "recent": {
+              "p50_ms": 0.43712500000037835,
+              "p95_ms": 0.5094579999999951
+            },
+            "namespace": {
+              "p50_ms": 0.607082999999875,
+              "p95_ms": 0.6457080000000133
+            },
+            "source": {
+              "p50_ms": 0.6667089999996278,
+              "p95_ms": 0.7569159999998192
+            },
+            "tags": {
+              "p50_ms": 2.431332999999995,
+              "p95_ms": 2.77599999999984
+            },
+            "page": {
+              "p50_ms": 0.5882080000001224,
+              "p95_ms": 0.6920420000001286
+            },
+            "strict": {
+              "p50_ms": 4.676291000000219,
+              "p95_ms": 5.746416999999838
+            },
+            "prefix": {
+              "p50_ms": 5.8507079999999405,
+              "p95_ms": 11.696500000000015
+            },
+            "boolean": {
+              "p50_ms": 6.623333000000002,
+              "p95_ms": 7.546833000000333
+            },
+            "phrase": {
+              "p50_ms": 4.961041999999907,
+              "p95_ms": 6.347541000000092
+            },
+            "near": {
+              "p50_ms": 5.091249999999945,
+              "p95_ms": 6.769792000000052
+            },
+            "broad": {
+              "p50_ms": 11.781624999999622,
+              "p95_ms": 14.289250000000266
+            },
+            "narrow": {
+              "p50_ms": 0.07045899999957328,
+              "p95_ms": 0.08145899999999529
+            },
+            "punctuation": {
+              "p50_ms": 4.9710830000003625,
+              "p95_ms": 5.804707999999664
+            },
+            "export": {
+              "p50_ms": 51.61541699999998,
+              "p95_ms": 57.872417000000496
+            },
+            "create": {
+              "p50_ms": 0.7387500000004366,
+              "p95_ms": 0.9136250000001382
+            },
+            "patch_content": {
+              "p50_ms": 0.5375420000000304,
+              "p95_ms": 0.7718329999997877
+            },
+            "patch_tags": {
+              "p50_ms": 0.4287500000000364,
+              "p95_ms": 0.47979099999975006
+            },
+            "patch_metadata": {
+              "p50_ms": 0.34545799999978044,
+              "p95_ms": 0.39637500000026193
+            },
+            "patch_score": {
+              "p50_ms": 0.3577919999997903,
+              "p95_ms": 0.4703330000002097
+            },
+            "patch_expiry": {
+              "p50_ms": 0.34487499999977445,
+              "p95_ms": 0.370082999999795
+            },
+            "remove": {
+              "p50_ms": 0.4679999999998472,
+              "p95_ms": 0.5970829999996567
+            },
+            "restore": {
+              "p50_ms": 0.5049169999992955,
+              "p95_ms": 0.6040000000002692
+            }
+          }
+        },
+        "cold": {
+          "sqlite": "3.51.3",
+          "journal_mode": "delete",
+          "result_digest": "d91c41778b41406ab05a321768b254948dcaace428ef05356e591b8d8b494a73",
+          "bytes": {
+            "database": 21098496,
+            "-journal": 0,
+            "-wal": 0,
+            "-shm": 0
+          },
+          "final_bytes": {
+            "database": 21962752,
+            "-journal": 0,
+            "-wal": 0,
+            "-shm": 0
+          },
+          "import_ms": 347.26658300000054,
+          "source_count_canonical_column_reads": 0,
+          "plans": {
+            "recent": [
+              "SCAN m USING INDEX nmnm_perf_v2_live_updated_source"
+            ],
+            "namespace": [
+              "SCAN m USING INDEX nmnm_perf_v2_live_updated_source"
+            ],
+            "tags": [
+              "SEARCH m USING INDEX sqlite_autoindex_memories_1 (id=?)",
+              "LIST SUBQUERY 1",
+              "SCAN memory_tags USING COVERING INDEX sqlite_autoindex_memory_tags_1",
+              "CREATE BLOOM FILTER",
+              "USE TEMP B-TREE FOR ORDER BY"
+            ],
+            "source": [
+              "SCAN m USING INDEX nmnm_perf_v2_live_updated_source"
+            ],
+            "source_count": [
+              "SCAN m USING INDEX nmnm_perf_v2_live_updated_source"
+            ],
+            "count": [
+              "SCAN m USING INDEX nmnm_perf_v2_live_updated_source"
+            ],
+            "bm25(memories_fts)": [
+              "SCAN memories_fts VIRTUAL TABLE INDEX 0:M1",
+              "SEARCH m USING INTEGER PRIMARY KEY (rowid=?)",
+              "USE TEMP B-TREE FOR ORDER BY"
+            ],
+            "memories_fts.rank": [
+              "SCAN memories_fts VIRTUAL TABLE INDEX 0:M1",
+              "SEARCH m USING INTEGER PRIMARY KEY (rowid=?)",
+              "USE TEMP B-TREE FOR ORDER BY"
+            ]
+          },
+          "timings": {
+            "recall": {
+              "p50_ms": 0.15941700000075798,
+              "p95_ms": 0.26141699999971024
+            },
+            "recent": {
+              "p50_ms": 0.7743749999999636,
+              "p95_ms": 1.2323749999995925
+            },
+            "namespace": {
+              "p50_ms": 1.038209000000279,
+              "p95_ms": 1.2811670000000959
+            },
+            "source": {
+              "p50_ms": 1.0086660000006304,
+              "p95_ms": 1.2287079999996422
+            },
+            "tags": {
+              "p50_ms": 2.3922079999993002,
+              "p95_ms": 2.8412920000000668
+            },
+            "page": {
+              "p50_ms": 1.0510409999997137,
+              "p95_ms": 1.4295839999995223
+            },
+            "strict": {
+              "p50_ms": 4.882083000000421,
+              "p95_ms": 5.572708000000603
+            },
+            "prefix": {
+              "p50_ms": 4.9797499999995125,
+              "p95_ms": 5.864875000000211
+            },
+            "boolean": {
+              "p50_ms": 6.77587499999936,
+              "p95_ms": 8.79345900000044
+            },
+            "phrase": {
+              "p50_ms": 4.827916000000187,
+              "p95_ms": 6.24370799999997
+            },
+            "near": {
+              "p50_ms": 5.067291999999725,
+              "p95_ms": 6.2519999999985885
+            },
+            "broad": {
+              "p50_ms": 11.360458999999537,
+              "p95_ms": 12.891374999999243
+            },
+            "narrow": {
+              "p50_ms": 0.20833400000083202,
+              "p95_ms": 0.23462500000096043
+            },
+            "punctuation": {
+              "p50_ms": 4.815041999998357,
+              "p95_ms": 5.63495900000089
+            },
+            "export": {
+              "p50_ms": 51.20966699999917,
+              "p95_ms": 56.331333000000086
+            },
+            "create": {
+              "p50_ms": 0.9272919999984879,
+              "p95_ms": 1.2275420000005397
+            },
+            "patch_content": {
+              "p50_ms": 0.7392079999990528,
+              "p95_ms": 0.8734999999996944
+            },
+            "patch_tags": {
+              "p50_ms": 0.592333000000508,
+              "p95_ms": 0.6734999999989668
+            },
+            "patch_metadata": {
+              "p50_ms": 0.5110409999997501,
+              "p95_ms": 0.6121670000011363
+            },
+            "patch_score": {
+              "p50_ms": 0.5253329999995913,
+              "p95_ms": 0.5881250000002183
+            },
+            "patch_expiry": {
+              "p50_ms": 0.4961249999996653,
+              "p95_ms": 0.5674999999991996
+            },
+            "remove": {
+              "p50_ms": 0.6251670000001468,
+              "p95_ms": 0.7499159999988478
+            },
+            "restore": {
+              "p50_ms": 0.7030829999985144,
+              "p95_ms": 0.8746670000000449
+            }
+          }
+        }
+      }
+    },
+    "100000": {
+      "timestamp": "2026-11-19T16:08:08.019Z",
+      "node": "v22.23.2",
+      "platform": "darwin",
+      "arch": "arm64",
+      "fixture_digest": "8a8bc1f0e3ae12189305375eb445b7e747a270cb59c448c0dadf9e84bbd82115",
+      "modes": {
+        "reused": {
+          "sqlite": "3.51.3",
+          "journal_mode": "delete",
+          "result_digest": "64940ec5b90301cde071f94652250a8ee1391d7609c78af975d078e2ef7f01bf",
+          "bytes": {
+            "database": 211542016,
+            "-journal": 0,
+            "-wal": 0,
+            "-shm": 0
+          },
+          "final_bytes": {
+            "database": 213217280,
+            "-journal": 0,
+            "-wal": 0,
+            "-shm": 0
+          },
+          "import_ms": 3485.4552919999987,
+          "source_count_canonical_column_reads": 0,
+          "plans": {
+            "recent": [
+              "SCAN m USING INDEX nmnm_perf_v2_live_updated_source"
+            ],
+            "namespace": [
+              "SCAN m USING INDEX nmnm_perf_v2_live_updated_source"
+            ],
+            "tags": [
+              "SEARCH m USING INDEX sqlite_autoindex_memories_1 (id=?)",
+              "LIST SUBQUERY 1",
+              "SCAN memory_tags USING COVERING INDEX sqlite_autoindex_memory_tags_1",
+              "CREATE BLOOM FILTER",
+              "USE TEMP B-TREE FOR ORDER BY"
+            ],
+            "source": [
+              "SCAN m USING INDEX nmnm_perf_v2_live_updated_source"
+            ],
+            "source_count": [
+              "SCAN m USING INDEX nmnm_perf_v2_live_updated_source"
+            ],
+            "count": [
+              "SCAN m USING INDEX nmnm_perf_v2_live_updated_source"
+            ],
+            "bm25(memories_fts)": [
+              "SCAN memories_fts VIRTUAL TABLE INDEX 0:M1",
+              "SEARCH m USING INTEGER PRIMARY KEY (rowid=?)",
+              "USE TEMP B-TREE FOR ORDER BY"
+            ],
+            "memories_fts.rank": [
+              "SCAN memories_fts VIRTUAL TABLE INDEX 0:M1",
+              "SEARCH m USING INTEGER PRIMARY KEY (rowid=?)",
+              "USE TEMP B-TREE FOR ORDER BY"
+            ]
+          },
+          "timings": {
+            "recall": {
+              "p50_ms": 0.02375000000029104,
+              "p95_ms": 0.04874999999810825
+            },
+            "recent": {
+              "p50_ms": 5.371624999999767,
+              "p95_ms": 6.374082999998791
+            },
+            "namespace": {
+              "p50_ms": 6.805208000001585,
+              "p95_ms": 7.970000000001164
+            },
+            "source": {
+              "p50_ms": 7.179916000000958,
+              "p95_ms": 8.265959000000294
+            },
+            "tags": {
+              "p50_ms": 27.27745800000048,
+              "p95_ms": 28.926416999998764
+            },
+            "page": {
+              "p50_ms": 5.327374999997119,
+              "p95_ms": 6.379750000000058
+            },
+            "strict": {
+              "p50_ms": 54.35358300000007,
+              "p95_ms": 57.76183300000048
+            },
+            "prefix": {
+              "p50_ms": 53.510834000000614,
+              "p95_ms": 54.63929199999984
+            },
+            "boolean": {
+              "p50_ms": 71.80716699999903,
+              "p95_ms": 73.8470419999976
+            },
+            "phrase": {
+              "p50_ms": 56.1605410000011,
+              "p95_ms": 61.11762499999895
+            },
+            "near": {
+              "p50_ms": 56.86812500000087,
+              "p95_ms": 60.37341600000218
+            },
+            "broad": {
+              "p50_ms": 116.32087499999761,
+              "p95_ms": 128.25224999999773
+            },
+            "narrow": {
+              "p50_ms": 0.0912090000056196,
+              "p95_ms": 0.1017920000012964
+            },
+            "punctuation": {
+              "p50_ms": 55.971083000004,
+              "p95_ms": 58.438583000002836
+            },
+            "export": {
+              "p50_ms": 716.3903750000027,
+              "p95_ms": 832.5140419999952
+            },
+            "create": {
+              "p50_ms": 0.7744999999995343,
+              "p95_ms": 2.001709000003757
+            },
+            "patch_content": {
+              "p50_ms": 0.6312079999988782,
+              "p95_ms": 0.8621659999989788
+            },
+            "patch_tags": {
+              "p50_ms": 0.4537080000009155,
+              "p95_ms": 0.6302910000013071
+            },
+            "patch_metadata": {
+              "p50_ms": 0.34474999999656575,
+              "p95_ms": 0.37654099999781465
+            },
+            "patch_score": {
+              "p50_ms": 0.33683299999393057,
+              "p95_ms": 0.4148750000022119
+            },
+            "patch_expiry": {
+              "p50_ms": 0.34587500000634464,
+              "p95_ms": 0.431416999999783
+            },
+            "remove": {
+              "p50_ms": 0.5250420000011218,
+              "p95_ms": 0.6539170000032755
+            },
+            "restore": {
+              "p50_ms": 0.5417500000039581,
+              "p95_ms": 0.7194170000002487
+            }
+          }
+        },
+        "cold": {
+          "sqlite": "3.51.3",
+          "journal_mode": "delete",
+          "result_digest": "64940ec5b90301cde071f94652250a8ee1391d7609c78af975d078e2ef7f01bf",
+          "bytes": {
+            "database": 211542016,
+            "-journal": 0,
+            "-wal": 0,
+            "-shm": 0
+          },
+          "final_bytes": {
+            "database": 213221376,
+            "-journal": 0,
+            "-wal": 0,
+            "-shm": 0
+          },
+          "import_ms": 3633.2235,
+          "source_count_canonical_column_reads": 0,
+          "plans": {
+            "recent": [
+              "SCAN m USING INDEX nmnm_perf_v2_live_updated_source"
+            ],
+            "namespace": [
+              "SCAN m USING INDEX nmnm_perf_v2_live_updated_source"
+            ],
+            "tags": [
+              "SEARCH m USING INDEX sqlite_autoindex_memories_1 (id=?)",
+              "LIST SUBQUERY 1",
+              "SCAN memory_tags USING COVERING INDEX sqlite_autoindex_memory_tags_1",
+              "CREATE BLOOM FILTER",
+              "USE TEMP B-TREE FOR ORDER BY"
+            ],
+            "source": [
+              "SCAN m USING INDEX nmnm_perf_v2_live_updated_source"
+            ],
+            "source_count": [
+              "SCAN m USING INDEX nmnm_perf_v2_live_updated_source"
+            ],
+            "count": [
+              "SCAN m USING INDEX nmnm_perf_v2_live_updated_source"
+            ],
+            "bm25(memories_fts)": [
+              "SCAN memories_fts VIRTUAL TABLE INDEX 0:M1",
+              "SEARCH m USING INTEGER PRIMARY KEY (rowid=?)",
+              "USE TEMP B-TREE FOR ORDER BY"
+            ],
+            "memories_fts.rank": [
+              "SCAN memories_fts VIRTUAL TABLE INDEX 0:M1",
+              "SEARCH m USING INTEGER PRIMARY KEY (rowid=?)",
+              "USE TEMP B-TREE FOR ORDER BY"
+            ]
+          },
+          "timings": {
+            "recall": {
+              "p50_ms": 0.15008400000806432,
+              "p95_ms": 0.17354099999647588
+            },
+            "recent": {
+              "p50_ms": 5.625750000006519,
+              "p95_ms": 6.824957999997423
+            },
+            "namespace": {
+              "p50_ms": 7.4632500000006985,
+              "p95_ms": 9.71183299999393
+            },
+            "source": {
+              "p50_ms": 8.183833000002778,
+              "p95_ms": 9.3248339999991
+            },
+            "tags": {
+              "p50_ms": 22.794833000007202,
+              "p95_ms": 24.914125000010245
+            },
+            "page": {
+              "p50_ms": 5.4785419999971054,
+              "p95_ms": 6.83491600000707
+            },
+            "strict": {
+              "p50_ms": 56.92629199998919,
+              "p95_ms": 59.69195799999579
+            },
+            "prefix": {
+              "p50_ms": 55.598291999995126,
+              "p95_ms": 60.41599999999744
+            },
+            "boolean": {
+              "p50_ms": 72.19862500000454,
+              "p95_ms": 75.6037079999951
+            },
+            "phrase": {
+              "p50_ms": 57.77766700000211,
+              "p95_ms": 58.97520800000348
+            },
+            "near": {
+              "p50_ms": 57.92633400000341,
+              "p95_ms": 61.266500000012456
+            },
+            "broad": {
+              "p50_ms": 116.75687499999185,
+              "p95_ms": 120.59320899999875
+            },
+            "narrow": {
+              "p50_ms": 0.25533300000824966,
+              "p95_ms": 0.2761669999890728
+            },
+            "punctuation": {
+              "p50_ms": 57.374125000002095,
+              "p95_ms": 59.686916999999085
+            },
+            "export": {
+              "p50_ms": 703.8417499999923,
+              "p95_ms": 812.848874999996
+            },
+            "create": {
+              "p50_ms": 0.9963330000027781,
+              "p95_ms": 2.272207999994862
+            },
+            "patch_content": {
+              "p50_ms": 0.8045419999980368,
+              "p95_ms": 0.969916000001831
+            },
+            "patch_tags": {
+              "p50_ms": 0.587708000006387,
+              "p95_ms": 0.6982920000009472
+            },
+            "patch_metadata": {
+              "p50_ms": 0.514458999998169,
+              "p95_ms": 0.5799580000020796
+            },
+            "patch_score": {
+              "p50_ms": 0.5066249999945285,
+              "p95_ms": 0.6167080000013812
+            },
+            "patch_expiry": {
+              "p50_ms": 0.4975420000118902,
+              "p95_ms": 0.6053329999995185
+            },
+            "remove": {
+              "p50_ms": 0.7458329999935813,
+              "p95_ms": 0.9139999999897555
+            },
+            "restore": {
+              "p50_ms": 0.7431660000002012,
+              "p95_ms": 0.9636250000039581
+            }
+          }
+        }
+      }
+    }
+  },
+  "quality": {
+    "label_status": "Proposed relevance judgments; operator review required before Gate R quality acceptance.",
+    "queries": [
+      {
+        "split": "development",
+        "stratum": "lexical",
+        "query": "SQLite",
+        "relevant": [
+          "10000000-0000-4000-8000-000000000001",
+          "10000000-0000-4000-8000-000000000004",
+          "10000000-0000-4000-8000-000000000006"
+        ],
+        "ids": [
+          "10000000-0000-4000-8000-000000000001",
+          "10000000-0000-4000-8000-000000000004",
+          "10000000-0000-4000-8000-000000000006"
+        ],
+        "precision_at_5": 0.6,
+        "recall_at_5": 1
+      },
+      {
+        "split": "development",
+        "stratum": "alias",
+        "query": "postgres",
+        "relevant": [
+          "10000000-0000-4000-8000-000000000002"
+        ],
+        "ids": [],
+        "precision_at_5": 0,
+        "recall_at_5": 0
+      },
+      {
+        "split": "development",
+        "stratum": "authority",
+        "query": "snapshot reads",
+        "relevant": [
+          "10000000-0000-4000-8000-000000000003"
+        ],
+        "ids": [
+          "10000000-0000-4000-8000-000000000003"
+        ],
+        "precision_at_5": 0.2,
+        "recall_at_5": 1
+      },
+      {
+        "split": "development",
+        "stratum": "punctuation",
+        "query": "config.toml",
+        "relevant": [
+          "10000000-0000-4000-8000-000000000005"
+        ],
+        "ids": [
+          "10000000-0000-4000-8000-000000000005"
+        ],
+        "precision_at_5": 0.2,
+        "recall_at_5": 1
+      },
+      {
+        "split": "development",
+        "stratum": "zero-hit",
+        "query": "!!!",
+        "relevant": [],
+        "ids": [],
+        "precision_at_5": 0,
+        "recall_at_5": null
+      },
+      {
+        "split": "held-out",
+        "stratum": "identifier",
+        "query": "DatabaseSync",
+        "relevant": [
+          "10000000-0000-4000-8000-000000000004"
+        ],
+        "ids": [
+          "10000000-0000-4000-8000-000000000004"
+        ],
+        "precision_at_5": 0.2,
+        "recall_at_5": 1
+      },
+      {
+        "split": "held-out",
+        "stratum": "alias",
+        "query": "db backups",
+        "relevant": [
+          "10000000-0000-4000-8000-000000000008"
+        ],
+        "ids": [],
+        "precision_at_5": 0,
+        "recall_at_5": 0
+      },
+      {
+        "split": "held-out",
+        "stratum": "lexical",
+        "query": "credential manager",
+        "relevant": [
+          "10000000-0000-4000-8000-000000000007"
+        ],
+        "ids": [
+          "10000000-0000-4000-8000-000000000007"
+        ],
+        "precision_at_5": 0.2,
+        "recall_at_5": 1
+      },
+      {
+        "split": "held-out",
+        "stratum": "semantic-gap",
+        "query": "storage decision",
+        "relevant": [
+          "10000000-0000-4000-8000-000000000001"
+        ],
+        "ids": [],
+        "precision_at_5": 0,
+        "recall_at_5": 0
+      },
+      {
+        "split": "held-out",
+        "stratum": "advanced",
+        "query": "\"snapshot reads\" NOT debugging",
+        "relevant": [
+          "10000000-0000-4000-8000-000000000003"
+        ],
+        "ids": [
+          "10000000-0000-4000-8000-000000000003"
+        ],
+        "precision_at_5": 0.2,
+        "recall_at_5": 1
+      }
+    ]
+  },
+  "paired_source": {
+    "node": "v22.23.2",
+    "records": 100000,
+    "mode": "reused read-only connections; identical canonical records; legacy versus replacement index; no ANALYZE",
+    "upgrade": {
+      "elapsed_ms": 168.3912919999998,
+      "before_bytes": 210837504,
+      "after_bytes": 218365952
+    },
+    "pairs": [
+      {
+        "order": "before first",
+        "before": {
+          "samples": 30,
+          "warmups": 5,
+          "p50_ms": 110.54025000000001,
+          "p95_ms": 120.70691699999952
+        },
+        "fixed": {
+          "samples": 30,
+          "warmups": 5,
+          "p50_ms": 7.267291000000114,
+          "p95_ms": 7.965041999999812
+        }
+      },
+      {
+        "order": "fixed first",
+        "before": {
+          "samples": 30,
+          "warmups": 5,
+          "p50_ms": 110.9512909999994,
+          "p95_ms": 115.29204199999913
+        },
+        "fixed": {
+          "samples": 30,
+          "warmups": 5,
+          "p50_ms": 6.704874999999447,
+          "p95_ms": 7.5040829999998095
+        }
+      },
+      {
+        "order": "before first",
+        "before": {
+          "samples": 30,
+          "warmups": 5,
+          "p50_ms": 113.07729199999994,
+          "p95_ms": 119.83050000000003
+        },
+        "fixed": {
+          "samples": 30,
+          "warmups": 5,
+          "p50_ms": 6.780582999999751,
+          "p95_ms": 7.310916999998881
+        }
+      }
+    ],
+    "selective": {
+      "recent": {
+        "selector": {},
+        "before": {
+          "samples": 30,
+          "warmups": 5,
+          "p50_ms": 5.424708999998984,
+          "p95_ms": 6.198707999999897
+        },
+        "fixed": {
+          "samples": 30,
+          "warmups": 5,
+          "p50_ms": 4.524542000002839,
+          "p95_ms": 4.954874999999447
+        }
+      },
+      "namespace": {
+        "selector": {
+          "namespace": "selected"
+        },
+        "before": {
+          "samples": 30,
+          "warmups": 5,
+          "p50_ms": 6.5052079999986745,
+          "p95_ms": 7.283791999998357
+        },
+        "fixed": {
+          "samples": 30,
+          "warmups": 5,
+          "p50_ms": 6.550375000002532,
+          "p95_ms": 7.280500000000757
+        }
+      },
+      "source_namespace": {
+        "selector": {
+          "source": "pi",
+          "namespace": "selected"
+        },
+        "before": {
+          "samples": 30,
+          "warmups": 5,
+          "p50_ms": 20.102083000001585,
+          "p95_ms": 22.168249999998807
+        },
+        "fixed": {
+          "samples": 30,
+          "warmups": 5,
+          "p50_ms": 7.0633750000015425,
+          "p95_ms": 7.993624999999156
+        }
+      },
+      "source_tags": {
+        "selector": {
+          "source": "claude",
+          "tags": [
+            "common",
+            "rare"
+          ]
+        },
+        "before": {
+          "samples": 30,
+          "warmups": 5,
+          "p50_ms": 27.684833999999682,
+          "p95_ms": 29.95770899999843
+        },
+        "fixed": {
+          "samples": 30,
+          "warmups": 5,
+          "p50_ms": 27.960167000001093,
+          "p95_ms": 30.317291999999725
+        }
+      },
+      "source_text": {
+        "selector": {
+          "source": "pi",
+          "query": "SQLite"
+        },
+        "before": {
+          "samples": 30,
+          "warmups": 5,
+          "p50_ms": 57.96025000000009,
+          "p95_ms": 60.40308399999776
+        },
+        "fixed": {
+          "samples": 30,
+          "warmups": 5,
+          "p50_ms": 56.54829199999949,
+          "p95_ms": 59.460541999997076
+        }
+      },
+      "source_kind": {
+        "selector": {
+          "source": "pi",
+          "kind": "decision"
+        },
+        "before": {
+          "samples": 30,
+          "warmups": 5,
+          "p50_ms": 113.98433300000033,
+          "p95_ms": 119.18645800000013
+        },
+        "fixed": {
+          "samples": 30,
+          "warmups": 5,
+          "p50_ms": 32.82558300000164,
+          "p95_ms": 37.49566699999923
+        }
+      }
+    }
+  },
+  "visibility_and_writes": {
+    "node": "v22.23.2",
+    "records": 100000,
+    "visibility": {
+      "removed-heavy": {
+        "active": {
+          "selector": {
+            "source": "pi"
+          },
+          "total": 217,
+          "before": {
+            "samples": 30,
+            "warmups": 5,
+            "p50_ms": 1.0122499999997672,
+            "p95_ms": 1.482082999999875
+          },
+          "fixed": {
+            "samples": 30,
+            "warmups": 5,
+            "p50_ms": 0.21512500000017099,
+            "p95_ms": 0.24066700000003038
+          }
+        },
+        "expired": {
+          "selector": {
+            "source": "pi",
+            "expires": "expired"
+          },
+          "total": 18,
+          "before": {
+            "samples": 30,
+            "warmups": 5,
+            "p50_ms": 0.21645899999975882,
+            "p95_ms": 0.34537500000033106
+          },
+          "fixed": {
+            "samples": 30,
+            "warmups": 5,
+            "p50_ms": 0.19783399999960238,
+            "p95_ms": 0.22620800000004238
+          }
+        },
+        "any": {
+          "selector": {
+            "source": "pi",
+            "expires": "any"
+          },
+          "total": 235,
+          "before": {
+            "samples": 30,
+            "warmups": 5,
+            "p50_ms": 1.0653330000000096,
+            "p95_ms": 1.299333999999817
+          },
+          "fixed": {
+            "samples": 30,
+            "warmups": 5,
+            "p50_ms": 0.19033300000000963,
+            "p95_ms": 0.23058399999990797
+          }
+        },
+        "fts": {
+          "selector": {
+            "source": "pi",
+            "query": "SQLite"
+          },
+          "total": 217,
+          "before": {
+            "samples": 30,
+            "warmups": 5,
+            "p50_ms": 0.40866700000015044,
+            "p95_ms": 0.6444169999999758
+          },
+          "fixed": {
+            "samples": 30,
+            "warmups": 5,
+            "p50_ms": 0.3950840000002245,
+            "p95_ms": 0.561916999999994
+          }
+        }
+      },
+      "expired-heavy": {
+        "active": {
+          "selector": {
+            "source": "pi"
+          },
+          "total": 217,
+          "before": {
+            "samples": 30,
+            "warmups": 5,
+            "p50_ms": 9.089500000000044,
+            "p95_ms": 10.629417000000103
+          },
+          "fixed": {
+            "samples": 30,
+            "warmups": 5,
+            "p50_ms": 6.5124589999995806,
+            "p95_ms": 7.54516700000022
+          }
+        },
+        "expired": {
+          "selector": {
+            "source": "pi",
+            "expires": "expired"
+          },
+          "total": 23467,
+          "before": {
+            "samples": 30,
+            "warmups": 5,
+            "p50_ms": 126.42854099999931,
+            "p95_ms": 131.0722079999996
+          },
+          "fixed": {
+            "samples": 30,
+            "warmups": 5,
+            "p50_ms": 8.924166000000696,
+            "p95_ms": 10.321125000000393
+          }
+        },
+        "any": {
+          "selector": {
+            "source": "pi",
+            "expires": "any"
+          },
+          "total": 23684,
+          "before": {
+            "samples": 30,
+            "warmups": 5,
+            "p50_ms": 121.52491599999848,
+            "p95_ms": 131.726458000001
+          },
+          "fixed": {
+            "samples": 30,
+            "warmups": 5,
+            "p50_ms": 5.918291999998473,
+            "p95_ms": 8.747666999999637
+          }
+        },
+        "fts": {
+          "selector": {
+            "source": "pi",
+            "query": "SQLite"
+          },
+          "total": 217,
+          "before": {
+            "samples": 30,
+            "warmups": 5,
+            "p50_ms": 46.25941700000112,
+            "p95_ms": 55.144499999998516
+          },
+          "fixed": {
+            "samples": 30,
+            "warmups": 5,
+            "p50_ms": 46.03612499999872,
+            "p95_ms": 50.2455000000009
+          }
+        }
+      }
+    },
+    "write_pairs": [
+      {
+        "order": "before first",
+        "modes": {
+          "reused": {
+            "before": {
+              "create": {
+                "samples": 100,
+                "warmups": 5,
+                "p50_ms": 0.6059170000007725,
+                "p95_ms": 1.1426659999997355
+              },
+              "content": {
+                "samples": 100,
+                "warmups": 5,
+                "p50_ms": 0.5758749999986321,
+                "p95_ms": 0.888875000000553
+              }
+            },
+            "fixed": {
+              "create": {
+                "samples": 100,
+                "warmups": 5,
+                "p50_ms": 0.7235419999997248,
+                "p95_ms": 1.133625000002212
+              },
+              "content": {
+                "samples": 100,
+                "warmups": 5,
+                "p50_ms": 0.5957909999997355,
+                "p95_ms": 0.7860419999997248
+              }
+            }
+          },
+          "cold": {
+            "before": {
+              "create": {
+                "samples": 100,
+                "warmups": 5,
+                "p50_ms": 0.8172919999997248,
+                "p95_ms": 1.138582999999926
+              },
+              "content": {
+                "samples": 100,
+                "warmups": 5,
+                "p50_ms": 0.7550409999967087,
+                "p95_ms": 0.9913750000014261
+              }
+            },
+            "fixed": {
+              "create": {
+                "samples": 100,
+                "warmups": 5,
+                "p50_ms": 0.8930829999990237,
+                "p95_ms": 1.2115840000005846
+              },
+              "content": {
+                "samples": 100,
+                "warmups": 5,
+                "p50_ms": 0.8434159999997064,
+                "p95_ms": 1.1215840000004391
+              }
+            }
+          }
+        }
+      },
+      {
+        "order": "fixed first",
+        "modes": {
+          "reused": {
+            "before": {
+              "create": {
+                "samples": 100,
+                "warmups": 5,
+                "p50_ms": 0.6073749999995925,
+                "p95_ms": 0.9089170000006561
+              },
+              "content": {
+                "samples": 100,
+                "warmups": 5,
+                "p50_ms": 0.5517499999987194,
+                "p95_ms": 0.8505420000001322
+              }
+            },
+            "fixed": {
+              "create": {
+                "samples": 100,
+                "warmups": 5,
+                "p50_ms": 0.7028749999990396,
+                "p95_ms": 1.049708999998984
+              },
+              "content": {
+                "samples": 100,
+                "warmups": 5,
+                "p50_ms": 0.6130420000008598,
+                "p95_ms": 0.7877090000001772
+              }
+            }
+          },
+          "cold": {
+            "before": {
+              "create": {
+                "samples": 100,
+                "warmups": 5,
+                "p50_ms": 0.7256669999987935,
+                "p95_ms": 1.068250000000262
+              },
+              "content": {
+                "samples": 100,
+                "warmups": 5,
+                "p50_ms": 0.6984580000025744,
+                "p95_ms": 0.9150410000002012
+              }
+            },
+            "fixed": {
+              "create": {
+                "samples": 100,
+                "warmups": 5,
+                "p50_ms": 0.8741249999984575,
+                "p95_ms": 1.3212080000012065
+              },
+              "content": {
+                "samples": 100,
+                "warmups": 5,
+                "p50_ms": 0.8205830000006245,
+                "p95_ms": 1.0431250000001455
+              }
+            }
+          }
+        }
+      },
+      {
+        "order": "before first",
+        "modes": {
+          "reused": {
+            "before": {
+              "create": {
+                "samples": 100,
+                "warmups": 5,
+                "p50_ms": 0.6084999999984575,
+                "p95_ms": 0.9277909999982512
+              },
+              "content": {
+                "samples": 100,
+                "warmups": 5,
+                "p50_ms": 0.5505410000005213,
+                "p95_ms": 0.72162500000195
+              }
+            },
+            "fixed": {
+              "create": {
+                "samples": 100,
+                "warmups": 5,
+                "p50_ms": 0.675333999999566,
+                "p95_ms": 0.9968750000007276
+              },
+              "content": {
+                "samples": 100,
+                "warmups": 5,
+                "p50_ms": 0.5854580000013812,
+                "p95_ms": 0.8044169999993755
+              }
+            }
+          },
+          "cold": {
+            "before": {
+              "create": {
+                "samples": 100,
+                "warmups": 5,
+                "p50_ms": 0.7607500000012806,
+                "p95_ms": 1.0236670000012964
+              },
+              "content": {
+                "samples": 100,
+                "warmups": 5,
+                "p50_ms": 0.7395829999986745,
+                "p95_ms": 1.0429159999985131
+              }
+            },
+            "fixed": {
+              "create": {
+                "samples": 100,
+                "warmups": 5,
+                "p50_ms": 0.8842079999994894,
+                "p95_ms": 1.113166999999521
+              },
+              "content": {
+                "samples": 100,
+                "warmups": 5,
+                "p50_ms": 0.851249999999709,
+                "p95_ms": 1.1366669999988517
+              }
+            }
+          }
+        }
+      }
+    ],
+    "upgrades": [
+      {
+        "pair": 0,
+        "mode": "reused",
+        "elapsed_ms": 98.6047499999986,
+        "bytes": 209698816
+      },
+      {
+        "pair": 0,
+        "mode": "cold",
+        "elapsed_ms": 89.14516699999876,
+        "bytes": 209698816
+      },
+      {
+        "pair": 1,
+        "mode": "reused",
+        "elapsed_ms": 89.02641699999731,
+        "bytes": 209698816
+      },
+      {
+        "pair": 1,
+        "mode": "cold",
+        "elapsed_ms": 91.80437499999971,
+        "bytes": 209698816
+      },
+      {
+        "pair": 2,
+        "mode": "reused",
+        "elapsed_ms": 92.35933300000033,
+        "bytes": 209698816
+      },
+      {
+        "pair": 2,
+        "mode": "cold",
+        "elapsed_ms": 90.11258400000224,
+        "bytes": 209698816
+      }
+    ],
+    "indexless_bytes": 202170368
+  },
+  "verification": {
+    "root": [
+      {
+        "tests": 580,
+        "pass": 574,
+        "fail": 0,
+        "skipped": 6
+      }
+    ],
+    "frozen": [
+      {
+        "tests": 580,
+        "pass": 574,
+        "fail": 0,
+        "skipped": 6
+      }
+    ],
+    "focused_tests": 114,
+    "shipped_high_severity_audit": "passed; four unchanged moderate advisories",
+    "standalone_packages": "passed in build, root and frozen validation",
+    "pi_fresh_install_per_lane": true,
+    "pi": {
+      "0.87.0": [
+        {
+          "tests": 133,
+          "pass": 129,
+          "fail": 0,
+          "skipped": 4
+        }
+      ],
+      "~0.87.0": [
+        {
+          "tests": 133,
+          "pass": 129,
+          "fail": 0,
+          "skipped": 4
+        }
+      ],
+      "~0.99.0": [
+        {
+          "tests": 133,
+          "pass": 129,
+          "fail": 0,
+          "skipped": 4
+        }
+      ],
+      "~1.2.0": [
+        {
+          "tests": 133,
+          "pass": 129,
+          "fail": 0,
+          "skipped": 4
+        }
+      ],
+      "~1.5.0": [
+        {
+          "tests": 4,
+          "pass": 4,
+          "fail": 0,
+          "skipped": 0
+        },
+        {
+          "tests": 133,
+          "pass": 133,
+          "fail": 0,
+          "skipped": 0
+        }
+      ]
+    },
+    "opencode_native_adapter_terminal": {
+      "1.19.0": [
+        {
+          "tests": 1,
+          "pass": 1,
+          "fail": 0,
+          "skipped": 0
+        },
+        {
+          "tests": 113,
+          "pass": 113,
+          "fail": 0,
+          "skipped": 0
+        }
+      ],
+      "2.0.29": [
+        {
+          "tests": 1,
+          "pass": 1,
+          "fail": 0,
+          "skipped": 0
+        },
+        {
+          "tests": 113,
+          "pass": 113,
+          "fail": 0,
+          "skipped": 0
+        }
+      ],
+      "2.3.0": [
+        {
+          "tests": 1,
+          "pass": 1,
+          "fail": 0,
+          "skipped": 0
+        },
+        {
+          "tests": 113,
+          "pass": 113,
+          "fail": 0,
+          "skipped": 0
+        }
+      ]
+    },
+    "ui": {
+      "engines": [
+        "chromium",
+        "firefox",
+        "webkit"
+      ],
+      "suites_per_engine": 2,
+      "regression_cases_per_engine": 16,
+      "result": "passed"
+    },
+    "codex_preparation": "passed separately after frozen install and validation; no native registration",
+    "dry_run_packs": "five; benchmark/test assets excluded",
+    "documentation_check": {
+      "documents": 13,
+      "local_links": 96,
+      "errors": 0
+    },
+    "limitations": "No live-provider, native Codex registration, desktop/IDE or accessibility certification."
+  },
+  "functional_parity": {
+    "records": 1503,
+    "selectors": 197,
+    "read_comparisons": 788,
+    "mutation_comparisons": 32,
+    "legacy_writer_fts_results_equal": true,
+    "legacy_writer_compatible": true,
+    "verification_caveat": "Legacy-writer verification follows a refreshed MATCH query. A separately reproduced, pre-existing SQLite cached-FTS integrity false alarm occurs before that refresh; a fresh connection also verifies cleanly."
+  },
+  "follow_up_findings": {
+    "uncovered_counts": {
+      "size": 100000,
+      "samples": 30,
+      "warmups": 5,
+      "plans": {
+        "plain_kind": {
+          "plan": [
+            "SCAN m"
+          ],
+          "canonical_column_instructions": 4
+        },
+        "legacy_kind": {
+          "plan": [
+            "SCAN m USING INDEX nmnm_perf_v1_live_updated"
+          ],
+          "canonical_column_instructions": 1
+        },
+        "current_kind": {
+          "plan": [
+            "SCAN m USING INDEX nmnm_perf_v2_live_updated_source"
+          ],
+          "canonical_column_instructions": 1
+        },
+        "plain_scope": {
+          "plan": [
+            "SCAN m"
+          ],
+          "canonical_column_instructions": 4
+        },
+        "legacy_scope": {
+          "plan": [
+            "SCAN m USING INDEX nmnm_perf_v1_live_updated"
+          ],
+          "canonical_column_instructions": 1
+        },
+        "current_scope": {
+          "plan": [
+            "SCAN m USING INDEX nmnm_perf_v2_live_updated_source"
+          ],
+          "canonical_column_instructions": 1
+        },
+        "plain_importance": {
+          "plan": [
+            "SCAN m"
+          ],
+          "canonical_column_instructions": 4
+        },
+        "legacy_importance": {
+          "plan": [
+            "SCAN m USING INDEX nmnm_perf_v1_live_updated"
+          ],
+          "canonical_column_instructions": 1
+        },
+        "current_importance": {
+          "plan": [
+            "SCAN m USING INDEX nmnm_perf_v2_live_updated_source"
+          ],
+          "canonical_column_instructions": 1
+        }
+      },
+      "pairs": [
+        {
+          "order": [
+            "plain",
+            "legacy",
+            "current"
+          ],
+          "cases": {
+            "kind": {
+              "plain": {
+                "p50_ms": 60.17675000000054,
+                "p95_ms": 68.99437499999931
+              },
+              "legacy": {
+                "p50_ms": 102.21770800000013,
+                "p95_ms": 138.80729099999917
+              },
+              "current": {
+                "p50_ms": 94.48116599999958,
+                "p95_ms": 101.87774999999965
+              }
+            },
+            "scope": {
+              "plain": {
+                "p50_ms": 58.70966599999883,
+                "p95_ms": 65.80054100000052
+              },
+              "legacy": {
+                "p50_ms": 99.92645900000207,
+                "p95_ms": 116.76116600000023
+              },
+              "current": {
+                "p50_ms": 97.71304200000304,
+                "p95_ms": 108.83729099999982
+              }
+            },
+            "importance": {
+              "plain": {
+                "p50_ms": 57.50837499999761,
+                "p95_ms": 62.20087499999863
+              },
+              "legacy": {
+                "p50_ms": 99.33662499999991,
+                "p95_ms": 125.58099999999831
+              },
+              "current": {
+                "p50_ms": 110.30079099999784,
+                "p95_ms": 222.6688340000037
+              }
+            }
+          }
+        },
+        {
+          "order": [
+            "current",
+            "plain",
+            "legacy"
+          ],
+          "cases": {
+            "kind": {
+              "current": {
+                "p50_ms": 100.09512499999983,
+                "p95_ms": 119.40829200000007
+              },
+              "plain": {
+                "p50_ms": 59.93645800000377,
+                "p95_ms": 65.75841699999728
+              },
+              "legacy": {
+                "p50_ms": 101.24037500000122,
+                "p95_ms": 115.68454100000235
+              }
+            },
+            "scope": {
+              "current": {
+                "p50_ms": 95.58199999999488,
+                "p95_ms": 101.20870800000557
+              },
+              "plain": {
+                "p50_ms": 61.60175000000163,
+                "p95_ms": 69.36137500000041
+              },
+              "legacy": {
+                "p50_ms": 102.84570900000108,
+                "p95_ms": 117.54866700000275
+              }
+            },
+            "importance": {
+              "current": {
+                "p50_ms": 95.34058299999742,
+                "p95_ms": 127.5747080000001
+              },
+              "plain": {
+                "p50_ms": 59.33504199999879,
+                "p95_ms": 71.5239170000059
+              },
+              "legacy": {
+                "p50_ms": 100.61883300000045,
+                "p95_ms": 110.1039579999997
+              }
+            }
+          }
+        },
+        {
+          "order": [
+            "legacy",
+            "current",
+            "plain"
+          ],
+          "cases": {
+            "kind": {
+              "legacy": {
+                "p50_ms": 97.58150000000023,
+                "p95_ms": 113.4902080000029
+              },
+              "current": {
+                "p50_ms": 98.54916699999012,
+                "p95_ms": 116.69083299998601
+              },
+              "plain": {
+                "p50_ms": 59.058124999995925,
+                "p95_ms": 63.09658299999137
+              }
+            },
+            "scope": {
+              "legacy": {
+                "p50_ms": 98.68004200000723,
+                "p95_ms": 121.4656660000037
+              },
+              "current": {
+                "p50_ms": 96.0983750000014,
+                "p95_ms": 109.35550000000512
+              },
+              "plain": {
+                "p50_ms": 61.6012919999921,
+                "p95_ms": 71.29387499998847
+              }
+            },
+            "importance": {
+              "legacy": {
+                "p50_ms": 102.50141699999222,
+                "p95_ms": 120.02887500000361
+              },
+              "current": {
+                "p50_ms": 96.87983299999905,
+                "p95_ms": 108.13554199998907
+              },
+              "plain": {
+                "p50_ms": 60.87566700000025,
+                "p95_ms": 71.18983400000434
+              }
+            }
+          }
+        }
+      ],
+      "after_bounded_analyze": {
+        "kind": {
+          "p50_ms": 29.72775000000547,
+          "p95_ms": 35.31758400000399
+        },
+        "scope": {
+          "p50_ms": 29.378165999994962,
+          "p95_ms": 33.20579199999338
+        },
+        "importance": {
+          "p50_ms": 29.038832999998704,
+          "p95_ms": 32.351957999999286
+        }
+      },
+      "reproduced_regressions": [
+        "kind",
+        "scope",
+        "importance"
+      ]
+    },
+    "inherited_cached_fts_integrity": {
+      "node": "v22.23.2",
+      "sqlite": "3.51.3",
+      "cases": [
+        {
+          "reader": "original",
+          "writer": "original",
+          "mutation": "metadata",
+          "cached": {
+            "ok": false,
+            "schema_version": 1,
+            "issues": [
+              {
+                "code": "sqlite_integrity",
+                "count": 1,
+                "ids": []
+              }
+            ]
+          },
+          "pragma": [
+            "fts5: corruption found reading blob 137438953473 from table \"memories_fts\""
+          ],
+          "reopened_ok": true,
+          "search_results_equal": true,
+          "after_search_ok": true
+        },
+        {
+          "reader": "original",
+          "writer": "original",
+          "mutation": "content",
+          "cached": {
+            "ok": false,
+            "schema_version": 1,
+            "issues": [
+              {
+                "code": "sqlite_integrity",
+                "count": 1,
+                "ids": []
+              }
+            ]
+          },
+          "pragma": [
+            "fts5: corruption found reading blob 137438953473 from table \"memories_fts\""
+          ],
+          "reopened_ok": true,
+          "search_results_equal": true,
+          "after_search_ok": true
+        },
+        {
+          "reader": "original",
+          "writer": "current",
+          "mutation": "metadata",
+          "cached": {
+            "ok": true,
+            "schema_version": 1,
+            "issues": []
+          },
+          "pragma": [
+            "ok"
+          ],
+          "reopened_ok": true,
+          "search_results_equal": true,
+          "after_search_ok": true
+        },
+        {
+          "reader": "original",
+          "writer": "current",
+          "mutation": "content",
+          "cached": {
+            "ok": true,
+            "schema_version": 1,
+            "issues": []
+          },
+          "pragma": [
+            "ok"
+          ],
+          "reopened_ok": true,
+          "search_results_equal": true,
+          "after_search_ok": true
+        },
+        {
+          "reader": "current",
+          "writer": "original",
+          "mutation": "metadata",
+          "cached": {
+            "ok": false,
+            "schema_version": 1,
+            "issues": [
+              {
+                "code": "sqlite_integrity",
+                "count": 1,
+                "ids": []
+              }
+            ]
+          },
+          "pragma": [
+            "fts5: corruption found reading blob 137438953473 from table \"memories_fts\""
+          ],
+          "reopened_ok": true,
+          "search_results_equal": true,
+          "after_search_ok": true
+        },
+        {
+          "reader": "current",
+          "writer": "original",
+          "mutation": "content",
+          "cached": {
+            "ok": false,
+            "schema_version": 1,
+            "issues": [
+              {
+                "code": "sqlite_integrity",
+                "count": 1,
+                "ids": []
+              }
+            ]
+          },
+          "pragma": [
+            "fts5: corruption found reading blob 137438953473 from table \"memories_fts\""
+          ],
+          "reopened_ok": true,
+          "search_results_equal": true,
+          "after_search_ok": true
+        },
+        {
+          "reader": "current",
+          "writer": "current",
+          "mutation": "metadata",
+          "cached": {
+            "ok": true,
+            "schema_version": 1,
+            "issues": []
+          },
+          "pragma": [
+            "ok"
+          ],
+          "reopened_ok": true,
+          "search_results_equal": true,
+          "after_search_ok": true
+        },
+        {
+          "reader": "current",
+          "writer": "current",
+          "mutation": "content",
+          "cached": {
+            "ok": false,
+            "schema_version": 1,
+            "issues": [
+              {
+                "code": "sqlite_integrity",
+                "count": 1,
+                "ids": []
+              }
+            ]
+          },
+          "pragma": [
+            "fts5: corruption found reading blob 137438953473 from table \"memories_fts\""
+          ],
+          "reopened_ok": true,
+          "search_results_equal": true,
+          "after_search_ok": true
+        }
+      ]
+    },
+    "status": "Unresolved; no additional production fixes implemented. Uncovered count regressions already affect the legacy index; cached-FTS false alarms also reproduce on original-core controls."
+  },
+  "follow_up_probe_sha256": {
+    "/tmp/nmnm-p2-parity.mjs": "6d475ec919c8fb655542fe6b268067d0c9c08ae21633853825f3a0cc22c16ad3",
+    "/tmp/nmnm-p2-uncovered-counts.mjs": "5f5e5f086abcdf7505546c56c998dd8c0d9ee21dc74284030d2c5d5f77826e74",
+    "/tmp/nmnm-p2-cached-fts-probe.mjs": "cec1453ee255de2d0f51d51d72292181402aff086814e0cca9635cdad534710e"
+  },
+  "tail_pairs": {
+    "samples": 100,
+    "warmups": 5,
+    "sizes": {
+      "100": [
+        {
+          "order": "before first",
+          "cases": {
+            "reused_patch_content": {
+              "before": {
+                "p50_ms": 0.5120420000000081,
+                "p95_ms": 0.8373750000000015
+              },
+              "fixed": {
+                "p50_ms": 0.47537499999998545,
+                "p95_ms": 0.5920830000000024
+              }
+            }
+          }
+        },
+        {
+          "order": "fixed first",
+          "cases": {
+            "reused_patch_content": {
+              "fixed": {
+                "p50_ms": 0.47441700000001674,
+                "p95_ms": 0.5987920000000031
+              },
+              "before": {
+                "p50_ms": 0.454208000000051,
+                "p95_ms": 0.5786250000000166
+              }
+            }
+          }
+        },
+        {
+          "order": "before first",
+          "cases": {
+            "reused_patch_content": {
+              "before": {
+                "p50_ms": 0.4772079999999619,
+                "p95_ms": 0.5788329999999746
+              },
+              "fixed": {
+                "p50_ms": 0.47337500000003274,
+                "p95_ms": 0.5417079999999714
+              }
+            }
+          }
+        }
+      ],
+      "10000": [
+        {
+          "order": "before first",
+          "cases": {
+            "cold_recent": {
+              "before": {
+                "p50_ms": 0.6957079999999678,
+                "p95_ms": 0.8932910000000902
+              },
+              "fixed": {
+                "p50_ms": 0.716707999999926,
+                "p95_ms": 0.9329999999999927
+              }
+            },
+            "cold_namespace": {
+              "before": {
+                "p50_ms": 0.8617500000000291,
+                "p95_ms": 0.9602080000001934
+              },
+              "fixed": {
+                "p50_ms": 0.9118339999999989,
+                "p95_ms": 1.1278749999999036
+              }
+            },
+            "cold_tags": {
+              "before": {
+                "p50_ms": 2.137875000000122,
+                "p95_ms": 2.4240839999999935
+              },
+              "fixed": {
+                "p50_ms": 2.1295419999999012,
+                "p95_ms": 2.4307909999999993
+              }
+            },
+            "cold_page": {
+              "before": {
+                "p50_ms": 0.8852080000001479,
+                "p95_ms": 1.1183750000000146
+              },
+              "fixed": {
+                "p50_ms": 0.8954579999999623,
+                "p95_ms": 1.0570410000000265
+              }
+            }
+          }
+        },
+        {
+          "order": "fixed first",
+          "cases": {
+            "cold_recent": {
+              "fixed": {
+                "p50_ms": 0.7196670000002996,
+                "p95_ms": 0.8540839999996024
+              },
+              "before": {
+                "p50_ms": 0.6689590000000862,
+                "p95_ms": 0.7948750000000473
+              }
+            },
+            "cold_namespace": {
+              "fixed": {
+                "p50_ms": 0.9185829999996713,
+                "p95_ms": 1.144582999999784
+              },
+              "before": {
+                "p50_ms": 0.8651669999999285,
+                "p95_ms": 1.0039170000000013
+              }
+            },
+            "cold_tags": {
+              "fixed": {
+                "p50_ms": 2.1480000000001382,
+                "p95_ms": 2.367541000000074
+              },
+              "before": {
+                "p50_ms": 2.1149170000003323,
+                "p95_ms": 2.2289999999998145
+              }
+            },
+            "cold_page": {
+              "fixed": {
+                "p50_ms": 0.9536250000001019,
+                "p95_ms": 1.119499999999789
+              },
+              "before": {
+                "p50_ms": 0.8455840000001444,
+                "p95_ms": 0.9916250000001128
+              }
+            }
+          }
+        },
+        {
+          "order": "before first",
+          "cases": {
+            "cold_recent": {
+              "before": {
+                "p50_ms": 0.670708999999988,
+                "p95_ms": 0.8161660000000666
+              },
+              "fixed": {
+                "p50_ms": 0.6992920000002414,
+                "p95_ms": 0.7908750000001419
+              }
+            },
+            "cold_namespace": {
+              "before": {
+                "p50_ms": 0.880333999999948,
+                "p95_ms": 1.0131670000000668
+              },
+              "fixed": {
+                "p50_ms": 0.8902910000001611,
+                "p95_ms": 0.9659999999998945
+              }
+            },
+            "cold_tags": {
+              "before": {
+                "p50_ms": 2.1252089999998134,
+                "p95_ms": 2.373917000000347
+              },
+              "fixed": {
+                "p50_ms": 2.1086670000004233,
+                "p95_ms": 2.264165999999932
+              }
+            },
+            "cold_page": {
+              "before": {
+                "p50_ms": 0.8349170000001322,
+                "p95_ms": 0.953708999999435
+              },
+              "fixed": {
+                "p50_ms": 0.918124999999236,
+                "p95_ms": 1.0815000000002328
+              }
+            }
+          }
+        }
+      ],
+      "100000": [
+        {
+          "order": "before first",
+          "cases": {
+            "reused_recent": {
+              "before": {
+                "p50_ms": 5.181791999999405,
+                "p95_ms": 5.9198749999995925
+              },
+              "fixed": {
+                "p50_ms": 5.245124999999462,
+                "p95_ms": 6.120708999998897
+              }
+            },
+            "reused_page": {
+              "before": {
+                "p50_ms": 5.163542000000234,
+                "p95_ms": 6.209582999999839
+              },
+              "fixed": {
+                "p50_ms": 5.462832999999591,
+                "p95_ms": 6.504917000000205
+              }
+            },
+            "cold_recent": {
+              "before": {
+                "p50_ms": 5.331999999998516,
+                "p95_ms": 6.087417000000642
+              },
+              "fixed": {
+                "p50_ms": 5.707124999998996,
+                "p95_ms": 6.777750000001106
+              }
+            },
+            "cold_namespace": {
+              "before": {
+                "p50_ms": 7.175250000000233,
+                "p95_ms": 8.287583000001177
+              },
+              "fixed": {
+                "p50_ms": 7.376292000000831,
+                "p95_ms": 8.399666000001162
+              }
+            },
+            "reused_create": {
+              "before": {
+                "p50_ms": 0.710624999999709,
+                "p95_ms": 1.1379170000000158
+              },
+              "fixed": {
+                "p50_ms": 0.673624999999447,
+                "p95_ms": 1.0849999999991269
+              }
+            },
+            "cold_create": {
+              "before": {
+                "p50_ms": 0.8605840000018361,
+                "p95_ms": 1.1534999999967113
+              },
+              "fixed": {
+                "p50_ms": 0.8790000000008149,
+                "p95_ms": 1.267041999999492
+              }
+            }
+          }
+        },
+        {
+          "order": "fixed first",
+          "cases": {
+            "reused_recent": {
+              "fixed": {
+                "p50_ms": 5.221084000000701,
+                "p95_ms": 6.187000000001717
+              },
+              "before": {
+                "p50_ms": 5.099375000001601,
+                "p95_ms": 6.643957999996928
+              }
+            },
+            "reused_page": {
+              "fixed": {
+                "p50_ms": 5.3616670000010345,
+                "p95_ms": 6.3822499999987485
+              },
+              "before": {
+                "p50_ms": 5.171749999997701,
+                "p95_ms": 6.002749999999651
+              }
+            },
+            "cold_recent": {
+              "fixed": {
+                "p50_ms": 5.513792000001558,
+                "p95_ms": 6.353041999998823
+              },
+              "before": {
+                "p50_ms": 5.189000000002125,
+                "p95_ms": 6.11016699999891
+              }
+            },
+            "cold_namespace": {
+              "fixed": {
+                "p50_ms": 7.274624999998196,
+                "p95_ms": 8.547792000001209
+              },
+              "before": {
+                "p50_ms": 7.174416999998357,
+                "p95_ms": 8.323540999997931
+              }
+            },
+            "reused_create": {
+              "fixed": {
+                "p50_ms": 0.6937499999985448,
+                "p95_ms": 0.9914170000010927
+              },
+              "before": {
+                "p50_ms": 0.6841660000027332,
+                "p95_ms": 0.9990830000024289
+              }
+            },
+            "cold_create": {
+              "fixed": {
+                "p50_ms": 0.8765830000011192,
+                "p95_ms": 1.1444579999988491
+              },
+              "before": {
+                "p50_ms": 0.88079099999959,
+                "p95_ms": 1.209791999997833
+              }
+            }
+          }
+        },
+        {
+          "order": "before first",
+          "cases": {
+            "reused_recent": {
+              "before": {
+                "p50_ms": 5.044333000001643,
+                "p95_ms": 5.686999999998079
+              },
+              "fixed": {
+                "p50_ms": 5.328832999999577,
+                "p95_ms": 6.278125000000728
+              }
+            },
+            "reused_page": {
+              "before": {
+                "p50_ms": 5.267792000002373,
+                "p95_ms": 6.346499999999651
+              },
+              "fixed": {
+                "p50_ms": 5.398874999998952,
+                "p95_ms": 6.135167000000365
+              }
+            },
+            "cold_recent": {
+              "before": {
+                "p50_ms": 5.1912910000028205,
+                "p95_ms": 6.106665999999677
+              },
+              "fixed": {
+                "p50_ms": 5.540291000001162,
+                "p95_ms": 6.397750000000087
+              }
+            },
+            "cold_namespace": {
+              "before": {
+                "p50_ms": 7.0534579999985,
+                "p95_ms": 8.15704199999891
+              },
+              "fixed": {
+                "p50_ms": 7.25512499999968,
+                "p95_ms": 8.021708000000217
+              }
+            },
+            "reused_create": {
+              "before": {
+                "p50_ms": 0.6780419999995502,
+                "p95_ms": 1.0241659999992407
+              },
+              "fixed": {
+                "p50_ms": 0.7081250000010186,
+                "p95_ms": 1.020249999997759
+              }
+            },
+            "cold_create": {
+              "before": {
+                "p50_ms": 0.8827500000006694,
+                "p95_ms": 1.1584580000017013
+              },
+              "fixed": {
+                "p50_ms": 0.8599580000009155,
+                "p95_ms": 1.1720000000022992
+              }
+            }
+          }
+        }
+      ]
+    },
+    "persistent_regressions": []
+  }
+}

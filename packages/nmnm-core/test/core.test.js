@@ -522,6 +522,441 @@ test('open validates the readOnly option before filesystem changes', async () =>
   await assert.rejects(access(path));
 });
 
+const legacyPerformanceIndexName = 'nmnm_perf_v1_live_updated';
+const sourcePerformanceIndexName = 'nmnm_perf_v2_live_updated_source';
+const performanceIndexName = 'nmnm_perf_v3_live_recency_counts';
+const recencyExpression = "unixepoch(updated_at, 'subsec')";
+const sourceExpression = "CASE WHEN json_valid(metadata) THEN json_extract(metadata, '$.source') END";
+const performanceIndexDefinitions = [
+  [legacyPerformanceIndexName, 'updated_at DESC, id, expires_at, namespace'],
+  [sourcePerformanceIndexName, `updated_at DESC, id, expires_at, namespace, ${sourceExpression}`],
+  [performanceIndexName, `${recencyExpression} DESC, id, expires_at, namespace, ${sourceExpression}, kind, scope, importance, confidence, removed_at`],
+];
+
+async function indexlessStore(t) {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-optional-index-'));
+  const path = join(directory, 'memory.db');
+  const store = open(path);
+  store.retain({ content: 'Existing compatible store', tags: ['existing'] });
+  const records = store.export();
+  store.close();
+  const raw = new DatabaseSync(path);
+  for (const [name] of performanceIndexDefinitions) raw.exec(`DROP INDEX IF EXISTS ${name}`);
+  t.after(() => raw.close());
+  return { path, raw, records };
+}
+
+test('writable opens install an optional covering index without changing canonical schema or records', async (t) => {
+  const { path, raw, records } = await indexlessStore(t);
+  const reader = open(path, { readOnly: true });
+  const before = readFileSync(path);
+  assert.equal(reader.verify().ok, true);
+  assert.deepEqual(reader.export(), records);
+  reader.close();
+  assert.deepEqual(readFileSync(path), before);
+  const writer = open(path, { create: false });
+  t.after(() => writer.close());
+  assert.deepEqual(writer.export(), records);
+  assert.equal(raw.prepare("SELECT value FROM nmnm_meta WHERE key = 'schema_version'").get().value, '1');
+  const index = raw.prepare('SELECT sql FROM sqlite_master WHERE name = ?').get(performanceIndexName);
+  assert(index?.sql.includes(`${recencyExpression} DESC, id, expires_at, namespace`));
+  const plan = raw.prepare('EXPLAIN QUERY PLAN SELECT COUNT(*) FROM memories WHERE removed_at IS NULL AND (expires_at IS NULL OR expires_at > ?)').all('2026-01-01T00:00:00.000Z');
+  assert(plan.some(row => performanceIndexDefinitions.some(([name]) => row.detail.includes(name))));
+  const installed = readFileSync(path);
+  const second = open(path, { create: false });
+  second.close();
+  assert.deepEqual(readFileSync(path), installed);
+});
+
+for (const [operation, name] of [['CREATE INDEX', performanceIndexName], ['DROP INDEX', legacyPerformanceIndexName], ['DROP INDEX', sourcePerformanceIndexName]]) {
+  test(`failed ${operation} ${name} rolls back the optional-index replacement`, async (t) => {
+    const { path, raw, records } = await indexlessStore(t);
+    for (const [legacy, columns] of performanceIndexDefinitions.slice(0, -1)) raw.exec(`CREATE INDEX ${legacy} ON memories(${columns}) WHERE removed_at IS NULL`);
+    const before = readFileSync(path);
+    const exec = DatabaseSync.prototype.exec;
+    DatabaseSync.prototype.exec = function (sql) {
+      const result = exec.call(this, sql);
+      if (sql.startsWith(`${operation} ${name}`)) throw new Error('Injected index failure');
+      return result;
+    };
+    try { assert.throws(() => open(path, { create: false }), /Injected index failure/); }
+    finally { DatabaseSync.prototype.exec = exec; }
+    assert.equal(raw.prepare('SELECT 1 FROM sqlite_master WHERE name = ?').get(performanceIndexName), undefined);
+    for (const [legacy] of performanceIndexDefinitions.slice(0, -1)) assert(raw.prepare('SELECT 1 FROM sqlite_master WHERE name = ?').get(legacy));
+    assert.deepEqual(readFileSync(path), before);
+    const reader = open(path, { readOnly: true });
+    try { assert.deepEqual(reader.export(), records); assert.equal(reader.verify().ok, true); }
+    finally { reader.close(); }
+  });
+}
+
+for (const [name, columns] of performanceIndexDefinitions.slice(0, -1)) test(`${name} stores remain healthy read-only and replace their index on the next writable open`, async (t) => {
+  const { path, raw, records } = await indexlessStore(t);
+  raw.exec(`CREATE INDEX ${name} ON memories(${columns}) WHERE removed_at IS NULL`);
+  const before = readFileSync(path);
+  const reader = open(path, { readOnly: true });
+  try { assert.equal(reader.verify().ok, true); assert.deepEqual(reader.export(), records); }
+  finally { reader.close(); }
+  assert.deepEqual(readFileSync(path), before);
+  const writer = open(path, { create: false });
+  try { assert.equal(writer.verify().ok, true); assert.deepEqual(writer.export(), records); }
+  finally { writer.close(); }
+  assert(raw.prepare('SELECT 1 FROM sqlite_master WHERE name = ?').get(performanceIndexName));
+  assert.equal(raw.prepare('SELECT 1 FROM sqlite_master WHERE name = ?').get(name), undefined);
+});
+
+test('read-only v2 stores retain their source-count hint without installing v3', async (t) => {
+  const { path, raw } = await indexlessStore(t);
+  const [, columns] = performanceIndexDefinitions.find(([name]) => name === sourcePerformanceIndexName);
+  raw.exec(`CREATE INDEX ${sourcePerformanceIndexName} ON memories(${columns}) WHERE removed_at IS NULL`);
+  raw.prepare('UPDATE memories SET metadata = ?').run('{"source":"pi"}');
+  raw.exec('ANALYZE memories');
+  const before = readFileSync(path);
+  const reader = open(path, { readOnly: true });
+  t.after(() => reader.close());
+  const { result, statements } = captureSql(() => reader.retrieve({ source: 'pi' }));
+  assert.equal(result.total, 1);
+  assert(statements.some(sql => sql.startsWith('SELECT COUNT(*)') && sql.includes(`INDEXED BY ${sourcePerformanceIndexName}`)));
+  assert.equal(reader.verify().ok, true);
+  assert.deepEqual(readFileSync(path), before);
+});
+
+test('verification reports malformed optional indexes without requiring missing ones or rejecting unrelated indexes', async (t) => {
+  const { path, raw } = await indexlessStore(t);
+  raw.exec(`CREATE INDEX ${performanceIndexName} ON memories(namespace); CREATE INDEX unrelated ON memories(kind)`);
+  const store = open(path, { readOnly: true });
+  t.after(() => store.close());
+  assert.deepEqual(store.verify().issues, [{ code: 'performance_index', count: 1, ids: [performanceIndexName] }]);
+  assert.equal(store.retrieve().total, 1);
+});
+
+for (const analyzed of [false, true]) test(`source-only counts stay covered ${analyzed ? 'with' : 'without'} planner statistics`, async (t) => {
+  const { path, raw } = await indexlessStore(t);
+  let store = open(path, { create: false });
+  t.after(() => store.close());
+  const selected = store.retain({ content: 'Source planning target', namespace: 'selected', metadata: { source: 'pi' }, tags: ['rare'] });
+  const other = store.retain({ content: 'Source planning target', metadata: { source: 'pi' } });
+  store.retain({ content: 'Source planning target', metadata: { source: 'claude-code' } });
+  if (analyzed) {
+    store.close();
+    raw.exec('ANALYZE memories');
+    store = open(path, { readOnly: true });
+  }
+  const before = readFileSync(path);
+  const plans = [];
+  const canonicalReads = [];
+  const hinted = [];
+  const prepare = DatabaseSync.prototype.prepare;
+  DatabaseSync.prototype.prepare = function (sql) {
+    const statement = prepare.call(this, sql);
+    if (sql.startsWith('SELECT COUNT(*) AS total FROM memories m')) {
+      const db = this;
+      const get = statement.get;
+      statement.get = function (...args) {
+        plans.push(prepare.call(db, 'EXPLAIN QUERY PLAN ' + sql).all(...args).map(row => row.detail));
+        const rootpage = prepare.call(db, "SELECT rootpage FROM sqlite_master WHERE name = 'memories'").get().rootpage;
+        const program = prepare.call(db, 'EXPLAIN ' + sql).all(...args);
+        const cursors = new Set(program.filter(row => row.opcode === 'OpenRead' && row.p2 === rootpage && row.p3 === 0).map(row => row.p1));
+        canonicalReads.push(program.some(row => row.opcode === 'Column' && cursors.has(row.p1)));
+        hinted.push(sql.includes('INDEXED BY'));
+        return get.apply(this, args);
+      };
+    }
+    return statement;
+  };
+  try {
+    assert.equal(store.retrieve().total, 4);
+    const source = store.retrieve({ source: 'pi', order_by: 'id' });
+    assert.equal(source.total, 2);
+    assert.deepEqual(source.items.map(row => row.id), [selected.id, other.id].sort());
+    assert.equal(store.retrieve({ source: 'pi', namespace: 'selected' }).total, 1);
+    assert.equal(store.retrieve({ source: 'pi', tags: ['rare'] }).total, 1);
+    assert.equal(store.retrieve({ source: 'pi', query: 'planning' }).total, 2);
+    for (const filter of [{ kind: 'note' }, { scope: 'project' }, { importance: { gte: 0 } }, { confidence: { gte: 0 } }]) {
+      assert.equal(store.retrieve({ source: 'pi', ...filter }).total, 2);
+    }
+  } finally { DatabaseSync.prototype.prepare = prepare; }
+  assert(plans[0].some(detail => detail.includes(performanceIndexName)), 'unfiltered counts retain a covering index');
+  assert(plans[1].some(detail => detail.includes(performanceIndexName)), 'source-only counts use the source-aware covering index');
+  assert.equal(canonicalReads[1], false, 'source-only counts must not read canonical columns');
+  assert(plans[2].some(detail => detail.includes(performanceIndexName)), 'source and namespace counts retain covered filtering');
+  assert(plans[3].some(detail => detail.includes('memory_tags')), 'tag candidates retain indexed filtering');
+  if (!analyzed) assert(plans[4][0].includes('SCAN memories_fts'), 'text counts retain FTS-first candidate selection');
+  assert.deepEqual(hinted, [true, true, true, false, false, false, false, false, false]);
+  assert.deepEqual(readFileSync(path), before);
+});
+
+for (const analyzed of [false, true]) for (const mixedLegacy of [false, true]) test(`kind/scope/score counts avoid non-covering recency scans ${analyzed ? 'with' : 'without'} statistics (${mixedLegacy ? 'v2 coexistence' : 'current only'})`, async (t) => {
+  const { path, raw } = await indexlessStore(t);
+  const writer = open(path, { create: false });
+  const [template] = writer.export();
+  writer.remove({ id: template.id, mode: 'purge' });
+  const records = Array.from({ length: 1000 }, (_, index) => ({ ...template,
+    id: `10000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+    kind: index % 4 ? 'note' : 'decision', scope: index % 2 ? 'global' : 'project',
+    importance: (index % 4) / 4, confidence: (index % 4) / 4,
+  }));
+  writer.import(records);
+  writer.close();
+  if (mixedLegacy) raw.exec(`CREATE INDEX ${sourcePerformanceIndexName} ON memories(${performanceIndexDefinitions.find(([name]) => name === sourcePerformanceIndexName)[1]}) WHERE removed_at IS NULL`);
+  if (analyzed) raw.exec('ANALYZE memories');
+  const reader = open(path, { readOnly: true });
+  t.after(() => reader.close());
+  const before = readFileSync(path);
+  const rootpage = raw.prepare("SELECT rootpage FROM sqlite_master WHERE name = 'memories'").get().rootpage;
+  const prepare = DatabaseSync.prototype.prepare;
+  const canonicalReads = [], plans = [];
+  DatabaseSync.prototype.prepare = function (sql) {
+    const statement = prepare.call(this, sql);
+    if (sql.startsWith('SELECT COUNT(*) AS total FROM memories m')) {
+      const get = statement.get, db = this;
+      statement.get = function (...args) {
+        const program = prepare.call(db, 'EXPLAIN ' + sql).all(...args);
+        const cursors = new Set(program.filter(row => row.opcode === 'OpenRead' && row.p2 === rootpage && row.p3 === 0).map(row => row.p1));
+        canonicalReads.push(program.some(row => row.opcode === 'Column' && cursors.has(row.p1)));
+        plans.push(prepare.call(db, 'EXPLAIN QUERY PLAN ' + sql).all(...args).map(row => row.detail));
+        return get.apply(this, args);
+      };
+    }
+    return statement;
+  };
+  try {
+    for (const [selector, total] of [[{ kind: 'decision' }, 250], [{ scope: 'global' }, 500], [{ importance: { gte: 0.75 } }, 250], [{ confidence: { gte: 0.5 } }, 500]]) {
+      const result = reader.retrieve(selector);
+      assert.equal(result.total, total);
+      assert.equal(result.items.length, 20);
+    }
+  } finally { DatabaseSync.prototype.prepare = prepare; }
+  assert.equal(canonicalReads.length, 4);
+  canonicalReads.forEach((reads, index) => {
+    if (reads) assert(!plans[index].some(detail => performanceIndexDefinitions.some(([name]) => detail.toLowerCase().includes(name))), 'a sequential table scan is allowed, but not canonical lookups through a recency index');
+  });
+  assert.deepEqual(readFileSync(path), before);
+});
+
+test('newly covered counts preserve selective user-index plans with source filters', async (t) => {
+  const { path, raw } = await indexlessStore(t);
+  const writer = open(path, { create: false });
+  const [template] = writer.export();
+  const records = Array.from({ length: 1000 }, (_, index) => ({ ...template,
+    id: `10000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+    kind: index ? 'note' : 'instruction', metadata: { source: 'pi' },
+  }));
+  writer.import(records);
+  writer.close();
+  raw.exec('CREATE INDEX selective_kind ON memories(kind); ANALYZE memories');
+  const reader = open(path, { readOnly: true });
+  t.after(() => reader.close());
+  const before = readFileSync(path);
+  const prepare = DatabaseSync.prototype.prepare;
+  const plans = [];
+  DatabaseSync.prototype.prepare = function (sql) {
+    const statement = prepare.call(this, sql);
+    if (sql.startsWith('SELECT COUNT(*) AS total FROM memories m')) {
+      const get = statement.get, db = this;
+      statement.get = function (...args) {
+        plans.push(prepare.call(db, 'EXPLAIN QUERY PLAN ' + sql).all(...args).map(row => row.detail));
+        return get.apply(this, args);
+      };
+    }
+    return statement;
+  };
+  try {
+    assert.equal(reader.retrieve({ kind: 'instruction' }).total, 1);
+    assert.equal(reader.retrieve({ kind: 'instruction', source: 'pi' }).total, 1);
+  } finally { DatabaseSync.prototype.prepare = prepare; }
+  assert(plans.every(plan => plan.some(detail => detail.includes('selective_kind'))));
+  assert.deepEqual(readFileSync(path), before);
+});
+
+test('recency ordering preserves full-range UTC milliseconds and UUID ties', async (t) => {
+  const { path, raw } = await indexlessStore(t);
+  const writer = open(path, { create: false });
+  const [template] = writer.export();
+  writer.remove({ id: template.id, mode: 'purge' });
+  const dates = ['0000-01-01T00:00:00.000Z', '0000-01-01T00:00:00.001Z', '0001-01-01T00:00:00.000Z',
+    '1582-10-15T00:00:00.001Z', '1900-01-01T00:00:00.999Z', '1969-12-31T23:59:59.999Z',
+    '1970-01-01T00:00:00.000Z', '1970-01-01T00:00:00.001Z', '2038-01-19T03:14:07.999Z',
+    '9999-12-31T23:59:59.997Z', '9999-12-31T23:59:59.998Z', '9999-12-31T23:59:59.999Z'];
+  const records = dates.flatMap((date, index) => [1, 0].map(tie => ({ ...template,
+    id: `10000000-0000-4000-8000-${String(index * 2 + tie + 1).padStart(12, '0')}`,
+    created_at: '0000-01-01T00:00:00.000Z', updated_at: date,
+  })));
+  writer.import(records);
+  writer.close();
+  const expected = [...records].sort((a, b) => b.updated_at.localeCompare(a.updated_at) || a.id.localeCompare(b.id));
+  const reader = open(path, { readOnly: true });
+  t.after(() => reader.close());
+  assert.deepEqual(reader.retrieve({ limit: 100 }).items, expected);
+  assert.equal(reader.verify().ok, true);
+  const epochs = dates.map(date => raw.prepare("SELECT unixepoch(?, 'subsec') AS value").get(date).value);
+  assert(epochs.every(value => typeof value === 'number'));
+  assert(epochs.every((value, index) => !index || value > epochs[index - 1]), 'adjacent canonical milliseconds must remain distinct and ordered');
+});
+
+for (const [name] of performanceIndexDefinitions) {
+  test(`case-variant ${name} remains readable and writable without duplicate installation`, async (t) => {
+    const { path, raw, records } = await indexlessStore(t);
+    for (const [other, definition] of performanceIndexDefinitions) {
+      raw.exec(`CREATE INDEX ${other === name ? other.toUpperCase() : other} ON memories(${definition}) WHERE removed_at IS NULL`);
+    }
+    const before = readFileSync(path);
+    const reader = open(path, { readOnly: true });
+    try {
+      assert.equal(reader.verify().ok, true);
+      assert.deepEqual(reader.export(), records);
+    } finally { reader.close(); }
+    assert.deepEqual(readFileSync(path), before);
+    const rootpage = raw.prepare('SELECT rootpage FROM sqlite_master WHERE name = ? COLLATE NOCASE').get(performanceIndexName).rootpage;
+    const writer = open(path, { create: false });
+    try {
+      assert.equal(writer.verify().ok, true);
+      assert.deepEqual(writer.export(), records);
+      assert.equal(raw.prepare('SELECT COUNT(*) AS count FROM sqlite_master WHERE name = ? COLLATE NOCASE').get(performanceIndexName).count, 1);
+      for (const [legacy] of performanceIndexDefinitions.slice(0, -1)) assert.equal(raw.prepare('SELECT 1 FROM sqlite_master WHERE name = ? COLLATE NOCASE').get(legacy), undefined);
+      assert.equal(raw.prepare('SELECT rootpage FROM sqlite_master WHERE name = ? COLLATE NOCASE').get(performanceIndexName).rootpage, rootpage);
+    } finally { writer.close(); }
+  });
+
+  test(`case-variant ${name} conflicts are reported without replacement or blocking writable opens`, async (t) => {
+    const { path, raw, records } = await indexlessStore(t);
+    for (const [other, definition] of performanceIndexDefinitions) {
+      raw.exec(`CREATE INDEX ${other === name ? other.toUpperCase() : other} ON memories(${other === name ? 'namespace' : definition}) WHERE removed_at IS NULL`);
+    }
+    const before = readFileSync(path);
+    const expected = [{ code: 'performance_index', count: 1, ids: [name] }];
+    const reader = open(path, { readOnly: true });
+    try { assert.deepEqual(reader.verify().issues, expected); }
+    finally { reader.close(); }
+    assert.deepEqual(readFileSync(path), before);
+    const writer = open(path, { create: false });
+    try {
+      assert.deepEqual(writer.verify().issues, expected);
+      assert.deepEqual(writer.export(), records);
+    } finally { writer.close(); }
+    assert.deepEqual(readFileSync(path), before);
+  });
+}
+
+test('quoted case-variant optional-index identifiers remain equivalent', async (t) => {
+  const { path, raw, records } = await indexlessStore(t);
+  for (const [name, columns] of performanceIndexDefinitions) {
+    const quoted = columns.replace(/\b(metadata|updated_at|id|expires_at|namespace|kind|scope|importance|confidence)\b/g, '"$1"');
+    raw.exec(`CREATE INDEX "${name.toUpperCase()}" ON "memories"(${quoted}) WHERE removed_at IS NULL`);
+  }
+  const before = readFileSync(path);
+  for (const readOnly of [true, false]) {
+    const store = open(path, { readOnly, create: false });
+    try { assert.equal(store.verify().ok, true); assert.deepEqual(store.export(), records); }
+    finally { store.close(); }
+    if (readOnly) assert.deepEqual(readFileSync(path), before);
+  }
+  assert.equal(raw.prepare('SELECT 1 FROM sqlite_master WHERE name = ? COLLATE NOCASE').get(legacyPerformanceIndexName), undefined);
+  assert(raw.prepare('SELECT 1 FROM sqlite_master WHERE name = ? COLLATE NOCASE').get(performanceIndexName));
+});
+
+test('indexed and FTS source filters preserve JSON value types, case, trimming and metadata patches', async (t) => {
+  const { path, raw } = await indexlessStore(t);
+  const store = open(path, { create: false });
+  t.after(() => store.close());
+  const values = ['pi', 'PI', ' pi ', 1, true, null, { agent: 'pi' }, ['pi']];
+  const memories = values.map(source => store.retain({ content: 'Typed source target', metadata: { source } }));
+  for (const source of ['pi', ' pi ', 'PI', '1', 'true', 'null', '{"agent":"pi"}', '["pi"]', 'missing']) {
+    const expected = raw.prepare("SELECT id FROM memories WHERE removed_at IS NULL AND json_extract(metadata, '$.source') = ? ORDER BY id").all(source.trim()).map(row => row.id);
+    for (const query of [undefined, '"Typed source target"']) {
+      const result = store.retrieve({ source, query, order_by: 'id' });
+      assert.equal(result.total, expected.length);
+      assert.deepEqual(result.items.map(row => row.id), expected);
+    }
+  }
+  store.retain({ id: memories[0].id, metadata: { source: 'claude-code' } });
+  assert.equal(store.retrieve({ source: 'pi' }).total, 0);
+  assert.equal(store.retrieve({ source: 'claude-code' }).total, 1);
+  store.remove({ id: memories[0].id });
+  assert.equal(store.retrieve({ source: 'claude-code' }).total, 0);
+  store.retain({ id: memories[0].id });
+  assert.equal(store.retrieve({ source: 'claude-code' }).total, 1);
+  assert.equal(store.verify().ok, true);
+});
+
+test('source index installation preserves malformed-metadata verification', async (t) => {
+  const { path, raw, records } = await indexlessStore(t);
+  raw.exec("UPDATE memories SET metadata = 'not-json'");
+  const writer = open(path, { create: false });
+  try {
+    assert.deepEqual(writer.verify().issues, [{ code: 'memory_field', count: 1, ids: [records[0].id] }]);
+    assert(raw.prepare('SELECT 1 FROM sqlite_master WHERE name = ?').get(performanceIndexName));
+  } finally { writer.close(); }
+});
+
+test('source index verification preserves case-sensitive JSON-path literals', async (t) => {
+  const { path, raw } = await indexlessStore(t);
+  raw.exec(`CREATE INDEX ${performanceIndexName} ON memories(${performanceIndexDefinitions.at(-1)[1].replace("'$.source'", "'$.SOURCE'")}) WHERE removed_at IS NULL`);
+  const reader = open(path, { readOnly: true });
+  try { assert.deepEqual(reader.verify().issues, [{ code: 'performance_index', count: 1, ids: [performanceIndexName] }]); }
+  finally { reader.close(); }
+});
+
+test('a conflicting current index created before lock acquisition preserves both legacy indexes', async (t) => {
+  const { path, raw, records } = await indexlessStore(t);
+  for (const [name, columns] of performanceIndexDefinitions.slice(0, -1)) raw.exec(`CREATE INDEX ${name} ON memories(${columns}) WHERE removed_at IS NULL`);
+  const writer = afterSqlRead(
+    sql => sql.startsWith('SELECT name, type, sql FROM sqlite_master'),
+    () => raw.exec(`CREATE INDEX ${performanceIndexName} ON memories(namespace)`),
+    () => open(path, { create: false }),
+  );
+  t.after(() => writer.close());
+  assert.deepEqual(writer.export(), records);
+  assert.deepEqual(writer.verify().issues, [{ code: 'performance_index', count: 1, ids: [performanceIndexName] }]);
+  for (const [name] of performanceIndexDefinitions) assert(raw.prepare('SELECT 1 FROM sqlite_master WHERE name = ?').get(name));
+});
+
+test('concurrent writable opens recheck optional-index installation after acquiring the write lock', { timeout: 15000 }, async (t) => {
+  const { path } = await indexlessStore(t);
+  const gate = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT);
+  let ready = 0;
+  const workers = Array.from({ length: 2 }, () => new Worker(`
+    const { parentPort, workerData } = require('node:worker_threads');
+    (async () => {
+      const { DatabaseSync } = await import('node:sqlite');
+      const { open } = await import(workerData.core);
+      const prepare = DatabaseSync.prototype.prepare;
+      let held = false;
+      DatabaseSync.prototype.prepare = function(sql) {
+        const statement = prepare.call(this, sql);
+        const all = statement.all;
+        statement.all = function(...args) {
+          const result = all.apply(this, args);
+          if (!held && args.includes(workerData.index) && !result.some(row => row.name?.toLowerCase() === workerData.index)) {
+            held = true;
+            parentPort.postMessage('ready');
+            if (Atomics.wait(new Int32Array(workerData.gate), 0, 0, 10000) === 'timed-out') throw new Error('Index coordination timed out');
+          }
+          return result;
+        };
+        return statement;
+      };
+      const store = open(workerData.path, { create: false });
+      store.close();
+      parentPort.postMessage('done');
+    })().catch(error => { throw error; });
+  `, { eval: true, workerData: { core: new URL('../src/index.js', import.meta.url).href, path, index: performanceIndexName, gate } }));
+  t.after(() => { Atomics.store(new Int32Array(gate), 0, 1); Atomics.notify(new Int32Array(gate), 0); return Promise.all(workers.map(worker => worker.terminate())); });
+  await Promise.all(workers.map(worker => new Promise((resolve, reject) => {
+    let done = false;
+    worker.on('message', message => {
+      if (message === 'ready' && ++ready === workers.length) {
+        Atomics.store(new Int32Array(gate), 0, 1);
+        Atomics.notify(new Int32Array(gate), 0);
+      }
+      if (message === 'done') done = true;
+    });
+    worker.once('error', reject);
+    worker.once('exit', code => code === 0 && done ? resolve() : reject(new Error(`Index worker exited ${code} before completing`)));
+  })));
+  assert.equal(ready, 2);
+});
+
 test('open rejects a database created by a newer schema', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'nmnm-schema-'));
   const path = join(directory, 'memory.db');
@@ -542,6 +977,84 @@ test('open rejects an existing unversioned database', async () => {
   db.close();
 
   assert.throws(() => open(path), /not a versioned nanomneme database/);
+});
+
+for (const readOnly of [false, true]) for (const mutation of ['content', 'remove', 'insert']) {
+  test(`verify refreshes cached FTS after another writer's ${mutation} (${readOnly ? 'read-only' : 'writable'} reader)`, async (t) => {
+    const directory = await mkdtemp(join(tmpdir(), 'nmnm-verify-cached-fts-'));
+    const path = join(directory, 'memory.db');
+    const writer = open(path);
+    const memory = writer.retain({ content: 'Original cached SQLite content' });
+    const reader = open(path, { readOnly });
+    t.after(() => { reader.close(); writer.close(); rmSync(directory, { recursive: true, force: true }); });
+    assert.equal(reader.retrieve({ query: 'SQLite' }).total, 1);
+    assert.equal(reader.verify().ok, true);
+    if (mutation === 'content') writer.retain({ id: memory.id, content: 'Changed cached SQLite content' });
+    else if (mutation === 'remove') writer.remove({ id: memory.id });
+    else writer.retain({ content: 'Additional SQLite content' });
+    const before = readFileSync(path);
+    const files = readdirSync(directory);
+    assert.deepEqual(reader.verify(), { ok: true, schema_version: 1, issues: [] });
+    assert.deepEqual(readFileSync(path), before, 'verification must not write or repair FTS');
+    assert.deepEqual(readdirSync(directory), files);
+    assert.deepEqual(reader.retrieve({ query: 'SQLite' }), writer.retrieve({ query: 'SQLite' }));
+  });
+}
+
+test('verify keeps the FTS refresh and integrity check in one WAL snapshot', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-verify-fts-snapshot-'));
+  const path = join(directory, 'memory.db');
+  const writer = open(path);
+  const raw = new DatabaseSync(path);
+  raw.exec('PRAGMA journal_mode = WAL');
+  const memory = writer.retain({ content: 'Original snapshot SQLite content' });
+  const reader = open(path, { readOnly: true });
+  t.after(() => { reader.close(); raw.close(); writer.close(); rmSync(directory, { recursive: true, force: true }); });
+  reader.retrieve({ query: 'SQLite' });
+  const result = afterSqlRead(
+    sql => sql === 'SELECT rowid FROM memories_fts LIMIT 1',
+    () => writer.retain({ id: memory.id, content: 'Changed snapshot SQLite content' }),
+    () => reader.verify(),
+  );
+  assert.deepEqual(result, { ok: true, schema_version: 1, issues: [] });
+  assert.equal(reader.verify().ok, true);
+  assert.equal(reader.retrieve({ query: 'Changed' }).total, 1);
+});
+
+for (const condition of ['id > 10', 'id = 10']) test(`verify still reports corrupt FTS blocks (${condition}) without repairing`, async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-verify-fts-corrupt-'));
+  const path = join(directory, 'memory.db');
+  const writer = open(path);
+  writer.retain({ content: 'Searchable SQLite corruption target' });
+  const reader = open(path, { readOnly: true });
+  const raw = new DatabaseSync(path);
+  t.after(() => { raw.close(); reader.close(); writer.close(); rmSync(directory, { recursive: true, force: true }); });
+  reader.retrieve({ query: 'SQLite' });
+  raw.enableDefensive?.(false);
+  assert(raw.prepare(`UPDATE memories_fts_data SET block = zeroblob(length(block)) WHERE ${condition}`).run().changes > 0);
+  const before = readFileSync(path);
+  assert.deepEqual(reader.verify().issues, [{ code: 'sqlite_integrity', count: 1, ids: [] }]);
+  const fresh = open(path, { readOnly: true });
+  try { assert.equal(fresh.verify().ok, false); } finally { fresh.close(); }
+  assert.deepEqual(readFileSync(path), before);
+});
+
+test('verify still reports a damaged ordinary SQLite index', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-verify-index-corrupt-'));
+  const path = join(directory, 'memory.db');
+  const writer = open(path);
+  writer.retain({ content: 'SQLite secondary index target' });
+  writer.close();
+  const raw = new DatabaseSync(path);
+  raw.enableDefensive?.(false);
+  raw.exec('CREATE INDEX damaged_index ON memories(content); PRAGMA writable_schema = ON');
+  raw.prepare('UPDATE sqlite_master SET sql = ? WHERE name = ?').run('CREATE INDEX damaged_index ON memories(kind)', 'damaged_index');
+  raw.close();
+  const reader = open(path, { readOnly: true });
+  t.after(() => { reader.close(); rmSync(directory, { recursive: true, force: true }); });
+  const before = readFileSync(path);
+  assert(reader.verify().issues.some(issue => issue.code === 'sqlite_integrity'));
+  assert.deepEqual(readFileSync(path), before);
 });
 
 test('verify reports a healthy database without modifying it', async (t) => {
@@ -767,6 +1280,141 @@ test('rebuildFts repairs derived rows without changing canonical memories', asyn
   assert.deepEqual(store.rebuildFts(), { mode: 'rebuild-fts', rebuilt: 2 });
   assert.equal(store.verify().ok, true);
   assert.equal(store.recall({ id: first.id }).content, 'First rebuild target');
+});
+
+function captureSql(work) {
+  const prepare = DatabaseSync.prototype.prepare;
+  const statements = [];
+  DatabaseSync.prototype.prepare = function (sql) {
+    const statement = prepare.call(this, sql);
+    for (const method of ['get', 'all', 'run']) {
+      const execute = statement[method];
+      statement[method] = function (...args) {
+        statements.push(sql);
+        return execute.apply(this, args);
+      };
+    }
+    return statement;
+  };
+  try { return { result: work(), statements }; }
+  finally { DatabaseSync.prototype.prepare = prepare; }
+}
+
+function derivedWrites(statements) {
+  return statements.filter(sql => /^(DELETE FROM|INSERT INTO) (memory_tags|memories_fts)(\s|\()/.test(sql));
+}
+
+test('unchanged content and normalized tags avoid derived writes while patches advance timestamps', async (t) => {
+  const store = await createStore(t);
+  let memory = store.retain({ content: 'Unchanged SQLite target', tags: ['alpha', 'beta'], metadata: { source: 'pi' } });
+  for (const patch of [
+    { importance: 0.9 }, { confidence: 0.4 }, { metadata: { source: 'codex' } },
+    { expires_at: '9999-01-01T00:00:00.000Z' }, { kind: 'decision' }, { namespace: 'selected' },
+    { tags: ['beta', 'alpha', 'alpha'] }, { content: '  Unchanged SQLite target  ' }, {},
+  ]) {
+    const { result, statements } = captureSql(() => store.retain({ id: memory.id, ...patch }));
+    assert.deepEqual(derivedWrites(statements), [], JSON.stringify(patch));
+    assert(result.updated_at > memory.updated_at);
+    assert.equal(result.created_at, memory.created_at);
+    assert.equal(result.content, memory.content);
+    assert.deepEqual(result.tags, ['alpha', 'beta']);
+    memory = result;
+  }
+  assert.equal(store.retrieve({ query: 'SQLite' }).total, 1);
+  assert.equal(store.verify().ok, true);
+});
+
+test('changed tags and content synchronize independently and restores reindex even expired records', async (t) => {
+  const store = await createStore(t);
+  const memory = store.retain({ content: 'Original indexed target', tags: ['original'] });
+  const changedTags = captureSql(() => store.retain({ id: memory.id, tags: ['changed'] }));
+  assert.equal(derivedWrites(changedTags.statements).filter(sql => sql.includes('memory_tags')).length, 2);
+  assert.equal(derivedWrites(changedTags.statements).filter(sql => sql.includes('memories_fts')).length, 0);
+  const changedContent = captureSql(() => store.retain({ id: memory.id, content: 'Replacement indexed target' }));
+  assert.equal(derivedWrites(changedContent.statements).filter(sql => sql.includes('memory_tags')).length, 0);
+  assert.equal(derivedWrites(changedContent.statements).filter(sql => sql.includes('memories_fts')).length, 2);
+  assert.equal(store.retrieve({ query: 'Original' }).total, 0);
+  assert.equal(store.retrieve({ query: 'Replacement' }).total, 1);
+  store.remove({ id: memory.id });
+  const restored = captureSql(() => store.retain({ id: memory.id, expires_at: '2000-01-01T00:00:00.000Z' }));
+  assert.equal(derivedWrites(restored.statements).filter(sql => sql.includes('memory_tags')).length, 0);
+  assert.equal(derivedWrites(restored.statements).filter(sql => sql.includes('memories_fts')).length, 2);
+  assert.deepEqual(restored.result.tags, ['changed']);
+  assert.equal(store.retrieve({ query: 'Replacement' }).total, 0);
+  assert.equal(store.retrieve({ query: 'Replacement', expires: 'expired' }).total, 1);
+  assert.equal(store.verify().ok, true);
+});
+
+test('multi-row hydration preserves canonical exports, sorted tags, scores, and empty results', () => {
+  const store = open(':memory:');
+  try {
+    assert.deepEqual(store.export(), []);
+    assert.deepEqual(store.retrieve(), { total: 0, items: [] });
+    const template = store.retain({ content: 'Hydration SQLite target', metadata: { source: 'fixture', nested: { valid: true } } });
+    store.remove({ id: template.id, mode: 'purge' });
+    const records = Array.from({ length: 1201 }, (_, index) => ({ ...template,
+      id: `10000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+      tags: index % 2 ? ['alpha', 'beta'] : [],
+      expires_at: index % 3 ? null : '2000-01-01T00:00:00.000Z',
+      removed_at: index % 7 ? null : template.updated_at,
+    }));
+    store.import(records);
+    assert.deepEqual(store.export(), records);
+    const expected = records.filter(record => record.removed_at === null).slice(0, 1000);
+    assert.deepEqual(store.retrieve({ expires: 'any', order_by: 'id', limit: 1000 }).items, expected);
+    const searched = store.retrieve({ query: 'SQLite', expires: 'any', order_by: 'id', limit: 1000 });
+    assert(searched.items.every(record => Number.isFinite(record.score)));
+    assert.deepEqual(searched.items.map(({ score, ...record }) => record), expected);
+    assert.deepEqual(store.retrieve({ namespace: 'missing' }), { total: 0, items: [] });
+    assert.equal(store.verify().ok, true);
+  } finally { store.close(); }
+});
+
+test('batched export keeps one snapshot when tags change between hydration batches', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'nmnm-batch-snapshot-'));
+  const path = join(directory, 'memory.db');
+  const reader = open(path);
+  const writer = open(path);
+  const raw = new DatabaseSync(path);
+  raw.exec('PRAGMA journal_mode = WAL');
+  t.after(() => { raw.close(); writer.close(); reader.close(); });
+  const template = writer.retain({ content: 'Batch snapshot', tags: ['before'] });
+  writer.remove({ id: template.id, mode: 'purge' });
+  const records = Array.from({ length: 1001 }, (_, index) => ({ ...template,
+    id: `10000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+  }));
+  writer.import(records);
+  const exported = afterSqlRead(
+    sql => sql.includes('FROM memory_tags WHERE memory_id'),
+    () => writer.retain({ id: records.at(-1).id, tags: ['after'] }),
+    () => reader.export(),
+  );
+  assert.deepEqual(exported, records);
+  assert.deepEqual(writer.recall({ id: records.at(-1).id }).tags, ['after']);
+});
+
+test('retrieval and large exports hydrate tags with bounded batches instead of per-row queries', () => {
+  const store = open(':memory:');
+  try {
+    const template = store.retain({ content: 'Batch target', tags: ['alpha', 'beta'] });
+    store.remove({ id: template.id, mode: 'purge' });
+    const records = Array.from({ length: 1201 }, (_, index) => ({ ...template,
+      id: `10000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+    }));
+    store.import(records);
+    for (const [work, expected] of [
+      [() => store.export(), records],
+      [() => store.retrieve({ order_by: 'id', limit: 1000 }).items, records.slice(0, 1000)],
+    ]) {
+      const { result, statements } = captureSql(work);
+      assert.deepEqual(result, expected);
+      const tagQueries = statements.filter(sql => /^SELECT .*FROM memory_tags\b/.test(sql));
+      assert(tagQueries.length <= 3, `${tagQueries.length} tag queries for ${result.length} records`);
+      assert(tagQueries.every(sql => (sql.match(/\?/g) ?? []).length <= 500));
+    }
+    const empty = captureSql(() => store.retrieve({ namespace: 'missing' }));
+    assert(!empty.statements.some(sql => sql.includes('FROM memory_tags')));
+  } finally { store.close(); }
 });
 
 test('retain creates an active memory that recall returns', async (t) => {

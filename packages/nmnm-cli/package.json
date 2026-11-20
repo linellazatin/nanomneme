@@ -1,6 +1,6 @@
 {
   "name": "@openlines/nmnm-cli",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "Local-first SQLite memory command-line interface for nanomneme",
   "type": "module",
   "bin": {
@@ -13,8 +13,8 @@
     "LICENSE"
   ],
   "dependencies": {
-    "@openlines/nmnm-core": "^0.3.2",
-    "@openlines/nmnm-ui": "^0.1.2"
+    "@openlines/nmnm-core": "^0.3.3",
+    "@openlines/nmnm-ui": "^0.1.3"
   },
   "engines": {
     "node": ">=22.19.0"

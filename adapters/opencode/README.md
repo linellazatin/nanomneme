@@ -27,7 +27,7 @@ OpenCode adapter for [nanomneme](https://github.com/linellazatin/nanomneme): a s
 
 Registry examples use the published package; use local checkout loading below for unpublished changes. Manifests and lockfiles define dependency requirements. Root-only security overrides do not propagate to registry installations or Bun-managed caches; the upstream dependency fixes remain pending.
 
-Use Node.js 22.19+ with built-in SQLite/FTS5 on the server's `PATH` (or `NMNM_NODE`). The unchanged package engine floor is 22.13 with FTS5 required separately, but the tested stock 22.13.0 binary lacks FTS5 and is unsuitable. Earlier adapter suites passed on 22.19.0 and 26.11.1; the V2 2.3.0 checks use 26.13.0. Tested hosts do not certify every version accepted by the legacy API dependency. V1 receives compatibility fixes, not indefinite feature parity or an older-host guarantee.
+Use Node.js 22.19+ with built-in SQLite/FTS5 on the server's `PATH` (or `NMNM_NODE`). The unchanged package engine floor is 22.13 with FTS5 required separately, but the tested stock 22.13.0 binary lacks FTS5 and is unsuitable. Earlier adapter suites passed on 22.19.0 and 26.11.1; historical V2 2.3.0 live-provider checks used 26.13.0. The shared native/terminal CI matrix uses Node 22 without provider calls. Tested hosts do not certify every version accepted by the legacy API dependency. V1 receives compatibility fixes, not indefinite feature parity or an older-host guarantee.
 
 ### OpenCode V2
 

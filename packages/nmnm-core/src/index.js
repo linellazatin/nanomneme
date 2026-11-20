@@ -37,11 +37,15 @@ const MEMORY_SELECT = SCHEMA_COLUMNS.memories.map((column) => `m.${column}`).joi
 const MIGRATIONS = new Map();
 // Optional and backward-readable: indexless schema-1 stores remain valid.
 const LEGACY_PERFORMANCE_INDEX_NAME = 'nmnm_perf_v1_live_updated';
-const PERFORMANCE_INDEX_NAME = 'nmnm_perf_v2_live_updated_source';
+const SOURCE_PERFORMANCE_INDEX_NAME = 'nmnm_perf_v2_live_updated_source';
+const PERFORMANCE_INDEX_NAME = 'nmnm_perf_v3_live_recency_counts';
 const SOURCE_EXPRESSION = "CASE WHEN json_valid(metadata) THEN json_extract(metadata, '$.source') END";
+// Canonical UTC milliseconds remain strictly ordered as epoch seconds, including years 0000–9999.
+const RECENCY_EXPRESSION = "unixepoch(updated_at, 'subsec')";
 const PERFORMANCE_INDEXES = new Map([
   [LEGACY_PERFORMANCE_INDEX_NAME, 'updated_at DESC, id, expires_at, namespace'],
-  [PERFORMANCE_INDEX_NAME, `updated_at DESC, id, expires_at, namespace, ${SOURCE_EXPRESSION}`],
+  [SOURCE_PERFORMANCE_INDEX_NAME, `updated_at DESC, id, expires_at, namespace, ${SOURCE_EXPRESSION}`],
+  [PERFORMANCE_INDEX_NAME, `${RECENCY_EXPRESSION} DESC, id, expires_at, namespace, ${SOURCE_EXPRESSION}, kind, scope, importance, confidence, removed_at`],
 ].map(([name, columns]) => [name, `CREATE INDEX ${name} ON memories(${columns}) WHERE removed_at IS NULL`]));
 
 function performanceIndex(db, name = PERFORMANCE_INDEX_NAME) {
@@ -52,18 +56,31 @@ function normalizedIndexSql(sql) {
   return sql?.split(/('(?:''|[^'])*')/).map((part, index) => index % 2 ? part : part.replace(/["`\[]([a-z_][a-z_0-9]*)["`\]]/gi, '$1').replace(/\s+/g, ' ').toLowerCase()).join('').trim();
 }
 
+const NORMALIZED_PERFORMANCE_INDEXES = new Map([...PERFORMANCE_INDEXES].map(([name, sql]) => [name, normalizedIndexSql(sql)]));
+
 function matchesPerformanceIndex(index, name) {
-  return index?.type === 'index' && normalizedIndexSql(index.sql) === normalizedIndexSql(PERFORMANCE_INDEXES.get(name));
+  return index?.type === 'index' && normalizedIndexSql(index.sql) === NORMALIZED_PERFORMANCE_INDEXES.get(name);
 }
 
 function ensurePerformanceIndex(db) {
-  const current = performanceIndex(db);
-  if (current && (!matchesPerformanceIndex(current, PERFORMANCE_INDEX_NAME) || !matchesPerformanceIndex(performanceIndex(db, LEGACY_PERFORMANCE_INDEX_NAME), LEGACY_PERFORMANCE_INDEX_NAME))) return;
+  const readIndexes = () => db.prepare('SELECT name, type, sql FROM sqlite_master WHERE name COLLATE NOCASE IN (?, ?, ?)').all(...PERFORMANCE_INDEXES.keys());
+  let indexes = readIndexes();
+  let current = indexes.find(index => index.name.toLowerCase() === PERFORMANCE_INDEX_NAME);
+  const legacy = indexes.filter(index => index.name.toLowerCase() !== PERFORMANCE_INDEX_NAME);
+  // An ordinary reopen needs neither another schema read nor definition normalization.
+  if (current && (!legacy.length || !matchesPerformanceIndex(current, PERFORMANCE_INDEX_NAME) || legacy.some(index => !matchesPerformanceIndex(index, index.name.toLowerCase())))) return;
   db.exec('BEGIN IMMEDIATE');
   try {
-    // Recheck under the lock and retire only the recognized legacy definition.
-    if (!performanceIndex(db)) db.exec(PERFORMANCE_INDEXES.get(PERFORMANCE_INDEX_NAME));
-    if (matchesPerformanceIndex(performanceIndex(db), PERFORMANCE_INDEX_NAME) && matchesPerformanceIndex(performanceIndex(db, LEGACY_PERFORMANCE_INDEX_NAME), LEGACY_PERFORMANCE_INDEX_NAME)) db.exec(`DROP INDEX ${LEGACY_PERFORMANCE_INDEX_NAME}`);
+    // Recheck under the lock and retire only recognized older definitions.
+    indexes = readIndexes();
+    current = indexes.find(index => index.name.toLowerCase() === PERFORMANCE_INDEX_NAME);
+    if (!current) db.exec(PERFORMANCE_INDEXES.get(PERFORMANCE_INDEX_NAME));
+    if (!current || matchesPerformanceIndex(current, PERFORMANCE_INDEX_NAME)) {
+      for (const index of indexes) {
+        const name = index.name.toLowerCase();
+        if (name !== PERFORMANCE_INDEX_NAME && matchesPerformanceIndex(index, name)) db.exec(`DROP INDEX ${name}`);
+      }
+    }
     db.exec('COMMIT');
   } catch (error) {
     try { db.exec('ROLLBACK'); } catch {}
@@ -545,23 +562,23 @@ export function open(path, { create = true, readOnly = false } = {}) {
       // Keep FTS source filtering on its original expression so the source index cannot
       // displace MATCH as the candidate driver without statistics on a new store.
       if (source) { where.push(`${query ? "json_extract(m.metadata, '$.source')" : SOURCE_EXPRESSION} = ?`); parameters.push(source); }
-      let coveredCount = !query;
+      let preferCountIndex = !query;
       for (const [field, value] of [['kind', selector.kind], ['scope', selector.scope], ['namespace', selector.namespace]]) {
         const values = list(value, field);
         if (field === 'kind') values.forEach(kind);
         if (field === 'scope') values.forEach(scope);
         if (field === 'namespace') values.forEach((value) => slug(value, 'namespace'));
-        if (field !== 'namespace' && values.length) coveredCount = false;
+        if (field !== 'namespace' && values.length) preferCountIndex = false;
         if (values.length) { where.push(`m.${field} IN (${values.map(() => '?').join(', ')})`); parameters.push(...values); }
       }
       const wantedTags = tags(selector.tags);
       if (wantedTags.length) {
-        coveredCount = false;
+        preferCountIndex = false;
         where.push(`m.id IN (SELECT memory_id FROM memory_tags WHERE tag IN (${wantedTags.map(() => '?').join(', ')}) GROUP BY memory_id HAVING COUNT(DISTINCT tag) = ?)`);
         parameters.push(...wantedTags, wantedTags.length);
       }
       for (const [field, value] of [['importance', selector.importance], ['confidence', selector.confidence]]) {
-        for (const [operator, target] of range(value, field)) { coveredCount = false; where.push(`m.${field} ${operator} ?`); parameters.push(target); }
+        for (const [operator, target] of range(value, field)) { preferCountIndex = false; where.push(`m.${field} ${operator} ?`); parameters.push(target); }
       }
       const orderBy = selector.order_by ?? (query ? 'relevance' : 'updated_at');
       const ordering = orderBy === 'relevance' && rawQuery != null
@@ -573,11 +590,15 @@ export function open(path, { create = true, readOnly = false } = {}) {
       const condition = where.join(' AND ');
       if (unmatched) return { total: 0, items: [] };
       return transaction(() => {
-        // SQLite can mis-cost a covering expression index after ANALYZE. Require it
-        // only for fully covered counts, leaving selective candidate plans alone.
-        const countIndex = coveredCount && matchesPerformanceIndex(performanceIndex(db), PERFORMANCE_INDEX_NAME) ? `INDEXED BY ${PERFORMANCE_INDEX_NAME}` : '';
+        const currentIndex = matchesPerformanceIndex(performanceIndex(db), PERFORMANCE_INDEX_NAME);
+        // Keep the original recency/namespace/source hints: SQLite can mis-cost
+        // expression coverage after ANALYZE. Newly covered filters retain planner choice.
+        const countIndexName = preferCountIndex && (currentIndex ? PERFORMANCE_INDEX_NAME
+          : matchesPerformanceIndex(performanceIndex(db, SOURCE_PERFORMANCE_INDEX_NAME), SOURCE_PERFORMANCE_INDEX_NAME) ? SOURCE_PERFORMANCE_INDEX_NAME : null);
+        const countIndex = countIndexName ? `INDEXED BY ${countIndexName}` : '';
+        const pageOrdering = currentIndex && orderBy === 'updated_at' ? `${RECENCY_EXPRESSION} DESC, m.id ASC` : ordering;
         const total = db.prepare(`SELECT COUNT(*) AS total FROM memories m ${countIndex} ${join} WHERE ${condition}`).get(...parameters).total;
-        const rows = db.prepare(`SELECT ${MEMORY_SELECT}, ${query ? 'bm25(memories_fts) AS score' : 'NULL AS score'} FROM memories m ${join} WHERE ${condition} ORDER BY ${ordering} LIMIT ? OFFSET ?`)
+        const rows = db.prepare(`SELECT ${MEMORY_SELECT}, ${query ? 'bm25(memories_fts) AS score' : 'NULL AS score'} FROM memories m ${join} WHERE ${condition} ORDER BY ${pageOrdering} LIMIT ? OFFSET ?`)
           .all(...parameters, limit, offset);
         return { total, items: hydrateMany(rows) };
       }, 'DEFERRED');

@@ -50,6 +50,30 @@ test('quality fixture labels reference canonical records and have separate evalu
   } finally { store.close(); }
 });
 
+test('follow-up runner exercises lifecycle/statistics matrices without overwriting evidence', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'nmnm-followup-test-'));
+  const runner = fileURLToPath(new URL('../bench/followup.js', import.meta.url));
+  const core = fileURLToPath(new URL('../src/index.js', import.meta.url));
+  const output = join(directory, 'report.json');
+  const args = [runner, output, core, core, '100'];
+  try {
+    execFileSync(process.execPath, args, { stdio: 'pipe' });
+    const report = JSON.parse(readFileSync(output, 'utf8'));
+    assert.equal(report.size, 100);
+    assert.deepEqual(Object.keys(report.profiles), ['dense', 'removed-heavy', 'expired-heavy']);
+    for (const profile of Object.values(report.profiles)) for (const state of Object.values(profile.states)) {
+      assert.equal(state.pairs.length, 3);
+      assert.equal(state.pairs[0].timings.kind.current.samples, 30);
+    }
+    assert.equal(report.writes.length, 3);
+    assert.equal(report.writes[0].modes.cold.create.current.samples, 100);
+    assert.equal(report.fts.length, 8);
+    assert(report.fts.filter(row => row.reader === 'current').every(row => row.cached_ok));
+    assert.throws(() => execFileSync(process.execPath, args, { stdio: 'pipe' }), /Refusing to overwrite/);
+    assert.throws(() => execFileSync(process.execPath, [runner, output, core, core, '0'], { stdio: 'pipe' }), /Usage:/);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
 test('benchmark runner records comparable modes and refuses to overwrite evidence', () => {
   const directory = mkdtempSync(join(tmpdir(), 'nmnm-benchmark-test-'));
   const runner = new URL('../bench/retrieval.js', import.meta.url);
@@ -64,9 +88,12 @@ test('benchmark runner records comparable modes and refuses to overwrite evidenc
       assert.equal(mode.timings.restore.warmups, 5);
       assert(mode.timings.recall.p95_ms >= mode.timings.recall.p50_ms);
       assert(mode.plans['memories_fts.rank'].length > 0);
-      assert(mode.plans.source.some(detail => detail.includes('nmnm_perf_v2_live_updated_source')));
-      assert(mode.plans.source_count.some(detail => detail.includes('nmnm_perf_v2_live_updated_source')));
+      assert(mode.plans.source.some(detail => detail.includes('nmnm_perf_v3_live_recency_counts')));
+      assert(mode.plans.source_count.some(detail => detail.includes('nmnm_perf_v3_live_recency_counts')));
       assert.equal(mode.source_count_canonical_column_reads, 0);
+      assert.deepEqual(Object.values(mode.count_canonical_column_reads), [0, 0, 0, 0, 0]);
+      for (const name of ['kind', 'scope', 'importance', 'confidence']) assert.equal(mode.timings[name].samples, 30);
+      assert.equal(mode.count_result_digest, report.modes.reused.count_result_digest);
       assert(mode.bytes.database > 0);
     }
     assert.throws(() => execFileSync(process.execPath, args, { stdio: 'pipe' }), /EEXIST/);

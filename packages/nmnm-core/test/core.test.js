@@ -523,11 +523,14 @@ test('open validates the readOnly option before filesystem changes', async () =>
 });
 
 const legacyPerformanceIndexName = 'nmnm_perf_v1_live_updated';
-const performanceIndexName = 'nmnm_perf_v2_live_updated_source';
+const sourcePerformanceIndexName = 'nmnm_perf_v2_live_updated_source';
+const performanceIndexName = 'nmnm_perf_v3_live_recency_counts';
+const recencyExpression = "unixepoch(updated_at, 'subsec')";
 const sourceExpression = "CASE WHEN json_valid(metadata) THEN json_extract(metadata, '$.source') END";
 const performanceIndexDefinitions = [
   [legacyPerformanceIndexName, 'updated_at DESC, id, expires_at, namespace'],
-  [performanceIndexName, `updated_at DESC, id, expires_at, namespace, ${sourceExpression}`],
+  [sourcePerformanceIndexName, `updated_at DESC, id, expires_at, namespace, ${sourceExpression}`],
+  [performanceIndexName, `${recencyExpression} DESC, id, expires_at, namespace, ${sourceExpression}, kind, scope, importance, confidence, removed_at`],
 ];
 
 async function indexlessStore(t) {
@@ -556,7 +559,7 @@ test('writable opens install an optional covering index without changing canonic
   assert.deepEqual(writer.export(), records);
   assert.equal(raw.prepare("SELECT value FROM nmnm_meta WHERE key = 'schema_version'").get().value, '1');
   const index = raw.prepare('SELECT sql FROM sqlite_master WHERE name = ?').get(performanceIndexName);
-  assert.match(index?.sql ?? '', /updated_at DESC, id, expires_at, namespace/);
+  assert(index?.sql.includes(`${recencyExpression} DESC, id, expires_at, namespace`));
   const plan = raw.prepare('EXPLAIN QUERY PLAN SELECT COUNT(*) FROM memories WHERE removed_at IS NULL AND (expires_at IS NULL OR expires_at > ?)').all('2026-01-01T00:00:00.000Z');
   assert(plan.some(row => performanceIndexDefinitions.some(([name]) => row.detail.includes(name))));
   const installed = readFileSync(path);
@@ -565,10 +568,10 @@ test('writable opens install an optional covering index without changing canonic
   assert.deepEqual(readFileSync(path), installed);
 });
 
-for (const [operation, name] of [['CREATE INDEX', performanceIndexName], ['DROP INDEX', legacyPerformanceIndexName]]) {
+for (const [operation, name] of [['CREATE INDEX', performanceIndexName], ['DROP INDEX', legacyPerformanceIndexName], ['DROP INDEX', sourcePerformanceIndexName]]) {
   test(`failed ${operation} ${name} rolls back the optional-index replacement`, async (t) => {
     const { path, raw, records } = await indexlessStore(t);
-    raw.exec(`CREATE INDEX ${legacyPerformanceIndexName} ON memories(updated_at DESC, id, expires_at, namespace) WHERE removed_at IS NULL`);
+    for (const [legacy, columns] of performanceIndexDefinitions.slice(0, -1)) raw.exec(`CREATE INDEX ${legacy} ON memories(${columns}) WHERE removed_at IS NULL`);
     const before = readFileSync(path);
     const exec = DatabaseSync.prototype.exec;
     DatabaseSync.prototype.exec = function (sql) {
@@ -579,7 +582,7 @@ for (const [operation, name] of [['CREATE INDEX', performanceIndexName], ['DROP 
     try { assert.throws(() => open(path, { create: false }), /Injected index failure/); }
     finally { DatabaseSync.prototype.exec = exec; }
     assert.equal(raw.prepare('SELECT 1 FROM sqlite_master WHERE name = ?').get(performanceIndexName), undefined);
-    assert(raw.prepare('SELECT 1 FROM sqlite_master WHERE name = ?').get(legacyPerformanceIndexName));
+    for (const [legacy] of performanceIndexDefinitions.slice(0, -1)) assert(raw.prepare('SELECT 1 FROM sqlite_master WHERE name = ?').get(legacy));
     assert.deepEqual(readFileSync(path), before);
     const reader = open(path, { readOnly: true });
     try { assert.deepEqual(reader.export(), records); assert.equal(reader.verify().ok, true); }
@@ -587,9 +590,9 @@ for (const [operation, name] of [['CREATE INDEX', performanceIndexName], ['DROP 
   });
 }
 
-test('legacy recency stores remain healthy read-only and replace their index on the next writable open', async (t) => {
+for (const [name, columns] of performanceIndexDefinitions.slice(0, -1)) test(`${name} stores remain healthy read-only and replace their index on the next writable open`, async (t) => {
   const { path, raw, records } = await indexlessStore(t);
-  raw.exec(`CREATE INDEX ${legacyPerformanceIndexName} ON memories(updated_at DESC, id, expires_at, namespace) WHERE removed_at IS NULL`);
+  raw.exec(`CREATE INDEX ${name} ON memories(${columns}) WHERE removed_at IS NULL`);
   const before = readFileSync(path);
   const reader = open(path, { readOnly: true });
   try { assert.equal(reader.verify().ok, true); assert.deepEqual(reader.export(), records); }
@@ -599,7 +602,23 @@ test('legacy recency stores remain healthy read-only and replace their index on 
   try { assert.equal(writer.verify().ok, true); assert.deepEqual(writer.export(), records); }
   finally { writer.close(); }
   assert(raw.prepare('SELECT 1 FROM sqlite_master WHERE name = ?').get(performanceIndexName));
-  assert.equal(raw.prepare('SELECT 1 FROM sqlite_master WHERE name = ?').get(legacyPerformanceIndexName), undefined);
+  assert.equal(raw.prepare('SELECT 1 FROM sqlite_master WHERE name = ?').get(name), undefined);
+});
+
+test('read-only v2 stores retain their source-count hint without installing v3', async (t) => {
+  const { path, raw } = await indexlessStore(t);
+  const [, columns] = performanceIndexDefinitions.find(([name]) => name === sourcePerformanceIndexName);
+  raw.exec(`CREATE INDEX ${sourcePerformanceIndexName} ON memories(${columns}) WHERE removed_at IS NULL`);
+  raw.prepare('UPDATE memories SET metadata = ?').run('{"source":"pi"}');
+  raw.exec('ANALYZE memories');
+  const before = readFileSync(path);
+  const reader = open(path, { readOnly: true });
+  t.after(() => reader.close());
+  const { result, statements } = captureSql(() => reader.retrieve({ source: 'pi' }));
+  assert.equal(result.total, 1);
+  assert(statements.some(sql => sql.startsWith('SELECT COUNT(*)') && sql.includes(`INDEXED BY ${sourcePerformanceIndexName}`)));
+  assert.equal(reader.verify().ok, true);
+  assert.deepEqual(readFileSync(path), before);
 });
 
 test('verification reports malformed optional indexes without requiring missing ones or rejecting unrelated indexes', async (t) => {
@@ -667,6 +686,114 @@ for (const analyzed of [false, true]) test(`source-only counts stay covered ${an
   assert.deepEqual(readFileSync(path), before);
 });
 
+for (const analyzed of [false, true]) for (const mixedLegacy of [false, true]) test(`kind/scope/score counts avoid non-covering recency scans ${analyzed ? 'with' : 'without'} statistics (${mixedLegacy ? 'v2 coexistence' : 'current only'})`, async (t) => {
+  const { path, raw } = await indexlessStore(t);
+  const writer = open(path, { create: false });
+  const [template] = writer.export();
+  writer.remove({ id: template.id, mode: 'purge' });
+  const records = Array.from({ length: 1000 }, (_, index) => ({ ...template,
+    id: `10000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+    kind: index % 4 ? 'note' : 'decision', scope: index % 2 ? 'global' : 'project',
+    importance: (index % 4) / 4, confidence: (index % 4) / 4,
+  }));
+  writer.import(records);
+  writer.close();
+  if (mixedLegacy) raw.exec(`CREATE INDEX ${sourcePerformanceIndexName} ON memories(${performanceIndexDefinitions.find(([name]) => name === sourcePerformanceIndexName)[1]}) WHERE removed_at IS NULL`);
+  if (analyzed) raw.exec('ANALYZE memories');
+  const reader = open(path, { readOnly: true });
+  t.after(() => reader.close());
+  const before = readFileSync(path);
+  const rootpage = raw.prepare("SELECT rootpage FROM sqlite_master WHERE name = 'memories'").get().rootpage;
+  const prepare = DatabaseSync.prototype.prepare;
+  const canonicalReads = [], plans = [];
+  DatabaseSync.prototype.prepare = function (sql) {
+    const statement = prepare.call(this, sql);
+    if (sql.startsWith('SELECT COUNT(*) AS total FROM memories m')) {
+      const get = statement.get, db = this;
+      statement.get = function (...args) {
+        const program = prepare.call(db, 'EXPLAIN ' + sql).all(...args);
+        const cursors = new Set(program.filter(row => row.opcode === 'OpenRead' && row.p2 === rootpage && row.p3 === 0).map(row => row.p1));
+        canonicalReads.push(program.some(row => row.opcode === 'Column' && cursors.has(row.p1)));
+        plans.push(prepare.call(db, 'EXPLAIN QUERY PLAN ' + sql).all(...args).map(row => row.detail));
+        return get.apply(this, args);
+      };
+    }
+    return statement;
+  };
+  try {
+    for (const [selector, total] of [[{ kind: 'decision' }, 250], [{ scope: 'global' }, 500], [{ importance: { gte: 0.75 } }, 250], [{ confidence: { gte: 0.5 } }, 500]]) {
+      const result = reader.retrieve(selector);
+      assert.equal(result.total, total);
+      assert.equal(result.items.length, 20);
+    }
+  } finally { DatabaseSync.prototype.prepare = prepare; }
+  assert.equal(canonicalReads.length, 4);
+  canonicalReads.forEach((reads, index) => {
+    if (reads) assert(!plans[index].some(detail => performanceIndexDefinitions.some(([name]) => detail.toLowerCase().includes(name))), 'a sequential table scan is allowed, but not canonical lookups through a recency index');
+  });
+  assert.deepEqual(readFileSync(path), before);
+});
+
+test('newly covered counts preserve selective user-index plans with source filters', async (t) => {
+  const { path, raw } = await indexlessStore(t);
+  const writer = open(path, { create: false });
+  const [template] = writer.export();
+  const records = Array.from({ length: 1000 }, (_, index) => ({ ...template,
+    id: `10000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+    kind: index ? 'note' : 'instruction', metadata: { source: 'pi' },
+  }));
+  writer.import(records);
+  writer.close();
+  raw.exec('CREATE INDEX selective_kind ON memories(kind); ANALYZE memories');
+  const reader = open(path, { readOnly: true });
+  t.after(() => reader.close());
+  const before = readFileSync(path);
+  const prepare = DatabaseSync.prototype.prepare;
+  const plans = [];
+  DatabaseSync.prototype.prepare = function (sql) {
+    const statement = prepare.call(this, sql);
+    if (sql.startsWith('SELECT COUNT(*) AS total FROM memories m')) {
+      const get = statement.get, db = this;
+      statement.get = function (...args) {
+        plans.push(prepare.call(db, 'EXPLAIN QUERY PLAN ' + sql).all(...args).map(row => row.detail));
+        return get.apply(this, args);
+      };
+    }
+    return statement;
+  };
+  try {
+    assert.equal(reader.retrieve({ kind: 'instruction' }).total, 1);
+    assert.equal(reader.retrieve({ kind: 'instruction', source: 'pi' }).total, 1);
+  } finally { DatabaseSync.prototype.prepare = prepare; }
+  assert(plans.every(plan => plan.some(detail => detail.includes('selective_kind'))));
+  assert.deepEqual(readFileSync(path), before);
+});
+
+test('recency ordering preserves full-range UTC milliseconds and UUID ties', async (t) => {
+  const { path, raw } = await indexlessStore(t);
+  const writer = open(path, { create: false });
+  const [template] = writer.export();
+  writer.remove({ id: template.id, mode: 'purge' });
+  const dates = ['0000-01-01T00:00:00.000Z', '0000-01-01T00:00:00.001Z', '0001-01-01T00:00:00.000Z',
+    '1582-10-15T00:00:00.001Z', '1900-01-01T00:00:00.999Z', '1969-12-31T23:59:59.999Z',
+    '1970-01-01T00:00:00.000Z', '1970-01-01T00:00:00.001Z', '2038-01-19T03:14:07.999Z',
+    '9999-12-31T23:59:59.997Z', '9999-12-31T23:59:59.998Z', '9999-12-31T23:59:59.999Z'];
+  const records = dates.flatMap((date, index) => [1, 0].map(tie => ({ ...template,
+    id: `10000000-0000-4000-8000-${String(index * 2 + tie + 1).padStart(12, '0')}`,
+    created_at: '0000-01-01T00:00:00.000Z', updated_at: date,
+  })));
+  writer.import(records);
+  writer.close();
+  const expected = [...records].sort((a, b) => b.updated_at.localeCompare(a.updated_at) || a.id.localeCompare(b.id));
+  const reader = open(path, { readOnly: true });
+  t.after(() => reader.close());
+  assert.deepEqual(reader.retrieve({ limit: 100 }).items, expected);
+  assert.equal(reader.verify().ok, true);
+  const epochs = dates.map(date => raw.prepare("SELECT unixepoch(?, 'subsec') AS value").get(date).value);
+  assert(epochs.every(value => typeof value === 'number'));
+  assert(epochs.every((value, index) => !index || value > epochs[index - 1]), 'adjacent canonical milliseconds must remain distinct and ordered');
+});
+
 for (const [name] of performanceIndexDefinitions) {
   test(`case-variant ${name} remains readable and writable without duplicate installation`, async (t) => {
     const { path, raw, records } = await indexlessStore(t);
@@ -686,7 +813,7 @@ for (const [name] of performanceIndexDefinitions) {
       assert.equal(writer.verify().ok, true);
       assert.deepEqual(writer.export(), records);
       assert.equal(raw.prepare('SELECT COUNT(*) AS count FROM sqlite_master WHERE name = ? COLLATE NOCASE').get(performanceIndexName).count, 1);
-      assert.equal(raw.prepare('SELECT 1 FROM sqlite_master WHERE name = ? COLLATE NOCASE').get(legacyPerformanceIndexName), undefined);
+      for (const [legacy] of performanceIndexDefinitions.slice(0, -1)) assert.equal(raw.prepare('SELECT 1 FROM sqlite_master WHERE name = ? COLLATE NOCASE').get(legacy), undefined);
       assert.equal(raw.prepare('SELECT rootpage FROM sqlite_master WHERE name = ? COLLATE NOCASE').get(performanceIndexName).rootpage, rootpage);
     } finally { writer.close(); }
   });
@@ -714,7 +841,7 @@ for (const [name] of performanceIndexDefinitions) {
 test('quoted case-variant optional-index identifiers remain equivalent', async (t) => {
   const { path, raw, records } = await indexlessStore(t);
   for (const [name, columns] of performanceIndexDefinitions) {
-    const quoted = columns.replace(/\b(metadata|updated_at|id|expires_at|namespace)\b/g, '"$1"');
+    const quoted = columns.replace(/\b(metadata|updated_at|id|expires_at|namespace|kind|scope|importance|confidence)\b/g, '"$1"');
     raw.exec(`CREATE INDEX "${name.toUpperCase()}" ON "memories"(${quoted}) WHERE removed_at IS NULL`);
   }
   const before = readFileSync(path);
@@ -764,10 +891,24 @@ test('source index installation preserves malformed-metadata verification', asyn
 
 test('source index verification preserves case-sensitive JSON-path literals', async (t) => {
   const { path, raw } = await indexlessStore(t);
-  raw.exec(`CREATE INDEX ${performanceIndexName} ON memories(updated_at DESC, id, expires_at, namespace, CASE WHEN json_valid(metadata) THEN json_extract(metadata, '$.SOURCE') END) WHERE removed_at IS NULL`);
+  raw.exec(`CREATE INDEX ${performanceIndexName} ON memories(${performanceIndexDefinitions.at(-1)[1].replace("'$.source'", "'$.SOURCE'")}) WHERE removed_at IS NULL`);
   const reader = open(path, { readOnly: true });
   try { assert.deepEqual(reader.verify().issues, [{ code: 'performance_index', count: 1, ids: [performanceIndexName] }]); }
   finally { reader.close(); }
+});
+
+test('a conflicting current index created before lock acquisition preserves both legacy indexes', async (t) => {
+  const { path, raw, records } = await indexlessStore(t);
+  for (const [name, columns] of performanceIndexDefinitions.slice(0, -1)) raw.exec(`CREATE INDEX ${name} ON memories(${columns}) WHERE removed_at IS NULL`);
+  const writer = afterSqlRead(
+    sql => sql.startsWith('SELECT name, type, sql FROM sqlite_master'),
+    () => raw.exec(`CREATE INDEX ${performanceIndexName} ON memories(namespace)`),
+    () => open(path, { create: false }),
+  );
+  t.after(() => writer.close());
+  assert.deepEqual(writer.export(), records);
+  assert.deepEqual(writer.verify().issues, [{ code: 'performance_index', count: 1, ids: [performanceIndexName] }]);
+  for (const [name] of performanceIndexDefinitions) assert(raw.prepare('SELECT 1 FROM sqlite_master WHERE name = ?').get(name));
 });
 
 test('concurrent writable opens recheck optional-index installation after acquiring the write lock', { timeout: 15000 }, async (t) => {
@@ -783,10 +924,10 @@ test('concurrent writable opens recheck optional-index installation after acquir
       let held = false;
       DatabaseSync.prototype.prepare = function(sql) {
         const statement = prepare.call(this, sql);
-        const get = statement.get;
-        statement.get = function(...args) {
-          const result = get.apply(this, args);
-          if (!held && args[0] === workerData.index && result === undefined) {
+        const all = statement.all;
+        statement.all = function(...args) {
+          const result = all.apply(this, args);
+          if (!held && args.includes(workerData.index) && !result.some(row => row.name?.toLowerCase() === workerData.index)) {
             held = true;
             parentPort.postMessage('ready');
             if (Atomics.wait(new Int32Array(workerData.gate), 0, 0, 10000) === 'timed-out') throw new Error('Index coordination timed out');

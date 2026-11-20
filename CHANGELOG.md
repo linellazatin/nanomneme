@@ -1,5 +1,55 @@
 # Changelog
 
+## 0.10.0 - Core SQLite operations enhancements
+
+### Updated components
+
+| Component | Version |
+| --- | --- |
+| Repository | 0.10.0 |
+| `@openlines/nmnm-core` | 0.3.3 |
+| `@openlines/nmnm-cli` | 0.4.3 |
+| `@openlines/nmnm-ui` | 0.1.3 |
+| `@openlines/nmnm-pi` | 0.4.9 |
+| `@openlines/nmnm-opencode` | 0.3.3 |
+| `@openlines/nmnm-claude` | 0.2.4 |
+| `@openlines/nmnm-codex` | 0.3.1 |
+
+Adapter patch releases refresh core dependencies/generated packaging only; handwritten adapter behavior is unchanged.
+
+### Changed
+
+- `nmnm-core` patches avoid unchanged tag and FTS rewrites while preserving timestamps, restoration, secure-deletion settings, and transaction guarantees.
+- `nmnm-core` retrieval and export hydrate tags in bounded batches without changing search ordering, exact totals, or the canonical store schema.
+- Writable opens install an optional compact recency/count-covering index and retire only recognized legacy definitions atomically, without canonical migration or rejecting older runtimes; read-only stores may remain indexless or keep either legacy index.
+- Reserved index names are recognized case-insensitively, including quoted identifiers. Conflicts remain report-only. Source-count hints stay covering with or without statistics; newly covered structured filters retain planner choice.
+- `nmnm-pi` development validation uses `~1.6.0` per latest pi coding agent release
+  - CI retains older compatibility lanes and adds `~1.6.0`, with required threading coverage on both modern lanes. The supported host floor and adapter runtime behavior are unchanged.
+
+### Fixed
+
+- Kind/scope/importance/confidence counts no longer require canonical-row lookups through the recency index. Compact timestamp keys preserve full-range UTC millisecond ordering and UUID ties without rewriting records or adding automatic statistics maintenance.
+- Verification refreshes cached FTS state inside its existing read snapshot before SQLite integrity checking, preventing the reproduced false alarm after external writes without repair or suppression of genuine corruption. See the [follow-up evidence](docs/CORE_CLI_MANUAL.md#verification-and-count-follow-up).
+
+### Upgrading existing installations
+
+- Update each installed adapter/package and restart its host (updating one adapter does not replace separately installed CLI/core/UI copies; the CLI brings its own core/UI dependencies):
+  - `nmnm-pi` needs an adapter update
+  - `nmnm-opencode` needs its plugin updated with server/TUI entries aligned
+  - `nmnm-claude` needs both marketplace refresh and installed-plugin update
+  - `nmnm-codex` checkout installations require a checkout update, then separate `npm ci`, `npm run validate`, and `npm run codex:update` commands, followed by a Codex restart. Prepared-artifact installations need the complete refreshed artifact at the stable registered path. Existing direct registrations and hook trust remain unchanged; former marketplace installations require the documented migration.
+- No manual database migration, export/import, FTS rebuild, settings change, or pin reset is required. Each store installs or upgrades the optional index on its next writable open; read-only use remains compatible without it. The first build or replacement may take extra time and disk space on large stores. No dummy memory or repair command is needed.
+- See [updating existing installations](README.md#updating-existing-installations) for details. Registry installs require the updated packages to be published; pulling source alone does not refresh dependencies or installed caches.
+
+### Development
+
+- Added deterministic disposable-store [benchmarks](packages/nmnm-core/bench/README.md) and a proposed labeled retrieval corpus.
+  - Root README and core/CLI manual now summarize measured improvements, with detailed methodology and a durable measurement snapshot in the manual's evidence section. Benchmark evidence does not establish improved semantic retrieval or automatic adapter context selection.
+
+### Validation
+
+- Follow-up root and frozen validation passed 603 tests: 597 passes and six expected skips. Standalone packages, 137 focused tests on each of three Node/SQLite runtimes, all five fresh `nmnm-pi` compatibility lanes, and disposable `nmnm-codex` dependency preparation passed. The shipped high-severity audit gate passed with four existing moderate advisories.
+
 ## 0.9.2 - Adapter compatibility, bugfixes, and CI updates
 
 ### Updated components

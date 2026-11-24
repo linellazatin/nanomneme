@@ -167,3 +167,24 @@ test('brief streams past invalid candidates and a budget never emits a partial p
   }
   assert.deepEqual(db.export(), before);
 });
+
+test('summary removal is ID-based, guarded, reversible and changes the next brief', t => {
+  const { db } = store(t);
+  const older = db.retainSummary({ summary: payload() });
+  const latest = db.retainSummary({ summary: payload({ as_of: '2026-11-25T00:00:00.000Z' }) });
+  const note = db.retain({ content: 'Keep ordinary memory' });
+  assert.throws(() => db.removeSummary({ id: note.id }));
+  assert.throws(() => db.removeSummary({ id: latest.id, mode: 'purge' }), TypeError);
+  assert.equal(db.recall({ id: note.id }).content, note.content);
+  const removed = db.removeSummary({ id: latest.id });
+  assert.equal(removed.mode, 'soft');
+  assert.equal(removed.id, latest.id);
+  assert.equal(db.recall({ id: latest.id }), null);
+  assert.deepEqual(db.brief().source_ids, [older.id]);
+  assert.equal(db.removeSummary({ id: latest.id }), null);
+  db.retain({ id: latest.id });
+  assert.equal(db.brief().source_ids[0], latest.id);
+  db.removeSummary({ id: latest.id }); db.removeSummary({ id: older.id });
+  assert.equal(db.brief().text, '');
+  assert.equal(db.verify().ok, true);
+});

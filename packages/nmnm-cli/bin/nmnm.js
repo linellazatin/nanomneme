@@ -24,6 +24,7 @@ Commands:
   repair               Rebuild derived data with --rebuild-fts.
   summary add          Save a supplied project work summary with --file <path|->.
   summary update <id>  Replace an active summary payload with --file <path|->.
+  summary remove <id>  Soft-remove a project summary and refresh derived brief sources.
   brief                Render a project brief; --budget <nonnegative integer> defaults to 1000.
 
 Common options: --db <path> --global --json --version, -v
@@ -132,9 +133,16 @@ function readSummary(path) {
 
 function summaryCommand(positionals, options) {
   const [action, id] = positionals;
-  if (!['add', 'update'].includes(action) || positionals.length !== (action === 'add' ? 1 : 2)) throw new TypeError('Use summary add or summary update <id> with --file <path|->');
-  if (options.file === undefined) throw new TypeError('summary requires --file <path|->');
+  if (!['add', 'update', 'remove'].includes(action) || positionals.length !== (action === 'add' ? 1 : 2)) throw new TypeError('Use summary add/update with --file <path|->, or summary remove <id>');
+  if (action !== 'remove' && options.file === undefined) throw new TypeError('summary requires --file <path|->');
+  if (action === 'remove' && options.file !== undefined) throw new TypeError('--file is not valid with summary remove');
   if (id !== undefined && !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id)) throw new TypeError('Invalid summary id');
+  if (action === 'remove') {
+    const path = databasePath({}, { create: false });
+    if (!existsSync(path)) return { result: null, json: options.json };
+    const store = open(path, { create: false });
+    try { return { result: store.removeSummary({ id }), json: options.json }; } finally { store.close(); }
+  }
   const summary = readSummary(options.file);
   const store = open(databasePath({}), { create: action === 'add' });
   try { return { result: store.retainSummary({ summary, ...(id === undefined ? {} : { id }) }), json: options.json }; }
@@ -406,7 +414,7 @@ function commandHint(args) {
     } else if (command === undefined) command = arg;
     else subcommand ??= arg;
   }
-  if (command === 'summary') return ['add', 'update'].includes(subcommand) ? 'retain' : null;
+  if (command === 'summary') return subcommand === 'remove' ? 'remove' : ['add', 'update'].includes(subcommand) ? 'retain' : null;
   if (command === 'brief') return null;
   return Object.hasOwn(COMMAND_OPTIONS, command) ? command : null;
 }

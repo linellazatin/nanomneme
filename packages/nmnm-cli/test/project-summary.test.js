@@ -92,3 +92,23 @@ test('CLI summary writes log as retain without payloads; briefs remain unlogged'
   assert.equal(contents.includes('PRIVATE_SUMMARY_SENTINEL'), false);
   assert.deepEqual(contents.trim().split('\n').map(JSON.parse).map(r => [r.operation, r.status]), [['retain', 'ok'], ['retain', 'ok'], ['retain', 'failed'], ['retain', 'failed']]);
 });
+
+test('CLI summary remove accepts source IDs, preserves unrelated memories, and logs as remove', t => {
+  const { cwd, run, json } = environment(t);
+  const id = fixture.fixture_record_id;
+  assert.equal(json(['summary', 'remove', id]), null);
+  assert.equal(existsSync(join(cwd, '.nanomneme')), false);
+  for (const args of [['summary', 'remove'], ['summary', 'remove', 'bad-id'], ['summary', 'remove', id, '--file', '-'], ['summary', 'remove', id, '--global']]) assert.equal(run(args).status, 1);
+  assert.equal(existsSync(join(cwd, '.nanomneme')), false);
+  const shared = join(cwd, '.local/share/nanomneme'); mkdirSync(shared, { recursive: true });
+  writeFileSync(join(shared, 'config.jsonc'), '{"logging":{"enabled":true}}');
+  const record = json(['summary', 'add', '--file', '-'], JSON.stringify(fixture.base_payload));
+  const note = json(['retain', 'Keep ordinary record']);
+  assert.equal(run(['summary', 'remove', note.id]).status, 1);
+  assert.equal(json(['recall', note.id]).id, note.id);
+  assert.equal(json(['summary', 'remove', json(['brief']).source_ids[0]]).id, record.id);
+  assert.equal(run(['brief']).stdout, '');
+  assert.equal(json(['summary', 'remove', record.id]), null);
+  const logs = readFileSync(join(shared, 'logs/nmnm-cli.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+  assert.deepEqual(logs.filter(row => row.operation === 'remove').map(row => row.status), ['failed', 'ok', 'not_found']);
+});

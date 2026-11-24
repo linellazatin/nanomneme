@@ -535,6 +535,26 @@ export function open(path, { create = true, readOnly = false } = {}) {
     });
   };
 
+  const remove = ({ id, mode = 'soft' }, runTransaction = transaction) => {
+    if (!['soft', 'purge'].includes(mode)) throw new TypeError('mode must be soft or purge');
+    const targetId = memoryId(id);
+    return runTransaction(() => {
+      const memory = read(targetId, mode === 'soft');
+      if (!memory) return null;
+      const timestamp = mode === 'soft' ? mutationTimestamp(memory) : new Date().toISOString();
+      db.prepare('DELETE FROM memories_fts WHERE rowid = (SELECT rowid FROM memories WHERE id = ?)').run(memory.id);
+      if (mode === 'purge') {
+        db.prepare('DELETE FROM memory_tags WHERE memory_id = ?').run(memory.id);
+        db.prepare('DELETE FROM memories WHERE id = ?').run(memory.id);
+      } else {
+        db.prepare('UPDATE memories SET removed_at = ?, updated_at = ? WHERE id = ?').run(timestamp, timestamp, memory.id);
+      }
+      return mode === 'purge'
+        ? { id: memory.id, mode, purged_at: timestamp }
+        : { id: memory.id, mode, removed_at: timestamp };
+    });
+  };
+
   return {
     retain(input) { return retain(input); },
 
@@ -767,23 +787,17 @@ export function open(path, { create = true, readOnly = false } = {}) {
       }, 'DEFERRED');
     },
 
-    remove({ id, mode = 'soft' }) {
-      if (!['soft', 'purge'].includes(mode)) throw new TypeError('mode must be soft or purge');
-      const targetId = memoryId(id);
+    remove(input) { return remove(input); },
+
+    removeSummary(input) {
+      if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(key => key !== 'id')) throw new TypeError('removeSummary accepts only an id');
+      const targetId = memoryId(input.id);
       return transaction(() => {
-        const memory = read(targetId, mode === 'soft');
-        if (!memory) return null;
-        const timestamp = mode === 'soft' ? mutationTimestamp(memory) : new Date().toISOString();
-        db.prepare('DELETE FROM memories_fts WHERE rowid = (SELECT rowid FROM memories WHERE id = ?)').run(memory.id);
-        if (mode === 'purge') {
-          db.prepare('DELETE FROM memory_tags WHERE memory_id = ?').run(memory.id);
-          db.prepare('DELETE FROM memories WHERE id = ?').run(memory.id);
-        } else {
-          db.prepare('UPDATE memories SET removed_at = ?, updated_at = ? WHERE id = ?').run(timestamp, timestamp, memory.id);
-        }
-        return mode === 'purge'
-          ? { id: memory.id, mode, purged_at: timestamp }
-          : { id: memory.id, mode, removed_at: timestamp };
+        const current = read(targetId);
+        if (!current) return null;
+        if (current.kind !== 'note' || current.scope !== 'project' || current.namespace !== 'project-summary'
+          || current.metadata.summary?.format !== 'nanomneme/project-summary' || current.metadata.summary?.format_version !== 1) throw new RangeError('Target must be an active supported project summary');
+        return remove({ id: targetId }, work => work());
       });
     },
 

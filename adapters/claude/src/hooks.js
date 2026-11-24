@@ -5,7 +5,7 @@ import { buildMemoryIndex, readReinjectionSettings } from './context.js';
 export function renderContext(index) {
   const parts = [];
   if (index.autoretention) parts.push(index.autoretention);
-  if (index.total) parts.push(index.content.trimEnd());
+  if (index.total || index.brief) parts.push(index.content.trimEnd());
   return parts.join('\n\n');
 }
 

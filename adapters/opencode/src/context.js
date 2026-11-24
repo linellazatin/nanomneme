@@ -3,7 +3,7 @@ import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, r
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { parse } from 'jsonc-parser';
-import { databasePath, runMemory } from './store.js';
+import { databasePath, readProjectBrief, runMemory } from './store.js';
 import { opencodeGlobalDir, settingsPath } from './paths.js';
 
 export { opencodeGlobalDir, settingsPath };
@@ -42,6 +42,12 @@ function normalizedReinjection(value) {
   };
 }
 
+function normalizedBrief(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key => key !== 'enabled')
+    || (value.enabled !== undefined && typeof value.enabled !== 'boolean')) return { enabled: false };
+  return value.enabled === undefined ? {} : { enabled: value.enabled };
+}
+
 function normalizedSettings(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('Nanomneme memory settings must be an object');
   const budget = value.injection_budget;
@@ -50,6 +56,7 @@ function normalizedSettings(value) {
   const reinjection = value.reinjection;
   return {
     ...(budget === undefined ? {} : { injection_budget: budget }),
+    ...(value.brief === undefined ? {} : { brief: normalizedBrief(value.brief) }),
     ...(reinjection === undefined ? {} : { reinjection: normalizedReinjection(reinjection) }),
     ...(autoretention === undefined ? {} : { autoretention: normalizedAutoretention(autoretention) }),
   };
@@ -201,6 +208,7 @@ export function buildMemoryIndex({ cwd, home, globalDir, platform, budget } = {}
       }
     }
   }
+  const pinCount = records.length;
   for (const store of ['project', 'global']) {
     const recent = readStore({ cwd, home, platform, store, operation: 'retrieve', input: { limit: 20, order_by: 'updated_at' } });
     if (!recent) continue;
@@ -215,6 +223,33 @@ export function buildMemoryIndex({ cwd, home, globalDir, platform, budget } = {}
     throw new TypeError('Nanomneme memory autoretention guidance exceeds the injection budget');
   }
   const indexBudget = Math.max(0, limit - (autoretention ? autoretention.length + 2 : 0));
+  if (projectSettings.brief?.enabled ?? globalSettings.brief?.enabled ?? false) {
+    const header = 'Nanomneme memory index:\n';
+    let pins = '';
+    let total = 0;
+    for (const record of records.slice(0, pinCount)) {
+      const next = `${pins || header}${line(record.store, record.memory)}\n`;
+      if (next.length > indexBudget) break;
+      pins = next; total += 1;
+    }
+    pins = pins.trimEnd();
+    const remaining = Math.max(0, indexBudget - pins.length - (pins ? 2 : 0));
+    let brief;
+    try {
+      const budget = Math.min(1000, Math.floor(remaining / 2));
+      if (budget) brief = readProjectBrief({ cwd, home, platform }, budget);
+    } catch { /* A brief-only failure must not discard valid ordinary context. */ }
+    const parts = [pins, brief?.text].filter(Boolean);
+    let recent = '';
+    for (const record of records.slice(pinCount)) {
+      if (record.store === 'project' && brief?.source_ids.includes(record.memory.id)) continue;
+      const next = `${recent || header}${line(record.store, record.memory)}\n`;
+      if ([...parts, next].join('\n\n').length > indexBudget) break;
+      recent = next; total += 1;
+    }
+    if (recent) parts.push(recent.trimEnd());
+    return { content: parts.join('\n\n'), brief: brief?.text ?? '', autoretention, unresolved, total, budget: limit, reinjection };
+  }
   let content = 'Nanomneme memory index:\n';
   let total = 0;
   for (const record of records) {
@@ -236,6 +271,6 @@ export function buildMemoryIndex({ cwd, home, globalDir, platform, budget } = {}
 export function renderContext(index) {
   const parts = [];
   if (index.autoretention) parts.push(index.autoretention);
-  if (index.total) parts.push(index.content.trimEnd());
+  if (index.total || index.brief) parts.push(index.content.trimEnd());
   return parts.join('\n\n');
 }

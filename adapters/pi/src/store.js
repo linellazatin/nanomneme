@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { open } from '@openlines/nmnm-core';
 import { homedir, platform as currentPlatform } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -28,4 +29,12 @@ export function runMemory({ cwd, home, platform, store = 'project', operation, i
   } finally {
     memoryStore.close();
   }
+}
+
+// Briefs always read the project store, independently of ordinary global previews.
+export function readProjectBrief(options, budget) {
+  const path = databasePath({ ...options, store: 'project' });
+  if (!existsSync(path)) return null;
+  const store = open(path, { create: false, readOnly: true });
+  try { return store.brief({ budget }); } finally { store.close(); }
 }

@@ -15,6 +15,12 @@ function integer(value, minimum, name) {
   if (value !== undefined && (!Number.isSafeInteger(value) || value < minimum)) throw new TypeError(`Nanomneme ${name} must be a safe integer >= ${minimum}`);
 }
 
+function normalizedBrief(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key => key !== 'enabled')
+    || (value.enabled !== undefined && typeof value.enabled !== 'boolean')) return { enabled: false };
+  return value.enabled === undefined ? {} : { enabled: value.enabled };
+}
+
 function readSettings(path) {
   let fd;
   try { fd = openSync(path, 'r'); }
@@ -47,7 +53,7 @@ function readSettings(path) {
       if (rules !== undefined && (!Array.isArray(rules) || rules.some(rule => typeof rule !== 'string' || !rule.trim()))) throw new TypeError(`Nanomneme autoretention.${name} must contain non-empty strings`);
     }
   }
-  return value;
+  return { ...value, ...(value.brief === undefined ? {} : { brief: normalizedBrief(value.brief) }) };
 }
 
 function readFileSyncBounded(fd, buffer) {
@@ -61,6 +67,7 @@ export function resolveSettings({ cwd, home = homedir(), env = process.env }) {
   const project = readSettings(join(cwd, '.nanomneme/nmnm.jsonc'));
   return {
     injection_budget: project.injection_budget ?? user.injection_budget ?? 2000,
+    ...(project.brief === undefined && user.brief === undefined ? {} : { brief: { enabled: project.brief?.enabled ?? user.brief?.enabled ?? false } }),
     reinjection: {
       enabled: project.reinjection?.enabled ?? user.reinjection?.enabled ?? false,
       every_n_prompts: project.reinjection?.every_n_prompts ?? user.reinjection?.every_n_prompts ?? 5,

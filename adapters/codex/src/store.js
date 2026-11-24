@@ -29,3 +29,11 @@ export function runMemory({ cwd, home = homedir(), platform = currentPlatform(),
     memoryStore.close();
   }
 }
+
+// Briefs always read the project store, independently of ordinary global previews.
+export function readProjectBrief(options, budget) {
+  const path = databasePath({ ...options, store: 'project' });
+  if (!existsSync(path)) return null;
+  const store = open(path, { create: false, readOnly: true });
+  try { return store.brief({ budget }); } finally { store.close(); }
+}

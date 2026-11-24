@@ -110,7 +110,7 @@ function setBrowserSearch({ ctx, home, platform, target, query }) {
 }
 
 function memoryIndexContent(memoryIndex) {
-  return [memoryIndex.autoretention, memoryIndex.total ? memoryIndex.content : undefined]
+  return [memoryIndex.autoretention, (memoryIndex.total || memoryIndex.brief) ? memoryIndex.content : undefined]
     .filter(Boolean)
     .join('\n\n');
 }

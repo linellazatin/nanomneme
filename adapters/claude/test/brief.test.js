@@ -40,6 +40,10 @@ test('brief is opt-in, project-only, read-only, and suppresses only emitted rece
   try { global.retainSummary({ summary: { ...summary, title: 'GLOBAL_PRIVATE_CHECKPOINT' } }); } finally { global.close(); }
   assert.equal(render().includes('GLOBAL_PRIVATE_CHECKPOINT'), true); // ordinary global previews remain allowed
   assert.equal(render().split('GLOBAL_PRIVATE_CHECKPOINT').length - 1, 1);
+  const withGlobal = render();
+  const start = withGlobal.indexOf('Nanomneme project brief:');
+  const end = withGlobal.indexOf('Nanomneme memory index:', start);
+  assert.equal(withGlobal.slice(start, end).includes('GLOBAL_PRIVATE_CHECKPOINT'), false);
   settings({ brief: { enabled: false } });
   assert.equal(render().includes('Nanomneme project brief:'), false);
 });
@@ -102,3 +106,16 @@ test('rules and pins keep priority; a pinned summary may also have detailed brie
   assert.equal(render().split(record.id).length - 1, 2);
 });
 
+
+test('Claude startup and cadence deliver brief-only context with complete existing-tool recall', async t => {
+  const { sessionStartOutput, reinjectionContext } = await import('../src/hooks.js');
+  const { handleTool } = await import('../src/operations.js');
+  const { options, seed, settings } = setup(t); const record = seed();
+  settings({ brief: { enabled: true }, reinjection: { enabled: true, every_n_prompts: 2 } });
+  assert.match(sessionStartOutput(options).hookSpecificOutput.additionalContext, /Nanomneme project brief:/);
+  const first = reinjectionContext(options);
+  assert.deepEqual(first.output, {});
+  const second = reinjectionContext(options, first.state);
+  assert.match(second.output.hookSpecificOutput.additionalContext, /Nanomneme project brief:/);
+  assert.deepEqual(JSON.parse(handleTool('recall_memory', { id: record.id }, options).content[0].text), record);
+});

@@ -39,6 +39,10 @@ test('brief is opt-in, project-only, read-only, and suppresses only emitted rece
   try { global.retainSummary({ summary: { ...summary, title: 'GLOBAL_PRIVATE_CHECKPOINT' } }); } finally { global.close(); }
   assert.equal(render().includes('GLOBAL_PRIVATE_CHECKPOINT'), true); // ordinary global previews remain allowed
   assert.equal(render().split('GLOBAL_PRIVATE_CHECKPOINT').length - 1, 1);
+  const withGlobal = render();
+  const start = withGlobal.indexOf('Nanomneme project brief:');
+  const end = withGlobal.indexOf('Nanomneme memory index:', start);
+  assert.equal(withGlobal.slice(start, end).includes('GLOBAL_PRIVATE_CHECKPOINT'), false);
   settings({ brief: { enabled: false } });
   assert.equal(render().includes('Nanomneme project brief:'), false);
 });
@@ -101,3 +105,20 @@ test('rules and pins keep priority; a pinned summary may also have detailed brie
   assert.equal(render().split(record.id).length - 1, 2);
 });
 
+
+test('Pi loaded host registry delivers brief-only context after startup and compaction', async t => {
+  const { loadPiAdapter } = await import('./host-helper.js');
+  const host = await loadPiAdapter(t, { projectSettings: { brief: { enabled: true } } });
+  const db = open(join(host.cwd, '.nanomneme/memory.db')); let record;
+  try { record = db.retainSummary({ summary }); } finally { db.close(); }
+  const extension = host.loaded.extensions[0];
+  const ctx = { cwd: host.cwd, isProjectTrusted: () => true, sessionManager: { getSessionId: () => 'brief-host' }, ui: { notify() {} } };
+  for (const handler of extension.handlers.get('session_start')) handler({}, ctx);
+  const before = extension.handlers.get('before_agent_start')[0];
+  assert.match((await before({ messageType: 'user', systemPrompt: 'Base' }, ctx)).systemPrompt, /Nanomneme project brief:/);
+  const detail = await extension.tools.get('recall_memory').definition.execute('call', { id: record.id }, undefined, undefined, ctx);
+  assert.deepEqual(JSON.parse(detail.content[0].text), record);
+  assert.equal(await before({ messageType: 'user', systemPrompt: 'Base' }, ctx), undefined);
+  for (const handler of extension.handlers.get('session_compact')) handler({}, ctx);
+  assert.match((await before({ messageType: 'user', systemPrompt: 'Base' }, ctx)).systemPrompt, /Nanomneme project brief:/);
+});

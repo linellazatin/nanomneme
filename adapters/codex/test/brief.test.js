@@ -39,6 +39,10 @@ test('brief is opt-in, project-only, read-only, and suppresses only emitted rece
   try { global.retainSummary({ summary: { ...summary, title: 'GLOBAL_PRIVATE_CHECKPOINT' } }); } finally { global.close(); }
   assert.equal(render().includes('GLOBAL_PRIVATE_CHECKPOINT'), true); // ordinary global previews remain allowed
   assert.equal(render().split('GLOBAL_PRIVATE_CHECKPOINT').length - 1, 1);
+  const withGlobal = render();
+  const start = withGlobal.indexOf('Nanomneme project brief:');
+  const end = withGlobal.indexOf('Nanomneme memory index:', start);
+  assert.equal(withGlobal.slice(start, end).includes('GLOBAL_PRIVATE_CHECKPOINT'), false);
   settings({ brief: { enabled: false } });
   assert.equal(render().includes('Nanomneme project brief:'), false);
 });
@@ -87,3 +91,25 @@ test('brief-only query failure and inconsistent summaries preserve ordinary cont
   assert.match(render(), /GENERIC_EDIT_KEEP/);
 });
 
+
+test('Codex startup/cadence hooks deliver briefs and paged recall recovers complete summary details', async t => {
+  const { handleHook } = await import('../src/hooks.js');
+  const { createMemoryOperations } = await import('../src/operations.js');
+  const { options, path, settings } = setup(t);
+  settings({ brief: { enabled: true }, reinjection: { enabled: true, every_n_prompts: 2 } });
+  const db = open(path); let record;
+  try { record = db.retainSummary({ summary: { ...summary, decisions: Array(4).fill('long evidence '.repeat(60)) } }); } finally { db.close(); }
+  const payload = { cwd: options.cwd, session_id: 'synthetic-brief-session', hook_event_name: 'SessionStart' };
+  const stateRoot = join(options.home, 'cadence');
+  assert.match(handleHook(payload, { ...options, stateRoot }).hookSpecificOutput.additionalContext, /Nanomneme project brief:/);
+  assert.deepEqual(handleHook({ ...payload, hook_event_name: 'UserPromptSubmit', turn_id: 'one' }, { ...options, stateRoot }), {});
+  assert.match(handleHook({ ...payload, hook_event_name: 'UserPromptSubmit', turn_id: 'two' }, { ...options, stateRoot }).hookSpecificOutput.additionalContext, /Nanomneme project brief:/);
+  const operations = createMemoryOperations(options);
+  let offset = 0, json = '';
+  do {
+    const response = JSON.parse(operations('recall_memory', { id: record.id, content_offset: offset }).content[0].text);
+    json += response.record_json;
+    offset = response.next_offset;
+  } while (offset !== null);
+  assert.deepEqual(JSON.parse(json), record);
+});

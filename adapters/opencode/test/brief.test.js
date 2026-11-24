@@ -40,6 +40,10 @@ test('brief is opt-in, project-only, read-only, and suppresses only emitted rece
   try { global.retainSummary({ summary: { ...summary, title: 'GLOBAL_PRIVATE_CHECKPOINT' } }); } finally { global.close(); }
   assert.equal(render().includes('GLOBAL_PRIVATE_CHECKPOINT'), true); // ordinary global previews remain allowed
   assert.equal(render().split('GLOBAL_PRIVATE_CHECKPOINT').length - 1, 1);
+  const withGlobal = render();
+  const start = withGlobal.indexOf('Nanomneme project brief:');
+  const end = withGlobal.indexOf('Nanomneme memory index:', start);
+  assert.equal(withGlobal.slice(start, end).includes('GLOBAL_PRIVATE_CHECKPOINT'), false);
   settings({ brief: { enabled: false } });
   assert.equal(render().includes('Nanomneme project brief:'), false);
 });
@@ -102,3 +106,15 @@ test('rules and pins keep priority; a pinned summary may also have detailed brie
   assert.equal(render().split(record.id).length - 1, 2);
 });
 
+
+test('OpenCode Node bridge returns the brief and complete detail for per-request context consumers', async t => {
+  const { runBridge } = await import('../src/bridge-client.js');
+  const { options, seed, settings } = setup(t); const record = seed();
+  settings({ brief: { enabled: true } });
+  const result = runBridge({ op: 'index', ctx: options });
+  assert.equal(result.ok, true);
+  assert.match(result.context, /Nanomneme project brief:/);
+  const detail = runBridge({ op: 'tool', name: 'recall_memory', params: { id: record.id }, ctx: options });
+  assert.equal(detail.ok, true);
+  assert.deepEqual(JSON.parse(detail.text), record);
+});

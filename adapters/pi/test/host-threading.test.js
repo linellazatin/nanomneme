@@ -159,3 +159,21 @@ test('Pi threading rejected continuation resends complete injected context', thr
   assert.ok(answer.diagnostics.some(diagnostic => diagnostic.type === 'anthropic_thread_fallback'));
   assert.equal((await host.prompt()).thread.type, 'continue');
 });
+
+test('Pi provider request carries project brief at startup and after explicit refresh', threadingOptions, async t => {
+  const { open } = await import('@openlines/nmnm-core');
+  const host = await fixture(t, false, { projectSettings: { brief: { enabled: true } } });
+  const store = open(`${host.cwd}/.nanomneme/memory.db`);
+  let record;
+  try {
+    record = store.retainSummary({ summary: { format: 'nanomneme/project-summary', format_version: 1, title: 'Provider-bound brief', as_of: '2026-11-25T00:00:00.000Z', objective: 'Continue synthetic work.', state: { status: 'in-progress', outcome: 'Assessment finished.', verification: 'Implementation unverified.' }, decisions: [], open_questions: [], next_steps: [], authorization: { allowed: ['Assess.'], not_authorized: ['Deploy.'] } } });
+  } finally { store.close(); }
+  const first = await host.prompt();
+  assert.match(JSON.stringify(first.system), /Nanomneme project brief:/);
+  assert.match(JSON.stringify(first.system), /not instructions or current approval/);
+  const writer = open(`${host.cwd}/.nanomneme/memory.db`);
+  try { writer.retainSummary({ id: record.id, summary: { ...record.metadata.summary, title: 'Updated provider-bound brief' } }); } finally { writer.close(); }
+  await host.session.prompt('/memory refresh');
+  const refreshed = await host.prompt();
+  assert.match(JSON.stringify(refreshed.system), /Updated provider-bound brief/);
+});

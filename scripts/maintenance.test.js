@@ -89,7 +89,7 @@ test('generator CLI distinguishes stale, current, and failed without writing on 
   const root = fileURLToPath(new URL('..', import.meta.url));
   try {
     for (const path of ['scripts', 'packages/nmnm-core/src', 'packages/nmnm-ui/src', 'adapters/claude/src']) mkdirSync(join(dir, path), { recursive: true });
-    for (const path of ['scripts/build-logger.js', 'packages/nmnm-core/src/index.js', 'packages/nmnm-core/package.json', 'packages/nmnm-core/LICENSE', 'packages/nmnm-ui/src/ui-logger.js', 'shared/logger', 'external/logslines']) cpSync(join(root, path), join(dir, path), { recursive: true });
+    for (const path of ['scripts/build-logger.js', 'packages/nmnm-core/src/index.js', 'packages/nmnm-core/src/project-summary.js', 'packages/nmnm-core/package.json', 'packages/nmnm-core/LICENSE', 'packages/nmnm-ui/src/ui-logger.js', 'shared/logger', 'external/logslines']) cpSync(join(root, path), join(dir, path), { recursive: true });
     writeFileSync(join(dir, 'package.json'), '{"type":"module"}');
     symlinkSync(join(root, 'node_modules'), join(dir, 'node_modules'), 'dir');
     const run = args => spawnSync(process.execPath, [join(dir, 'scripts/build-logger.js'), ...args], { cwd: tmpdir(), encoding: 'utf8' });
@@ -107,6 +107,13 @@ test('generator CLI distinguishes stale, current, and failed without writing on 
     assert.equal(readFileSync(claudeCore, 'utf8'), originalCore);
     assert.equal(run([]).status, 0);
     assert.match(readFileSync(claudeCore, 'utf8'), /importance: 0.6/);
+    const summarySource = join(dir, 'packages/nmnm-core/src/project-summary.js');
+    writeFileSync(summarySource, readFileSync(summarySource, 'utf8').replace('Summary omitted;', 'Summary helper changed;'));
+    const beforeSummary = readFileSync(claudeCore, 'utf8');
+    assert.equal(run(['--check']).status, 2);
+    assert.equal(readFileSync(claudeCore, 'utf8'), beforeSummary);
+    assert.equal(run([]).status, 0);
+    assert.match(readFileSync(claudeCore, 'utf8'), /Summary helper changed;/);
     const corePackage = join(dir, 'packages/nmnm-core/package.json');
     const pkg = JSON.parse(readFileSync(corePackage)); pkg.version = '9.9.9';
     writeFileSync(corePackage, JSON.stringify(pkg));

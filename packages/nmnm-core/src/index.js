@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { closeSync, existsSync, linkSync, mkdirSync, openSync, statSync, unlinkSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { validateProjectSummary, renderProjectSummary, renderBrief } from './project-summary.js';
+export { validateProjectSummary, renderProjectSummary } from './project-summary.js';
 
 const DEFAULTS = Object.freeze({ kind: 'note', scope: 'project', namespace: 'default', importance: 0.5, confidence: 1 });
 const KINDS = new Set(['note', 'decision', 'preference', 'fact', 'instruction']);
@@ -488,49 +490,88 @@ export function open(path, { create = true, readOnly = false } = {}) {
     db.prepare('INSERT INTO memories_fts(rowid, content) VALUES (?, ?)').run(rowid, content);
   };
 
-  return {
-    retain(input) {
-      if (!input || typeof input !== 'object' || Array.isArray(input)) throw new TypeError('retain input must be an object');
-      const values = Object.fromEntries(['id', 'content', 'kind', 'scope', 'namespace', 'importance', 'confidence', 'expires_at', 'metadata', 'tags']
-        .map((field) => [field, input[field]]));
-      const id = values.id == null ? null : memoryId(values.id);
-      const normalized = {
-        content: values.content === undefined ? undefined : text(values.content, 'content'),
-        kind: values.kind === undefined ? undefined : kind(values.kind),
-        scope: values.scope === undefined ? undefined : scope(values.scope),
-        namespace: values.namespace === undefined ? undefined : slug(values.namespace, 'namespace'),
-        importance: values.importance === undefined ? undefined : score(values.importance, 'importance'),
-        confidence: values.confidence === undefined ? undefined : score(values.confidence, 'confidence'),
-        expires_at: values.expires_at === undefined ? undefined : date(values.expires_at, 'expires_at'),
-        metadata: values.metadata === undefined ? undefined : metadata(values.metadata),
-        tags: values.tags === undefined ? undefined : tags(values.tags),
-      };
-      const patch = Object.fromEntries(Object.entries(normalized).filter(([, value]) => value !== undefined));
-      if (id !== null) {
-        return transaction(() => {
-          const current = read(id, false);
-          if (!current) throw new RangeError(`memory ${id} does not exist`);
-          const next = { ...current, ...patch };
-          const now = mutationTimestamp(current);
-          db.prepare(`UPDATE memories SET content = ?, kind = ?, scope = ?, namespace = ?, importance = ?, confidence = ?, updated_at = ?, expires_at = ?, removed_at = NULL, metadata = ? WHERE id = ?`)
-            .run(next.content, next.kind, next.scope, next.namespace, next.importance, next.confidence, now, next.expires_at, JSON.stringify(next.metadata), id);
-          if (next.tags.length !== current.tags.length || next.tags.some((tag, index) => tag !== current.tags[index])) writeTags(id, next.tags);
-          if (current.removed_at != null || next.content !== current.content) syncFts(id, next.content);
-          return read(id, false);
-        });
-      }
-
-      const next = { ...DEFAULTS, expires_at: null, metadata: {}, tags: [], ...patch };
-      text(next.content, 'content');
-      const newId = randomUUID();
-      return transaction(() => {
-        const now = date(new Date().toISOString(), 'created_at');
-        db.prepare(`INSERT INTO memories (id, content, kind, scope, namespace, importance, confidence, created_at, updated_at, expires_at, removed_at, metadata) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`)
-          .run(newId, next.content, next.kind, next.scope, next.namespace, next.importance, next.confidence, now, now, next.expires_at, JSON.stringify(next.metadata));
-        writeTags(newId, next.tags);
-        syncFts(newId, next.content);
-        return read(newId, false);
+  // The same mutation body is reused under retainSummary's target-check lock.
+  const retain = (input, runTransaction = transaction) => {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) throw new TypeError('retain input must be an object');
+    const values = Object.fromEntries(['id', 'content', 'kind', 'scope', 'namespace', 'importance', 'confidence', 'expires_at', 'metadata', 'tags']
+      .map((field) => [field, input[field]]));
+    const id = values.id == null ? null : memoryId(values.id);
+    const normalized = {
+      content: values.content === undefined ? undefined : text(values.content, 'content'),
+      kind: values.kind === undefined ? undefined : kind(values.kind),
+      scope: values.scope === undefined ? undefined : scope(values.scope),
+      namespace: values.namespace === undefined ? undefined : slug(values.namespace, 'namespace'),
+      importance: values.importance === undefined ? undefined : score(values.importance, 'importance'),
+      confidence: values.confidence === undefined ? undefined : score(values.confidence, 'confidence'),
+      expires_at: values.expires_at === undefined ? undefined : date(values.expires_at, 'expires_at'),
+      metadata: values.metadata === undefined ? undefined : metadata(values.metadata),
+      tags: values.tags === undefined ? undefined : tags(values.tags),
+    };
+    const patch = Object.fromEntries(Object.entries(normalized).filter(([, value]) => value !== undefined));
+    if (id !== null) {
+      return runTransaction(() => {
+        const current = read(id, false);
+        if (!current) throw new RangeError(`memory ${id} does not exist`);
+        const next = { ...current, ...patch };
+        const now = mutationTimestamp(current);
+        db.prepare(`UPDATE memories SET content = ?, kind = ?, scope = ?, namespace = ?, importance = ?, confidence = ?, updated_at = ?, expires_at = ?, removed_at = NULL, metadata = ? WHERE id = ?`)
+          .run(next.content, next.kind, next.scope, next.namespace, next.importance, next.confidence, now, next.expires_at, JSON.stringify(next.metadata), id);
+        if (next.tags.length !== current.tags.length || next.tags.some((tag, index) => tag !== current.tags[index])) writeTags(id, next.tags);
+        if (current.removed_at != null || next.content !== current.content) syncFts(id, next.content);
+        return read(id, false);
       });
+    }
+
+    const next = { ...DEFAULTS, expires_at: null, metadata: {}, tags: [], ...patch };
+    text(next.content, 'content');
+    const newId = randomUUID();
+    return runTransaction(() => {
+      const now = date(new Date().toISOString(), 'created_at');
+      db.prepare(`INSERT INTO memories (id, content, kind, scope, namespace, importance, confidence, created_at, updated_at, expires_at, removed_at, metadata) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`)
+        .run(newId, next.content, next.kind, next.scope, next.namespace, next.importance, next.confidence, now, now, next.expires_at, JSON.stringify(next.metadata));
+      writeTags(newId, next.tags);
+      syncFts(newId, next.content);
+      return read(newId, false);
+    });
+  };
+
+  return {
+    retain(input) { return retain(input); },
+
+    retainSummary(input) {
+      if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(key => !['summary', 'id'].includes(key))) throw new TypeError('Invalid retainSummary input');
+      const summary = validateProjectSummary(input.summary);
+      const content = renderProjectSummary(summary);
+      const id = input.id === undefined ? undefined : memoryId(input.id);
+      return transaction(() => {
+        if (id === undefined) return retain({ content, kind: 'note', scope: 'project', namespace: 'project-summary', metadata: { source: 'cli', summary } }, work => work());
+        const current = read(id);
+        if (!current || current.kind !== 'note' || current.scope !== 'project' || current.namespace !== 'project-summary'
+          || current.metadata.summary?.format !== 'nanomneme/project-summary' || current.metadata.summary?.format_version !== 1) throw new RangeError('Target must be an active supported project summary');
+        return retain({ id, content, metadata: { ...current.metadata, summary } }, work => work());
+      });
+    },
+
+    brief({ budget = 1000 } = {}) {
+      if (!Number.isSafeInteger(budget) || budget < 0) throw new TypeError('Brief budget must be a nonnegative safe integer');
+      return transaction(() => {
+        const records = [];
+        let skippedInvalid = 0;
+        const rows = db.prepare(`SELECT m.id, m.content, m.metadata FROM memories m
+          WHERE m.kind = 'note' AND m.scope = 'project' AND m.namespace = 'project-summary' AND ${active}
+          ORDER BY CASE WHEN json_valid(m.metadata) THEN json_extract(m.metadata, '$.summary.as_of') END DESC, m.id ASC`);
+        for (const row of rows.iterate(new Date().toISOString())) {
+          let summary;
+          try {
+            summary = validateProjectSummary(JSON.parse(row.metadata).summary);
+            if (renderProjectSummary(summary) !== row.content) throw new TypeError('Summary content does not match metadata');
+          } catch { skippedInvalid += 1; continue; }
+          if (summary.state.status === 'superseded') continue;
+          records.push({ id: row.id, content: row.content, summary });
+          if (records.length === 5) break;
+        }
+        return renderBrief(records, budget, skippedInvalid);
+      }, 'DEFERRED');
     },
 
     recall({ id }) {

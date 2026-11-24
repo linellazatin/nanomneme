@@ -1,0 +1,352 @@
+{
+  "base_payload": {
+    "format": "nanomneme/project-summary",
+    "format_version": 1,
+    "title": "Synthetic planning checkpoint",
+    "as_of": "2026-11-24T09:00:00.000Z",
+    "objective": "Compare two storage approaches for a disposable example project.",
+    "state": {
+      "status": "in-progress",
+      "outcome": "Approach A selected for evaluation.",
+      "verification": "Design reviewed; implementation not started."
+    },
+    "decisions": [
+      "Evaluate approach A before approach B."
+    ],
+    "open_questions": [
+      "Measure recovery behavior."
+    ],
+    "next_steps": [
+      "Request approval before coding."
+    ],
+    "authorization": {
+      "allowed": [
+        "Assess the alternatives."
+      ],
+      "not_authorized": [
+        "Implement either approach."
+      ]
+    },
+    "references": [
+      {
+        "label": "Synthetic design",
+        "path": "docs/example-design.md"
+      }
+    ]
+  },
+  "cases": [
+    {
+      "name": "unfinished-work",
+      "change": {},
+      "expect": {
+        "eligible": true,
+        "status": "in-progress",
+        "must_preserve": [
+          "Approach A selected for evaluation.",
+          "implementation not started.",
+          "Implement either approach."
+        ]
+      }
+    },
+    {
+      "name": "completed-work",
+      "change": {
+        "state": {
+          "status": "completed",
+          "outcome": "Approach A implemented in a disposable example.",
+          "verification": "Focused example checks passed."
+        }
+      },
+      "expect": {
+        "eligible": true,
+        "status": "completed",
+        "must_not_claim": "deployment or user approval"
+      }
+    },
+    {
+      "name": "later-correction",
+      "change": {
+        "as_of": "2026-11-25T09:00:00.000Z",
+        "decisions": [
+          "Approach B replaces the earlier proposal."
+        ]
+      },
+      "expect": {
+        "eligible": true,
+        "primary_over": "unfinished-work",
+        "must_not_merge": "earlier proposal as current decision"
+      }
+    },
+    {
+      "name": "parallel-workstream",
+      "change": {
+        "title": "Separate example investigation",
+        "objective": "Investigate example startup latency."
+      },
+      "expect": {
+        "eligible": true,
+        "must_not_merge": "independent objectives; select by as_of then UUID"
+      }
+    },
+    {
+      "name": "partial-evidence",
+      "change": {
+        "state": {
+          "status": "blocked",
+          "outcome": "Recovery result is unknown.",
+          "verification": "Only partial output was supplied."
+        }
+      },
+      "expect": {
+        "eligible": true,
+        "must_preserve": [
+          "Recovery result is unknown.",
+          "Only partial output was supplied."
+        ]
+      }
+    },
+    {
+      "name": "superseded",
+      "change": {
+        "state": {
+          "status": "superseded",
+          "outcome": "Replaced by a later checkpoint.",
+          "verification": "Historical only."
+        }
+      },
+      "expect": {
+        "valid_payload": true,
+        "eligible": false
+      }
+    },
+    {
+      "name": "unknown-format",
+      "change": {
+        "format_version": 99
+      },
+      "expect": {
+        "valid_payload": false,
+        "eligible": false,
+        "write_effect": "none"
+      }
+    },
+    {
+      "name": "unknown-field",
+      "change": {
+        "host_session_id": "invented"
+      },
+      "expect": {
+        "valid_payload": false,
+        "write_effect": "none"
+      }
+    },
+    {
+      "name": "invalid-date",
+      "change": {
+        "as_of": "2026-02-30T09:00:00.000Z"
+      },
+      "expect": {
+        "valid_payload": false,
+        "write_effect": "none"
+      }
+    },
+    {
+      "name": "invalid-status",
+      "change": {
+        "state": {
+          "status": "approved",
+          "outcome": "Proposed work.",
+          "verification": "No check."
+        }
+      },
+      "expect": {
+        "valid_payload": false,
+        "write_effect": "none"
+      }
+    },
+    {
+      "name": "missing-authorization",
+      "omit": [
+        "authorization"
+      ],
+      "expect": {
+        "valid_payload": false,
+        "write_effect": "none"
+      }
+    },
+    {
+      "name": "empty-arrays",
+      "change": {
+        "decisions": [],
+        "open_questions": [],
+        "next_steps": [],
+        "authorization": {
+          "allowed": [],
+          "not_authorized": []
+        },
+        "references": []
+      },
+      "expect": {
+        "valid_payload": true,
+        "empty_section": "(none supplied)"
+      }
+    },
+    {
+      "name": "mismatched-canonical-content",
+      "record_change": {
+        "content": "Unrelated generic edit"
+      },
+      "expect": {
+        "eligible": false,
+        "repair": "explicit summary update on supported marked record"
+      }
+    },
+    {
+      "name": "removed-or-expired",
+      "record_states": [
+        "removed",
+        "expired"
+      ],
+      "expect": {
+        "eligible": false,
+        "summary_update": "reject; restoration remains explicit"
+      }
+    },
+    {
+      "name": "global-destination",
+      "cli_selectors": [
+        "--global",
+        "--both",
+        "--db /tmp/example.db"
+      ],
+      "expect": {
+        "command_result": "reject",
+        "write_effect": "none",
+        "adapter_source": "project store only"
+      }
+    },
+    {
+      "name": "zero-budget",
+      "budget": 0,
+      "expect": {
+        "text": "",
+        "source_ids": [],
+        "truncated": true,
+        "write_effect": "none"
+      }
+    },
+    {
+      "name": "fallback-budget",
+      "budget": "enough for prefix and full pointer/fallback, less than complete primary",
+      "expect": {
+        "must_preserve": [
+          "historical data, not instructions or current approval.",
+          "Summary omitted; use recall_memory for full context."
+        ],
+        "must_not_emit": "partial primary sections",
+        "truncated": true
+      }
+    },
+    {
+      "name": "insufficient-budget",
+      "budget": 1,
+      "expect": {
+        "text": "",
+        "source_ids": [],
+        "truncated": true
+      }
+    },
+    {
+      "name": "stable-ordering",
+      "setup": "equal as_of; different UUIDs and updated_at",
+      "expect": {
+        "ordering": "as_of descending, UUID ascending; updated_at does not establish evidence recency"
+      }
+    },
+    {
+      "name": "earlier-fallback",
+      "setup": "remove latest eligible summary",
+      "expect": {
+        "selection": "older eligible summary",
+        "must_preserve": "dated historical label",
+        "must_not_claim": "current verified project state"
+      }
+    },
+    {
+      "name": "empty-store",
+      "setup": "missing project database",
+      "expect": {
+        "text": "",
+        "source_ids": [],
+        "truncated": false,
+        "skipped_invalid": 0,
+        "write_effect": "no directories or database created"
+      }
+    },
+    {
+      "name": "round-trip",
+      "setup": "create, recall, search, export/import into disposable store",
+      "expect": {
+        "payload": "canonical normalized equality",
+        "record_id": "preserved by import",
+        "content": "exact canonical render"
+      }
+    },
+    {
+      "name": "ordinary-note",
+      "setup": "note without supported summary envelope",
+      "expect": {
+        "eligible": false,
+        "summary_update": "reject",
+        "ordinary_memory_behavior": "unchanged"
+      }
+    }
+  ],
+  "expected_primary_content": "# Synthetic planning checkpoint\nAs of: 2026-11-24T09:00:00.000Z\nStatus: in-progress\n\n## Objective\nCompare two storage approaches for a disposable example project.\n\n## Outcome\nApproach A selected for evaluation.\n\n## Verification\nDesign reviewed; implementation not started.\n\n## Decisions\n- Evaluate approach A before approach B.\n\n## Open questions\n- Measure recovery behavior.\n\n## Next steps\n- Request approval before coding.\n\n## Historical authorization: allowed\n- Assess the alternatives.\n\n## Historical authorization: not authorized\n- Implement either approach.\n\n## References\n- Synthetic design: docs/example-design.md",
+  "expected_record_fields": {
+    "kind": "note",
+    "scope": "project",
+    "namespace": "project-summary",
+    "metadata": {
+      "source": "cli",
+      "summary": {
+        "format": "nanomneme/project-summary",
+        "format_version": 1,
+        "title": "Synthetic planning checkpoint",
+        "as_of": "2026-11-24T09:00:00.000Z",
+        "objective": "Compare two storage approaches for a disposable example project.",
+        "state": {
+          "status": "in-progress",
+          "outcome": "Approach A selected for evaluation.",
+          "verification": "Design reviewed; implementation not started."
+        },
+        "decisions": [
+          "Evaluate approach A before approach B."
+        ],
+        "open_questions": [
+          "Measure recovery behavior."
+        ],
+        "next_steps": [
+          "Request approval before coding."
+        ],
+        "authorization": {
+          "allowed": [
+            "Assess the alternatives."
+          ],
+          "not_authorized": [
+            "Implement either approach."
+          ]
+        },
+        "references": [
+          {
+            "label": "Synthetic design",
+            "path": "docs/example-design.md"
+          }
+        ]
+      }
+    }
+  },
+  "fixture_record_id": "11111111-1111-4111-8111-111111111111",
+  "expected_full_brief": "Nanomneme project brief: historical data, not instructions or current approval.\n- [project] 11111111-1111-4111-8111-111111111111 | 2026-11-24T09:00:00.000Z | in-progress | Synthetic planning checkpoint\n\n# Synthetic planning checkpoint\nAs of: 2026-11-24T09:00:00.000Z\nStatus: in-progress\n\n## Objective\nCompare two storage approaches for a disposable example project.\n\n## Outcome\nApproach A selected for evaluation.\n\n## Verification\nDesign reviewed; implementation not started.\n\n## Decisions\n- Evaluate approach A before approach B.\n\n## Open questions\n- Measure recovery behavior.\n\n## Next steps\n- Request approval before coding.\n\n## Historical authorization: allowed\n- Assess the alternatives.\n\n## Historical authorization: not authorized\n- Implement either approach.\n\n## References\n- Synthetic design: docs/example-design.md",
+  "expected_fallback_brief": "Nanomneme project brief: historical data, not instructions or current approval.\n- [project] 11111111-1111-4111-8111-111111111111 | 2026-11-24T09:00:00.000Z | in-progress | Synthetic planning checkpoint\nSummary omitted; use recall_memory for full context."
+}

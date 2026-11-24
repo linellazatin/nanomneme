@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-import { open } from '@openlines/nmnm-core';
+import { open, validateProjectSummary } from '@openlines/nmnm-core';
 import { getCLILogger } from '../src/logslines.js';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { isUtf8 } from 'node:buffer';
-import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, platform } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 
@@ -22,6 +22,9 @@ Commands:
   export               Write all canonical records as JSONL.
   import <file>        Import canonical nanomneme JSONL records.
   repair               Rebuild derived data with --rebuild-fts.
+  summary add          Save a supplied project work summary with --file <path|->.
+  summary update <id>  Replace an active summary payload with --file <path|->.
+  brief                Render a project brief; --budget <nonnegative integer> defaults to 1000.
 
 Common options: --db <path> --global --json --version, -v
 Use -- before content or a query that starts with --.
@@ -29,7 +32,10 @@ Retain options: --id --kind note|decision|preference|fact|instruction --scope pr
 Retrieve options: --both --kind note|decision|preference|fact|instruction --scope project|global --namespace <lowercase-slug> --tags <lowercase-slug,...> --expires active|expired|any --importance-gte <n> --importance-lte <n> --confidence-gte <n> --confidence-lte <n> --order-by <field> --limit 1..1000 --offset 0..1000
 Remove options: --purge
 Export options: --out <file>
-Repair options: --rebuild-fts`;
+Repair options: --rebuild-fts
+Summary/brief options: --json; project store only (no --db, --global, or --both).
+Summary input: UTF-8 JSON, at most 64 KiB; --file - explicitly reads stdin.
+Summaries are supplied by you or your current agent; no separate model is used.`;
 
 const COMMON_OPTIONS = ['db', 'global', 'json', 'help'];
 const COMMAND_OPTIONS = {
@@ -41,6 +47,8 @@ const COMMAND_OPTIONS = {
   export: [...COMMON_OPTIONS, 'out'],
   import: COMMON_OPTIONS,
   repair: [...COMMON_OPTIONS, 'rebuild-fts'],
+  summary: ['file', 'json', 'help'],
+  brief: ['budget', 'json', 'help'],
 };
 const OPTION_NAMES = new Set(Object.values(COMMAND_OPTIONS).flat());
 
@@ -97,6 +105,40 @@ function validateCommand(command, positionals, options) {
   if (command === 'import' && positionals.length !== 1) throw new TypeError('import requires one file');
   if (['verify', 'export', 'repair'].includes(command) && positionals.length) throw new TypeError(`${command} does not accept arguments`);
   if (command === 'repair' && !options['rebuild-fts']) throw new TypeError('--rebuild-fts is required for repair');
+  if (command === 'brief' && positionals.length) throw new TypeError('brief does not accept arguments');
+}
+
+function briefBudget(value) {
+  if (value === undefined) return 1000;
+  if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value))) throw new TypeError('Brief budget must be a nonnegative safe integer');
+  return Number(value);
+}
+
+function readSummary(path) {
+  const fd = path === '-' ? 0 : openSync(path, 'r');
+  const bytes = Buffer.alloc(65537);
+  let size = 0;
+  try {
+    let count;
+    while (size < bytes.length && (count = readSync(fd, bytes, size, bytes.length - size, null))) size += count;
+  } finally { if (path !== '-') closeSync(fd); }
+  if (size > 65536) throw new TypeError('Summary input exceeds 64 KiB');
+  const input = bytes.subarray(0, size);
+  if (!isUtf8(input)) throw new TypeError('Summary input must be valid UTF-8');
+  let payload;
+  try { payload = JSON.parse(input.toString('utf8')); } catch { throw new TypeError('Summary input must be valid JSON'); }
+  return validateProjectSummary(payload);
+}
+
+function summaryCommand(positionals, options) {
+  const [action, id] = positionals;
+  if (!['add', 'update'].includes(action) || positionals.length !== (action === 'add' ? 1 : 2)) throw new TypeError('Use summary add or summary update <id> with --file <path|->');
+  if (options.file === undefined) throw new TypeError('summary requires --file <path|->');
+  if (id !== undefined && !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id)) throw new TypeError('Invalid summary id');
+  const summary = readSummary(options.file);
+  const store = open(databasePath({}), { create: action === 'add' });
+  try { return { result: store.retainSummary({ summary, ...(id === undefined ? {} : { id }) }), json: options.json }; }
+  finally { store.close(); }
 }
 
 function number(value) {
@@ -267,6 +309,17 @@ export function main(args = process.argv.slice(2)) {
   if (!command && Object.keys(options).length) throw new TypeError('command is required');
   if (!command) return { help: true };
   validateCommand(command, positionals, options);
+  if (command === 'summary') return summaryCommand(positionals, options);
+  if (command === 'brief') {
+    const budget = briefBudget(options.budget);
+    const path = databasePath({}, { create: false });
+    let result = { text: '', source_ids: [], truncated: false, skipped_invalid: 0 };
+    if (existsSync(path)) {
+      const store = open(path, { create: false, readOnly: true });
+      try { result = store.brief({ budget }); } finally { store.close(); }
+    }
+    return { result, json: options.json, raw: options.json ? undefined : result.text };
+  }
   const verification = command === 'verify' || command === 'repair';
   const readOnly = command === 'verify' || command === 'export';
   const requiresExisting = verification || readOnly;
@@ -342,7 +395,7 @@ export function main(args = process.argv.slice(2)) {
 
 function commandHint(args) {
   if (args.length === 1 && ['--version', '-v'].includes(args[0])) return null;
-  let command;
+  let command, subcommand;
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
     if (arg === '--') { command ??= args[index + 1]; break; }
@@ -350,8 +403,11 @@ function commandHint(args) {
     if (arg.startsWith('--')) {
       const name = arg.slice(2);
       if (OPTION_NAMES.has(name) && !['json', 'global', 'both', 'purge', 'rebuild-fts'].includes(name)) index++;
-    } else command ??= arg;
+    } else if (command === undefined) command = arg;
+    else subcommand ??= arg;
   }
+  if (command === 'summary') return ['add', 'update'].includes(subcommand) ? 'retain' : null;
+  if (command === 'brief') return null;
   return Object.hasOwn(COMMAND_OPTIONS, command) ? command : null;
 }
 

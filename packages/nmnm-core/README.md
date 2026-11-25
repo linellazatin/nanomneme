@@ -51,3 +51,9 @@ On POSIX, new databases request `0600` before SQLite initialization; new directo
 ## Opt-in diagnostics
 
 `@openlines/nmnm-core/logging` exports `createMemoryLogger` via `src/logslines.js`, loading the shared generated observer without importing SQLite. Persistence methods do not auto-emit records. Component `src/logslines.js` bindings supply identity/caller settings; standalone identity defaults to `nmnm-core`. See the [Logger manual](../../docs/LOGGER.md) for configuration, file roles and generation rules.
+
+## Project work summaries
+
+`validateProjectSummary(payload)` and `renderProjectSummary(payload)` validate and render explicitly supplied work summaries without model calls. `store.retainSummary({ summary, id? })` creates or updates an active project summary; `store.brief({ budget = 1000 })` renders dated historical context from one read snapshot without writes. Summaries are ordinary project notes in namespace `project-summary`; briefs are derived views, not retained memories. No transcript access or schema migration is required. See the [contract, JSON example and lifecycle](../../docs/CORE_CLI_MANUAL.md#project-work-summaries-and-briefs). Callers own physical project-store routing; concurrent updates use last-successful-write semantics. Unknown or generically edited inconsistent summaries are skipped until repaired explicitly.
+
+Remove a contributing summary with `nmnm summary remove <id> --json` (core: `store.removeSummary({ id })`). This guarded soft removal rejects ordinary records and changes the next brief; remaining history may become the primary source. Briefs have no separate ID. Existing explicit restoration and permanent purge remain available through general memory operations. Already-injected conversation context is not erased.

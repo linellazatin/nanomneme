@@ -74,3 +74,18 @@ nmnm ui --version
 Diagnostics default off. Enable shared `logging.enabled` in `~/.local/share/nanomneme/config.jsonc`. Raw error messages are not redacted. See the [Logger manual](../../docs/LOGGER.md#configuration-and-record-contract) for configuration, record fields, permissions, and privacy boundaries.
 
 The CLI observes retain, recall, retrieve, remove, import, export, verify, and repair once per command. Combined retrieval and repair have one aggregate outcome; transfer output completion is included. Successful help/version/UI launch, unknown terminal commands, and temporary validation stores are unlogged. The UI owns its separate `nmnm-ui` binding for mutations and general errors. The terminal CLI reads shared settings per invocation, has no adapter override, and uses null correlation.
+
+## Project summaries and brief preview
+
+A summary is a stored project work account; a brief is a deterministic historical view of its source summaries. You or the current agent supplies JSON; Nanomneme uses no separate model and reads no transcripts. Save the [JSON example](../../docs/examples/project-summary.json) locally, then use:
+
+```sh
+nmnm summary add --file summary.json --json
+nmnm brief
+nmnm brief --budget 1000 --json
+nmnm summary update <returned-id> --file summary.json --json
+```
+
+Use `--file -` for explicit stdin. These commands use only the current project's store and reject global/custom selectors. Invalid input is rejected before store creation. `brief` is read-only, unlogged, and quiet when the store is absent or empty. Summary writes log as `retain`. Update replaces the complete payload of an active supported summary while preserving identity and original provenance; concurrent updates use last-successful-write semantics. Existing recall/retrieve/remove, explicit restore, purge and export/import remain available. Adapter brief delivery is opt-in through existing `brief.enabled` context settings. See the [complete contract and limits](../../docs/CORE_CLI_MANUAL.md#project-work-summaries-and-briefs).
+
+Remove a contributing summary with `nmnm summary remove <id> --json` (core: `store.removeSummary({ id })`). This guarded soft removal rejects ordinary records and changes the next brief; remaining history may become the primary source. Briefs have no separate ID. Existing explicit restoration and permanent purge remain available through general memory operations. Already-injected conversation context is not erased.

@@ -151,6 +151,8 @@ Combine recorded source, content search, kind, namespace, and tag filters.
 
 ## Editing
 
+Project work summaries appear as ordinary notes in namespace `project-summary`; no dedicated summary editor is provided. Generic content/namespace edits can desynchronize the validated summary envelope, causing brief readers to skip the record. Use CLI `summary update` with a complete payload to repair an active supported marked summary. See the [summary contract](../../docs/CORE_CLI_MANUAL.md#project-work-summaries-and-briefs).
+
 Enable editing for a store, then inspect and update a memory's editable fields.
 
 ![Authorized memory editor with content, classification, tags, confidence, and expiry fields](docs/img/editing.png)

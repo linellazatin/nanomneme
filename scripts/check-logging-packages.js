@@ -257,8 +257,10 @@ function checkClaudeCache(root, temporary, npm) {
   mkdirSync(join(coreContract, 'test'));
   writeFileSync(join(coreContract, 'package.json'), '{"type":"module"}\n');
   cpSync(join(plugin, 'src/core-runtime.generated.js'), join(coreContract, 'src/index.js'));
-  cpSync(join(root, 'packages/nmnm-core/test/core.test.js'), join(coreContract, 'test/core.test.js'));
-  execFileSync(process.execPath, ['--test', 'test/core.test.js'], { cwd: coreContract, env: { ...process.env, HOME: temporary }, stdio: 'pipe' });
+  for (const path of ['core.test.js', 'project-summary.test.js', 'fixtures']) {
+    cpSync(join(root, 'packages/nmnm-core/test', path), join(coreContract, 'test', path), { recursive: true });
+  }
+  execFileSync(process.execPath, ['--test', 'test/core.test.js', 'test/project-summary.test.js'], { cwd: coreContract, env: { ...process.env, HOME: temporary }, stdio: 'pipe' });
   const tests = readdirSync(join(plugin, 'test')).filter(path => path.endsWith('.test.js')).map(path => `test/${path}`);
   execFileSync(process.execPath, ['--test', ...tests], { cwd: plugin, env: { ...process.env, HOME: temporary }, stdio: 'pipe' });
   writeFileSync(join(plugin, 'verify.mjs'), `
@@ -359,6 +361,22 @@ export function checkLoggingPackages({ prepareCodex = false } = {}) {
       assert.throws(() => execFileSync(process.execPath, [cli, 'retain'], {stdio:'pipe'}));
       assert.deepEqual(logRecords('nmnm-cli').map(record => [record.operation, record.status]), [['retain','ok'], ['retain','failed']]);
       assert.equal(JSON.stringify(logRecords('nmnm-cli')).includes('Packaged private memory'), false);
+      const project = join(home, 'summary-project'); mkdirSync(project);
+      const summary = ${JSON.stringify(JSON.parse(readFileSync(join(root, 'packages/nmnm-core/test/fixtures/project-summary.json'), 'utf8')).base_payload)};
+      const summaryFile = join(project, 'summary.json');
+      writeFileSync(summaryFile, JSON.stringify(summary));
+      const summaryCli = args => JSON.parse(execFileSync(process.execPath, [cli, ...args, '--json'], {cwd:project, encoding:'utf8'}));
+      const saved = summaryCli(['summary', 'add', '--file', summaryFile]);
+      assert.deepEqual(summaryCli(['recall', saved.id]).metadata.summary, summary);
+      assert.deepEqual(summaryCli(['brief']).source_ids, [saved.id]);
+      assert.match(summaryCli(['brief']).text, /not instructions or current approval/);
+      summary.state.outcome = 'Corrected packaged summary.';
+      writeFileSync(summaryFile, JSON.stringify(summary));
+      assert.equal(summaryCli(['summary', 'update', saved.id, '--file', summaryFile]).id, saved.id);
+      assert.ok(summaryCli(['brief']).text.includes(summary.state.outcome));
+      summaryCli(['summary', 'remove', saved.id]);
+      assert.deepEqual(summaryCli(['brief']).source_ids, []);
+      assert.equal(summaryCli(['recall', saved.id]), null);
       const child = spawn(process.execPath, [cli, 'ui', '--port', '0', '-na'], {stdio:['ignore','pipe','pipe']});
       try {
         const [output] = await once(child.stdout, 'data');

@@ -9,16 +9,16 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createInterface} from 'node:readline';
 import {setTimeout as delay} from 'node:timers/promises';
-test('native Pi reviews and persists completed compaction text without extra inference', { skip: process.env.NMNM_PI_NATIVE ? false : 'Set NMNM_PI_NATIVE to a native Pi executable', timeout: 120000 }, async () => {
+test('native Pi automatically persists completed compaction text without review or extra inference', { skip: process.env.NMNM_PI_NATIVE ? false : 'Set NMNM_PI_NATIVE to a native Pi executable', timeout: 120000 }, async () => {
 const root=mkdtempSync(join(tmpdir(),'nmnm-pi-postcompact-'));
 const adapter=process.env.NMNM_PI_ADAPTER_ROOT ? join(process.env.NMNM_PI_ADAPTER_ROOT,'extensions/index.js') : fileURLToPath(new URL('../extensions/index.js', import.meta.url));
 const fixture='COMPACTION_FULL_TEXT_BEGIN\n'+Array.from({length:90},(_,i)=>`Line ${i+1}: synthetic continuity fact, Unicode 東京 🧠, verification unknown.`).join('\n')+'\nCOMPACTION_FULL_TEXT_END';
 const results=[];
-for(const mode of ['manual-baseline','manual-adapter','automatic-adapter','failed-adapter','cancelled-adapter','declined-adapter','disabled-adapter','untrusted-adapter']){
+for(const mode of ['manual-baseline','manual-adapter','automatic-adapter','failed-adapter','cancelled-adapter','disabled-adapter','untrusted-adapter']){
  const directory=join(root,mode),home=join(directory,'home'),cwd=join(directory,'project'),agent=join(home,'agent');
  for(const p of [directory,home,cwd,agent])mkdirSync(p,{recursive:true});
  writeFileSync(join(agent,'settings.json'),JSON.stringify({compaction:{enabled:mode==='automatic-adapter',reserveTokens:1000,keepRecentTokens:0},retry:{enabled:false},cacheWarming:'off'}));
- writeFileSync(join(agent,'nmnm.jsonc'),JSON.stringify({summary:{autocapture:{enabled:mode!=='disabled-adapter'}},brief:{enabled:true}}));
+ writeFileSync(join(agent,'nmnm.jsonc'),JSON.stringify({summary:{autocapture:{enabled:mode!=='disabled-adapter'}},brief:{enabled:true},autoretention:{enabled:true,never_persist:['All project details'],always_ask:['All summaries']}}));
  const flag=join(directory,'pending.json'),eventPath=join(directory,'events.jsonl');const requests=[];
  const provider=createServer(async(req,res)=>{
   const chunks=[];for await(const c of req)chunks.push(c);
@@ -44,7 +44,7 @@ for(const mode of ['manual-baseline','manual-adapter','automatic-adapter','faile
  const closed=new Promise(resolve=>child.once('close',resolve));
  let output='',serial=0;const pending=new Map(),messages=[];
  child.stderr.on('data',c=>output+=c);const lines=createInterface({input:child.stdout});
- lines.on('line',line=>{let e;try{e=JSON.parse(line);}catch{output+=line+'\n';return;}messages.push(e);if(e.type==='extension_ui_request'&&['editor','confirm'].includes(e.method)){child.stdin.write(JSON.stringify({type:'extension_ui_response',id:e.id,...(e.method==='editor'?{value:e.prefill}:{confirmed:mode!=='declined-adapter'})})+'\n');}if(e.type==='response'&&pending.has(e.id)){pending.get(e.id)(e);pending.delete(e.id);}});
+ lines.on('line',line=>{let e;try{e=JSON.parse(line);}catch{output+=line+'\n';return;}messages.push(e);if(e.type==='response'&&pending.has(e.id)){pending.get(e.id)(e);pending.delete(e.id);}});
  const call=async(type,params={})=>{const id='probe_'+ ++serial;const answer=new Promise(r=>pending.set(id,r));child.stdin.write(JSON.stringify({id,type,...params})+'\n');let timeout;try{return await Promise.race([answer,new Promise((_,reject)=>{timeout=setTimeout(()=>reject(Error('RPC timeout '+type+' '+output.slice(-500))),20000);})]);}finally{clearTimeout(timeout);}};
  const settle=async()=>{const until=Date.now()+20000;while(Date.now()<until){const r=await call('get_state');if(r.success&&!r.data.isStreaming&&!r.data.isCompacting){await delay(50);const again=await call('get_state');if(!again.data.isStreaming&&!again.data.isCompacting)return;}await delay(30);}throw Error('settle timeout');};
  try{
@@ -62,9 +62,7 @@ for(const mode of ['manual-baseline','manual-adapter','automatic-adapter','faile
   const database=join(cwd,'.nanomneme/memory.db');
   assert.equal(existsSync(database),saved,JSON.stringify({event:success.map(({summary,...rest})=>rest),ui:messages.filter(e=>e.type==='extension_ui_request').map(({prefill,...rest})=>rest)}));
   if(saved){const db=open(database,{readOnly:true});try{const rows=db.retrieve({namespace:'project-summary'});assert.equal(rows.total,1);const record=rows.items[0];assert.equal(record.metadata.source,'pi');assert.equal(record.metadata.summary.text,success[0].summary.trim());assert.equal(db.recall({id:record.id}).content.endsWith(fixture),true);assert.deepEqual(db.brief().source_ids,[record.id]);assert.match(db.brief().text,/native.*unverified/);}finally{db.close();}}
-  const reviews=messages.filter(e=>e.type==='extension_ui_request'&&e.method==='editor');
-  assert.equal(reviews.length,['manual-adapter','automatic-adapter','declined-adapter'].includes(mode)?1:0);
-  if(reviews.length)assert.equal(reviews[0].prefill,success[0].summary.trim());
+  assert.equal(messages.filter(e=>e.type==='extension_ui_request'&&['editor','confirm'].includes(e.method)).length,0,'Capture must not prompt for review');
   const result={mode,passed:true,providerRequests:requests.length,compactionRequests:requests.filter(r=>r.compact).length,successfulEvents:success.length,reason:success[0]?.reason,summaryCharacters:success[0]?.summary.length,fullFixtureCharacters:fixture.length};
   if(saved){
     writeFileSync(join(agent,'settings.json'),JSON.stringify({compaction:{enabled:false},retry:{enabled:false},cacheWarming:'off'}));

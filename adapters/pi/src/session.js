@@ -505,7 +505,7 @@ export function registerPiMemory(pi, options = {}) {
       statusLine('Prompts since injection', promptCountSinceInjection),
       statusLine('Last', last),
       statusLine('Autoretention', memoryIndex ? (memoryIndex.autoretention ? 'enabled' : 'disabled') : 'unavailable'),
-      statusLine('Summary autocapture', capture ? (capture.enabled ? `review required: ${capture.reason}` : 'disabled') : 'unavailable'),
+      statusLine('Summary autocapture', capture ? (capture.enabled ? `enabled: ${capture.reason}` : 'disabled') : 'unavailable'),
       statusLine('Last summary capture', lastCapture?.state ?? 'none'),
       statusLine('Pins', `project: ${projectPins?.length ?? 'unavailable'} · global: ${globalPins?.length ?? 'unavailable'}`),
       statusLine('Index', `budget: ${memoryIndex?.budget ?? 'unavailable'} · current: ${memoryIndex ? memoryIndexContent(memoryIndex).length : 'unavailable'} · unresolved: ${memoryIndex?.unresolved ?? 'unavailable'}`),

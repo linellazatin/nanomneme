@@ -39,7 +39,7 @@ export function readProjectBrief(options, budget) {
   try { return store.brief({ budget }); } finally { store.close(); }
 }
 
-// Called only after native text validation and explicit review approval.
+// Called only after native text validation, feature opt-in and project trust checks.
 export function saveProjectSummary(options, input) {
   const store = open(databasePath({ ...options, store: 'project' }));
   try { return store.retainSummary(input); } finally { store.close(); }

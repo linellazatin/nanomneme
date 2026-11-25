@@ -5,14 +5,14 @@ import { join } from 'node:path';
 import test from 'node:test';
 import * as context from '../src/context.js';
 
-test('Pi reports native review support and preserves trust/config precedence', t => {
+test('Pi reports unattended native capture support and preserves trust/config precedence', t => {
   assert.equal(typeof context.captureAvailability, 'function');
   const root = mkdtempSync(join(tmpdir(), 'nmnm-pi-capture-status-')), cwd = join(root, 'project'), home = join(root, 'home'), agentDir = join(home, 'agent');
   mkdirSync(join(cwd, '.nanomneme'), { recursive: true }); mkdirSync(agentDir, { recursive: true });
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const options = { cwd, home, agentDir };
   writeFileSync(join(cwd, '.nanomneme/nmnm.jsonc'), '{"summary":{"autocapture":{"enabled":true}}}');
-  assert.deepEqual(context.captureAvailability(options), { enabled: true, supported: true, reason: 'Native compaction text requires trusted project and interactive review', guidance: '' });
+  assert.deepEqual(context.captureAvailability(options), { enabled: true, supported: true, reason: 'Native compaction text saves automatically in trusted projects' });
   assert.equal(context.captureAvailability({ ...options, includeProject: false }).enabled, false);
   writeFileSync(join(agentDir, 'nmnm.jsonc'), '{"summary":{"autocapture":{"enabled":true}}}');
   writeFileSync(join(cwd, '.nanomneme/nmnm.jsonc'), '{"summary":{"autocapture":{"enabled":false}}}');

@@ -26,13 +26,12 @@ function setup(t, changes = {}) {
   return { ctx, calls, options, event, path, configure, capture: createCompactionCapture(options) };
 }
 
-test('Pi native capture reviews full text, saves project checkpoint once and suppresses replay', async t => {
+test('Pi native capture saves automatically without UI and suppresses replay', async t => {
   const env = setup(t);
   assert.equal((await env.capture(env.event, env.ctx)).state, 'saved');
-  assert.equal(env.calls[0][2], env.event.compactionEntry.summary);
-  assert.match(env.calls[1][2], /Never.*secrets/s);
+  assert.deepEqual(env.calls, []);
   assert.equal((await env.capture(env.event, env.ctx)).state, 'duplicate');
-  assert.equal(env.calls.length, 2);
+  assert.equal(env.calls.length, 0);
   const db = open(env.path);
   try {
     const record = db.retrieve({ namespace: 'project-summary' }).items[0];
@@ -48,23 +47,25 @@ test('Pi native capture reviews full text, saves project checkpoint once and sup
   } finally { db.close(); }
 });
 
-test('Pi ineligible or rejected native captures never create a database', async t => {
+test('Pi opt-in authorizes headless capture independently of ordinary retention guidance', async t => {
+  for (const autoretention of [{ enabled: false }, { enabled: true, never_persist: ['All project details'], always_ask: ['All summaries'], always_persist: [] }]) {
+    const env = setup(t, { hasUI: false, ui: undefined });
+    env.configure({ summary: { autocapture: { enabled: true } }, autoretention });
+    assert.equal((await env.capture(env.event, env.ctx)).state, 'saved');
+    assert.equal(existsSync(env.path), true);
+  }
+});
+
+test('Pi ineligible native captures never create a database', async t => {
   const cases = [
     e => e.configure({}),
-    e => { e.ctx.hasUI = false; },
+    e => e.configure({ summary: { autocapture: { enabled: false } } }),
     e => { e.ctx.isProjectTrusted = () => false; },
-    e => { e.ctx.ui.editor = async () => undefined; },
-    e => { e.ctx.ui.editor = async () => 'edited'; },
-    e => { e.ctx.ui.confirm = async () => false; },
-    e => { e.ctx.ui.confirm = async () => { e.configure({}); return true; }; },
-    e => { e.ctx.ui.confirm = async () => { e.ctx.isProjectTrusted = () => false; return true; }; },
-    e => { e.ctx.ui.confirm = async () => { e.ctx.cwd = join(e.options.home, 'other-project'); return true; }; },
     e => { e.event.fromExtension = true; },
     e => { e.event.reason = 'unknown'; },
     e => { delete e.event.compactionEntry.timestamp; },
     e => { e.event.compactionEntry.summary = 'x'.repeat(9000); },
     e => { e.event.compactionEntry.summary = 'bad\x1b'; },
-    e => { e.ctx.ui.confirm = async () => { throw new Error('private diagnostic'); }; },
   ];
   for (const change of cases) {
     await t.test(change.toString(), async t => {
@@ -75,20 +76,24 @@ test('Pi ineligible or rejected native captures never create a database', async 
   }
 });
 
-test('Pi simultaneous callbacks offer one review; changed policy invalidates approval', async t => {
-  const env = setup(t);
-  let release;
-  env.ctx.ui.editor = async (_title, text) => { await new Promise(resolve => { release = resolve; }); return text; };
-  const first = env.capture(env.event, env.ctx);
-  assert.equal((await env.capture(env.event, env.ctx)).state, 'duplicate');
-  env.configure({ summary: { autocapture: { enabled: true } }, autoretention: { enabled: true, never_persist: ['private beacon'] } });
-  release();
-  assert.equal((await first).state, 'changed');
-  assert.equal(existsSync(env.path), false);
+test('Pi rechecks capture enablement, location and trust before saving', async t => {
+  for (const change of [e => e.configure({}), e => { e.ctx.cwd = join(e.options.home, 'other'); }, e => { e.ctx.isProjectTrusted = () => false; }]) {
+    const env = setup(t);
+    const text = env.event.compactionEntry.summary;
+    Object.defineProperty(env.event.compactionEntry, 'summary', { get() { change(env); return text; } });
+    assert.equal((await env.capture(env.event, env.ctx)).state, 'changed');
+    assert.equal(existsSync(env.path), false);
+  }
 });
 
+test('Pi concurrent callbacks save one native checkpoint without review', async t => {
+  const env = setup(t);
+  const results = await Promise.all([env.capture(env.event, env.ctx), env.capture(env.event, env.ctx)]);
+  assert.deepEqual(results.map(result => result.state), ['saved', 'duplicate']);
+  assert.deepEqual(env.calls, []);
+});
 
-test('approved Pi checkpoint emits retain diagnostics without text or native identifiers', async t => {
+test('automatic Pi checkpoint emits retain diagnostics without text or native identifiers', async t => {
   const env = setup(t);
   const directory = join(env.options.home, '.local/share/nanomneme');
   mkdirSync(directory, { recursive: true });

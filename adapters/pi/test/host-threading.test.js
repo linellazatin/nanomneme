@@ -97,7 +97,7 @@ async function fixture(t, nativeSystemMessages = false, settings = {}) {
   };
 }
 
-test('Pi requested unavailable capture leaves native compaction and request counts unchanged', threadingOptions, async t => {
+test('Pi headless autosummary saves opted-in output without changing native compaction requests', threadingOptions, async t => {
   const counts = [];
   const summaries = [];
   for (const enabled of [false, true]) {
@@ -110,7 +110,13 @@ test('Pi requested unavailable capture leaves native compaction and request coun
     counts.push(host.requests.length - before);
     assert.doesNotMatch(JSON.stringify(host.requests), /NMNM_SUMMARY_/);
     const { existsSync } = await import('node:fs');
-    assert.equal(existsSync(`${host.cwd}/.nanomneme/memory.db`), false);
+    assert.equal(existsSync(`${host.cwd}/.nanomneme/memory.db`), enabled);
+    if (enabled) {
+      const records = runMemory({ cwd: host.cwd, operation: 'retrieve', input: { namespace: 'project-summary' }, create: false, readOnly: true });
+      assert.equal(records.total, 1);
+      assert.equal(records.items[0].metadata.source, 'pi');
+      assert.equal(records.items[0].metadata.summary.text, result.summary.trim());
+    }
   }
   assert.deepEqual(counts, [1, 1]);
   assert.equal(summaries[0], summaries[1]);

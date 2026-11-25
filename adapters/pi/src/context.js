@@ -71,8 +71,7 @@ export function captureAvailability(options = {}) {
   return {
     enabled: project.summary?.autocapture?.enabled ?? global.summary?.autocapture?.enabled ?? false,
     supported: true,
-    reason: 'Native compaction text requires trusted project and interactive review',
-    guidance: autoretentionContent(project, global) ?? '',
+    reason: 'Native compaction text saves automatically in trusted projects',
   };
 }
 

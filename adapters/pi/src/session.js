@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { CURSOR_MARKER, matchesKey, truncateToWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui';
 
-import { buildMemoryIndex, pin, piAgentDir, pinsPath, readPins, readSettings, settingsPath, unpin, updatePins } from './context.js';
+import { buildMemoryIndex, captureAvailability, pin, piAgentDir, pinsPath, readPins, readSettings, settingsPath, unpin, updatePins } from './context.js';
 import { getPiLogger, piSessionId } from './logslines.js';
 import { databasePath, runMemory, supportsGlobalStore } from './store.js';
 
@@ -482,10 +482,12 @@ export function registerPiMemory(pi, options = {}) {
     let projectPins;
     let globalPins;
     let memoryIndex;
+    let capture;
     try {
       projectPins = readPins(pinsPath({ cwd: ctx.cwd, home: options.home, store: 'project' }));
       globalPins = readPins(pinsPath({ cwd: ctx.cwd, home: options.home, store: 'global' }));
       memoryIndex = index(ctx.cwd);
+      capture = captureAvailability({ cwd: ctx.cwd, ...memoryOptions, includeProject: projectIsTrusted(ctx) });
     } catch (error) {
       lastError = { message: error.message, occurredAt: new Date().toISOString() };
     }
@@ -500,6 +502,7 @@ export function registerPiMemory(pi, options = {}) {
       statusLine('Prompts since injection', promptCountSinceInjection),
       statusLine('Last', last),
       statusLine('Autoretention', memoryIndex ? (memoryIndex.autoretention ? 'enabled' : 'disabled') : 'unavailable'),
+      statusLine('Summary autocapture', capture ? (capture.enabled ? `unavailable: ${capture.reason}` : 'disabled') : 'unavailable'),
       statusLine('Pins', `project: ${projectPins?.length ?? 'unavailable'} · global: ${globalPins?.length ?? 'unavailable'}`),
       statusLine('Index', `budget: ${memoryIndex?.budget ?? 'unavailable'} · current: ${memoryIndex ? memoryIndexContent(memoryIndex).length : 'unavailable'} · unresolved: ${memoryIndex?.unresolved ?? 'unavailable'}`),
       statusLine('Error', lastError ? `${lastError.message} at ${lastError.occurredAt}` : 'none'),
@@ -518,6 +521,8 @@ export function registerPiMemory(pi, options = {}) {
         ...memoryOptions,
         includeProject: projectIsTrusted(ctx),
       });
+      const capture = captureAvailability({ cwd: ctx.cwd, ...memoryOptions, includeProject: projectIsTrusted(ctx) });
+      if (capture.enabled) notify(ctx, `Nanomneme summary autocapture unavailable: ${capture.reason}. Use explicit project summaries and briefs.`);
     } catch (error) {
       notify(ctx, `Nanomneme configuration unavailable: ${error.message}`);
     }

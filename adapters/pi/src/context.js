@@ -54,8 +54,24 @@ function normalizedSettings(value) {
   return {
     ...(budget === undefined ? {} : { injection_budget: budget }),
     ...(value.brief === undefined ? {} : { brief: normalizedBrief(value.brief) }),
+    ...(value.summary === undefined ? {} : { summary: normalizedSummary(value.summary) }),
     ...(reinjection === undefined ? {} : { reinjection: normalizedReinjection(reinjection) }),
     ...(autoretention === undefined ? {} : { autoretention: normalizedAutoretention(autoretention) }),
+  };
+}
+
+function normalizedSummary(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key => key !== 'autocapture')) return { autocapture: { enabled: false } };
+  return value.autocapture === undefined ? {} : { autocapture: normalizedBrief(value.autocapture) };
+}
+
+export function captureAvailability(options = {}) {
+  const project = options.includeProject === false ? {} : readSettings(settingsPath({ ...options, store: 'project' }));
+  const global = readSettings(settingsPath({ ...options, store: 'global' }));
+  return {
+    enabled: project.summary?.autocapture?.enabled ?? global.summary?.autocapture?.enabled ?? false,
+    supported: false,
+    reason: 'No supported additive compaction prompt integration in this Pi adapter',
   };
 }
 

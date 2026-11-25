@@ -21,6 +21,11 @@ function normalizedBrief(value) {
   return value.enabled === undefined ? {} : { enabled: value.enabled };
 }
 
+function normalizedSummary(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key => key !== 'autocapture')) return { autocapture: { enabled: false } };
+  return value.autocapture === undefined ? {} : { autocapture: normalizedBrief(value.autocapture) };
+}
+
 function readSettings(path) {
   let fd;
   try { fd = openSync(path, 'r'); }
@@ -53,7 +58,7 @@ function readSettings(path) {
       if (rules !== undefined && (!Array.isArray(rules) || rules.some(rule => typeof rule !== 'string' || !rule.trim()))) throw new TypeError(`Nanomneme autoretention.${name} must contain non-empty strings`);
     }
   }
-  return { ...value, ...(value.brief === undefined ? {} : { brief: normalizedBrief(value.brief) }) };
+  return { ...value, ...(value.brief === undefined ? {} : { brief: normalizedBrief(value.brief) }), ...(value.summary === undefined ? {} : { summary: normalizedSummary(value.summary) }) };
 }
 
 function readFileSyncBounded(fd, buffer) {
@@ -68,6 +73,11 @@ export function resolveSettings({ cwd, home = homedir(), env = process.env }) {
   return {
     injection_budget: project.injection_budget ?? user.injection_budget ?? 2000,
     ...(project.brief === undefined && user.brief === undefined ? {} : { brief: { enabled: project.brief?.enabled ?? user.brief?.enabled ?? false } }),
+    ...(project.summary === undefined && user.summary === undefined ? {} : { summary: { autocapture: {
+      enabled: project.summary?.autocapture?.enabled ?? user.summary?.autocapture?.enabled ?? false,
+      supported: false,
+      reason: 'Native compaction hooks do not expose completed summary text',
+    } } }),
     reinjection: {
       enabled: project.reinjection?.enabled ?? user.reinjection?.enabled ?? false,
       every_n_prompts: project.reinjection?.every_n_prompts ?? user.reinjection?.every_n_prompts ?? 5,

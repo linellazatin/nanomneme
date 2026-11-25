@@ -5,6 +5,7 @@ import {
   pin,
   pinsPath,
   readPins,
+  readCaptureSettings,
   unpin,
   updatePins,
 } from './context.js';
@@ -171,6 +172,7 @@ function formatShow(store, memory, pinned) {
 }
 
 function status(ctx) {
+  const capture = readCaptureSettings(ctx);
   const index = buildMemoryIndex({ cwd: ctx.cwd, home: ctx.home, globalDir: ctx.globalDir, platform: ctx.platform });
   const current = renderContext(index).length;
   const pins = pinSets(ctx);
@@ -184,6 +186,7 @@ function status(ctx) {
     statusLine('Injection budget', `${index.budget} · current: ${current} · unresolved: ${index.unresolved}`),
     statusLine('Periodic reinjection', index.reinjection.enabled ? `every ${index.reinjection.every_n_prompts} prompts` : 'disabled'),
     statusLine('Autoretention', autoretention),
+    statusLine('Summary autocapture', capture.enabled ? 'enabled; requires native PreCompact/PostCompact hooks and completed summary text' : 'disabled'),
     statusLine('Pins', `project: ${pins.project.size} · global: ${pins.global.size}`),
     statusLine('Memories', `project: ${totals.project} · global: ${totals.global}`),
   ].join('\n');

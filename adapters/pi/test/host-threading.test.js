@@ -68,7 +68,7 @@ async function fixture(t, nativeSystemMessages = false, settings = {}) {
   const { session } = await createAgentSession({
     cwd: host.cwd, agentDir: host.agentDir, model, modelRuntime: runtime, sessionManager, resourceLoader,
     noTools: 'builtin', thinkingLevel: 'off',
-    settingsManager: SettingsManager.inMemory({ cacheWarming: 'off', compaction: { enabled: false }, retry: { enabled: false } }),
+    settingsManager: SettingsManager.inMemory({ cacheWarming: 'off', compaction: { enabled: false, ...settings.compaction }, retry: { enabled: false } }),
   });
   const errors = [];
   t.after(() => {
@@ -96,6 +96,25 @@ async function fixture(t, nativeSystemMessages = false, settings = {}) {
     },
   };
 }
+
+test('Pi requested unavailable capture leaves native compaction and request counts unchanged', threadingOptions, async t => {
+  const counts = [];
+  const summaries = [];
+  for (const enabled of [false, true]) {
+    const host = await fixture(t, false, { globalSettings: { summary: { autocapture: { enabled } } }, compaction: { keepRecentTokens: 0, reserveTokens: 100 } });
+    await host.prompt();
+    const before = host.requests.length;
+    const result = await host.session.compact();
+    assert.match(result.summary, /ok$/);
+    summaries.push(result.summary);
+    counts.push(host.requests.length - before);
+    assert.doesNotMatch(JSON.stringify(host.requests), /NMNM_SUMMARY_/);
+    const { existsSync } = await import('node:fs');
+    assert.equal(existsSync(`${host.cwd}/.nanomneme/memory.db`), false);
+  }
+  assert.deepEqual(counts, [1, 1]);
+  assert.equal(summaries[0], summaries[1]);
+});
 
 for (const nativeSystemMessages of [false, true]) {
   test(`Pi threading preserves adapter context through refresh/removal (native system messages: ${nativeSystemMessages})`, threadingOptions, async t => {

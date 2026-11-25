@@ -4,6 +4,10 @@ Nanomneme is a local, deterministic memory system. `nmnm-core` owns persistence 
 
 Core and observer nodes below represent shared runtime contracts. `nmnm-claude` ships generated copies of both from the same sources and imports those local files; other clients use the core package exports.
 
+## Project work summary boundary
+
+Core owns `project-summary.js` validation/rendering and the project note envelope. The CLI supplies explicit file/stdin payloads through `retainSummary`; `brief` reads eligible project summaries in one snapshot and renders a bounded historical view without model calls, persistent cache or store writes. Summary updates reuse the existing mutation body under one target-check/write lock. Ordinary records, canonical schema and general import/export remain unchanged. Claude's generated core includes the helpers through the main core entry; registry core explicitly ships their module. Opt-in `brief.enabled` delivers project briefs through existing adapter context paths. See the [contract](CORE_CLI_MANUAL.md#project-work-summaries-and-briefs).
+
 ## System architecture
 
 ```mermaid

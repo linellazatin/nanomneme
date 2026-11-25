@@ -10,6 +10,8 @@ The logger is intentionally shipped with `@openlines/nmnm-core/logging`, rather 
 
 ## Source and artifact map
 
+CLI `summary remove` uses the existing `remove` observer category, including not-found outcomes. CLI `summary add/update` uses the existing `retain` observer category once through stdout completion. Payloads are not logged; malformed JSON errors omit input excerpts. Brief reads and pure summary/brief rendering remain unlogged. No new operation/event catalog entry is introduced.
+
 `nmnm ui` bypasses terminal command diagnostics and dynamically launches `nmnm-ui`. UI mutations use the core observer: edit/expiry/restore map to `retain`, remove/purge to `remove`. General request, launcher, and browser errors use the UI-only `ui.error` event, with operation `ui_error`, failed status, null duration/session, and empty attributes. The UI bundles the unchanged shared configuration, sink, error normalization, and pinned Logslines emitter separately; it does not extend the shared operation catalog. Successful reads/navigation, canceled actions, and empty patches emit nothing. Mutation errors emit once. Both paths reread shared settings per action and write `nmnm-ui.jsonl`.
 
 | Path | Role | Edit directly? |

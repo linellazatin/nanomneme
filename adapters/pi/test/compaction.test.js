@@ -58,6 +58,7 @@ test('Pi ineligible or rejected native captures never create a database', async 
     e => { e.ctx.ui.confirm = async () => false; },
     e => { e.ctx.ui.confirm = async () => { e.configure({}); return true; }; },
     e => { e.ctx.ui.confirm = async () => { e.ctx.isProjectTrusted = () => false; return true; }; },
+    e => { e.ctx.ui.confirm = async () => { e.ctx.cwd = join(e.options.home, 'other-project'); return true; }; },
     e => { e.event.fromExtension = true; },
     e => { e.event.reason = 'unknown'; },
     e => { delete e.event.compactionEntry.timestamp; },

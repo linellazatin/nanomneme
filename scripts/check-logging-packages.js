@@ -377,6 +377,12 @@ export function checkLoggingPackages({ prepareCodex = false } = {}) {
       summaryCli(['summary', 'remove', saved.id]);
       assert.deepEqual(summaryCli(['brief']).source_ids, []);
       assert.equal(summaryCli(['recall', saved.id]), null);
+      const nativeSummary = {format:'nanomneme/native-compaction-summary',format_version:1,title:'Packaged native checkpoint',as_of:'2026-11-25T09:00:00.000Z',text:'Reviewed native checkpoint text.'};
+      writeFileSync(summaryFile, JSON.stringify(nativeSummary));
+      const nativeRecord = summaryCli(['summary', 'add', '--file', summaryFile]);
+      assert.deepEqual(summaryCli(['recall',nativeRecord.id]).metadata.summary,nativeSummary);
+      assert.match(summaryCli(['brief']).text,/native.*unverified/);
+      summaryCli(['summary','remove',nativeRecord.id]);
       const child = spawn(process.execPath, [cli, 'ui', '--port', '0', '-na'], {stdio:['ignore','pipe','pipe']});
       try {
         const [output] = await once(child.stdout, 'data');
@@ -400,6 +406,13 @@ export function checkLoggingPackages({ prepareCodex = false } = {}) {
     for (const name of captureTests) cpSync(join(root, 'adapters/opencode/test', name), join(installedOpenCode, 'test', name));
     execFileSync(process.execPath, ['--test', ...captureTests.map(name => join(installedOpenCode, 'test', name))], {
       cwd: consumer, env: { ...process.env, HOME: temporary, NMNM_ADAPTER_ROOT: installedOpenCode }, stdio: 'inherit', timeout: 180000,
+    });
+
+    const installedPi = join(consumer, 'node_modules/@openlines/nmnm-pi');
+    mkdirSync(join(installedPi, 'test'));
+    for (const name of ['compaction.test.js', 'native-compaction.test.js']) cpSync(join(root, 'adapters/pi/test', name), join(installedPi, 'test', name));
+    execFileSync(process.execPath, ['--test', join(installedPi, 'test/compaction.test.js'), join(installedPi, 'test/native-compaction.test.js')], {
+      cwd: consumer, env: { ...process.env, HOME: temporary, NMNM_PI_ADAPTER_ROOT: installedPi }, stdio: 'inherit', timeout: 180000,
     });
 
     // Pack exactly the checkout's locked production tree, without registry re-resolution.

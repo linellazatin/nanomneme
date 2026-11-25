@@ -2,7 +2,7 @@ import { isAbsolute } from 'node:path';
 import { browserRpc } from './browser-rpc.js';
 import { runBridge, storeContext } from './bridge-client.js';
 
-export async function registerBrowserRpc(api) {
+export async function registerBrowserRpc(api, captureAvailability = () => undefined) {
   if (typeof api.location?.directory !== 'string' || !isAbsolute(api.location.directory)) {
     throw new Error('Nanomneme browser RPC requires an absolute server location directory');
   }
@@ -12,7 +12,7 @@ export async function registerBrowserRpc(api) {
     // Only contract fields cross the bridge; location, home, op, and diagnostics are server-owned.
     const params = Object.fromEntries(Object.keys(method.input.properties)
       .filter(key => Object.hasOwn(input, key)).map(key => [key, input[key]]));
-    return runBridge({ ...params, op, ctx });
+    return runBridge({ ...params, op, ctx, ...(op === 'status' ? { capture_availability: captureAvailability() } : {}) });
   }]));
   const registration = await api.rpc.register(browserRpc, handlers);
   return () => registration.dispose();

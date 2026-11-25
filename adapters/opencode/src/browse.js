@@ -105,8 +105,8 @@ function mutateRaw({ ctx, store, id, mutation }, observation) {
   return { error: `unknown browse mutation: ${mutation}` };
 }
 
-export function statusText({ ctx }) {
-  return { status: status(ctx) };
+export function statusText({ ctx, captureAvailability }) {
+  return { status: status({ ...ctx, captureAvailability }) };
 }
 export function mutate(options) {
   if (!['pin', 'unpin', 'remove'].includes(options.mutation)) return mutateRaw(options, { setStatus() {} });

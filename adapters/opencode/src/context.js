@@ -48,6 +48,11 @@ function normalizedBrief(value) {
   return value.enabled === undefined ? {} : { enabled: value.enabled };
 }
 
+function normalizedSummary(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key => key !== 'autocapture')) return { autocapture: { enabled: false } };
+  return value.autocapture === undefined ? {} : { autocapture: normalizedBrief(value.autocapture) };
+}
+
 function normalizedSettings(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('Nanomneme memory settings must be an object');
   const budget = value.injection_budget;
@@ -57,6 +62,7 @@ function normalizedSettings(value) {
   return {
     ...(budget === undefined ? {} : { injection_budget: budget }),
     ...(value.brief === undefined ? {} : { brief: normalizedBrief(value.brief) }),
+    ...(value.summary === undefined ? {} : { summary: normalizedSummary(value.summary) }),
     ...(reinjection === undefined ? {} : { reinjection: normalizedReinjection(reinjection) }),
     ...(autoretention === undefined ? {} : { autoretention: normalizedAutoretention(autoretention) }),
   };
@@ -156,8 +162,8 @@ function line(store, memory) {
   return `- [${store}]${source} ${memory.id} ${preview(memory.content)}`;
 }
 
-function autoretentionContent(project, global) {
-  const enabled = project.autoretention?.enabled ?? global.autoretention?.enabled ?? false;
+function autoretentionContent(project, global, capture = false) {
+  const enabled = capture || (project.autoretention?.enabled ?? global.autoretention?.enabled ?? false);
   if (!enabled) return undefined;
   const rules = (name) => [...new Set([
     ...(global.autoretention?.[name] ?? []),
@@ -171,7 +177,7 @@ function autoretentionContent(project, global) {
   if (!sections.length) return undefined;
   return [
     '## Nanomneme autoretention',
-    'Autoretention is enabled. Use retain_memory only when retaining a memory. Never automatically retain rules take precedence over all other rules.',
+    capture ? 'Apply these rules to the optional checkpoint. Omit it if retention needs approval; do not call tools. Never rules override ask rules, then automatic retention.' : 'Autoretention is enabled. Use retain_memory only when retaining a memory. Never automatically retain rules take precedence over all other rules.',
     ...sections.flatMap(([heading, values]) => [heading, ...values.map((value) => `- ${value}`)]),
   ].join('\n');
 }
@@ -179,6 +185,12 @@ function autoretentionContent(project, global) {
 function readStore({ cwd, home, platform, store, operation, input }) {
   if (!existsSync(databasePath({ cwd, home, platform, store }))) return null;
   return runMemory({ cwd, home, platform, store, operation, input, create: false, readOnly: true });
+}
+
+export function readCaptureSettings({ cwd, home, globalDir } = {}) {
+  const project = readSettings(settingsPath({ cwd, home, globalDir, store: 'project' }));
+  const user = readSettings(settingsPath({ cwd, home, globalDir, store: 'global' }));
+  return { enabled: project.summary?.autocapture?.enabled ?? user.summary?.autocapture?.enabled ?? false, guidance: autoretentionContent(project, user, true) ?? '' };
 }
 
 export function buildMemoryIndex({ cwd, home, globalDir, platform, budget } = {}) {

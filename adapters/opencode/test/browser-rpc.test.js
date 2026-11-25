@@ -44,6 +44,17 @@ function fixture(t) {
 
 const callContext = () => ({ signal: new AbortController().signal });
 
+test('connected status reports missing capture callbacks using server-owned availability', async t => {
+  const f = fixture(t);
+  mkdirSync(join(f.project, '.nanomneme'));
+  writeFileSync(join(f.project, '.nanomneme/nmnm.jsonc'), '{"summary":{"autocapture":{"enabled":true}}}');
+  const cleanup = await plugin.setup(f.api); t.after(cleanup);
+  const result = await f.handlers.status({ capture_availability: { supported: true } }, callContext());
+  assert.equal(result.ok, true);
+  assert.match(result.status, /unavailable: Live compaction events unavailable/);
+  assert.equal(existsSync(join(f.project, '.nanomneme/memory.db')), false);
+});
+
 test('dual server entry retains V1 callback and skips its limited setup context', async () => {
   assert.equal(plugin.server, NanomnemePlugin);
   assert.equal(typeof plugin.setup, 'function');

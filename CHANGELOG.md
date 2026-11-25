@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.11.0 - Project work summaries and startup briefs
+
+### Updated components
+
+| Component | Version |
+| --- | --- |
+| Repository | 0.11.0 |
+| `@openlines/nmnm-core` | 0.4.0 |
+| `@openlines/nmnm-cli` | 0.5.0 |
+| `@openlines/nmnm-ui` | 0.1.4 |
+| `@openlines/nmnm-pi` | 0.4.10 |
+| `@openlines/nmnm-opencode` | 0.3.4 |
+| `@openlines/nmnm-claude` | 0.2.5 |
+| `@openlines/nmnm-codex` | 0.3.2 |
+
+Core consumers require the new core minor; UI's patch refreshes that dependency only. Claude bundles the matching core and plugin version. Codex remains a private direct adapter.
+
+### Added
+
+- `nmnm-cli` adds project-only `summary add`, `summary update` and `brief`, with bounded file/stdin JSON, canonical transfer, safe summary updates and existing retain diagnostics. Automatic adapter brief delivery is opt-in.
+  - Guarded `summary remove <id>` and core `removeSummary` soft-remove project summary sources atomically; subsequent briefs fall back to remaining history or become empty.
+- `nmnm-pi`, `nmnm-opencode`, `nmnm-claude` and `nmnm-codex` context delivery supports opt-in project briefs within existing budgets, preserving guidance/pin priority, project isolation and ordinary-context fallback.
+- `nmnm-core` validates and stores explicitly supplied project work summaries and renders deterministic bounded historical briefs without models, transcript access, schema migration or read-side writes.
+
+### Validation
+
+- Standalone validation exercises summary creation, recall, correction, removal and brief rendering through installed CLI/core tarballs, and runs summary contracts against Claude's generated core.
+- Native Codex trusted SessionStart and OpenCode V1/V2 provider-request brief tests use local synthetic providers; Codex checks unchanged registration/trust, and OpenCode covers disablement and source removal.
+
 ## 0.10.0 - Core SQLite operations enhancements
 
 ### Updated components

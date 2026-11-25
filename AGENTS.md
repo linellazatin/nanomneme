@@ -29,7 +29,7 @@ nanomneme (`nmnm`) is a small, deterministic SQLite memory core for coding agent
 - **Codex preparation:** run `npm ci`, `npm run validate`, then `npm run codex:prepare` separately before direct registration/packing. It refreshes stale runtimes and copies the complete physical locked production tree, without invoking Codex, registering servers/hooks or running validation.
 - **Codex update:** after checkout updates, run `npm ci`, `npm run validate`, then `npm run codex:update`. It prepares same-version content changes and reports `restart-required`; no marketplace, cache reinstall, registration/trust change or live reload occurs. `npm run validate codex:update` is invalid.
 
-Standalone Claude checks use its frozen independent lock with lifecycle scripts disabled: external-only audit, runtime hashes, full bundled-core contract, adapter suite, MCP 4Rs and management CLI. Registry core is rejected, avoiding a core-publication prerequisite. Codex checks pack the locked closure, independently install/copy it and exercise MCP, context hooks, JSONC merging, cadence and cleanup. The verifier client never ships. Neither establishes native registration/provider behavior.
+Standalone Claude checks use its frozen independent lock with lifecycle scripts disabled: external-only audit, runtime hashes, full bundled-core contract including project summaries, adapter suite, MCP 4Rs and management CLI. Installed CLI/core tarballs also exercise summary creation, recall, correction, removal and brief rendering. Registry core is rejected, avoiding a core-publication prerequisite. Codex checks pack the locked closure, independently install/copy it and exercise MCP, context hooks, JSONC merging, cadence and cleanup. The verifier client never ships. Neither establishes native registration/provider behavior.
 
 - Refresh Claude external dependencies in a temporary standalone copy of its manifest/lock outside the monorepo; review the lock, synchronize root metadata and validate. Keep plugin package/manifest versions aligned.
 
@@ -43,6 +43,11 @@ UI checks require Python Playwright, installed engines and root dev dependencies
 
 - Preserve the matching pinned CI/release Playwright image/package (`mcr.microsoft.com/playwright/python:v1.62.0-noble`), Node 22, Python 3.14, no runtime APT, 15-minute job limit, bounded setup and six-minute suite step. Chromium uses `install --only-shell chromium`; Firefox/WebKit have no reduced-shell equivalent. Retain engine-qualified evidence for seven days.
 - Follow [Workbench web standards](packages/nmnm-ui/docs/WEB_STANDARDS.md) for the WCAG 2.2 AA maintenance target, coverage, WebKit keyboard assumptions and required manual checks.
+
+## Supplied project summaries
+
+- Core owns explicit project-summary validation/storage and deterministic brief rendering; CLI provides `summary add --file <path|->`, `summary update <id> --file <path|->`, `summary remove <id>` and `brief`. No transcript ingestion or separate model is involved. Adapter brief delivery is opt-in through `brief.enabled` in existing context settings.
+- Keep content derived from validated `metadata.summary`; generic/UI edits can invalidate brief eligibility. Update active supported summaries explicitly; removal/restoration/transfer use existing operations. Brief reads must remain read-only and project-local. See [summary contract](docs/CORE_CLI_MANUAL.md#project-work-summaries-and-briefs).
 
 ## Architecture
 
@@ -77,7 +82,7 @@ Pack-output parsing accepts arrays and package-name-keyed objects, rejecting mis
 
 - Register a stable absolute `adapters/codex/mcp/launch.js` path with no configured `cwd`; it uses the actual Codex session directory, ignoring stale `PWD`/`NMNM_PROJECT_DIR` values. Do not use plugin-cache cwd as a project directory. The internal `mcp/server.js` still requires explicit binding.
 - Forward `CODEX_HOME` and supported correlation variables as documented. Native settings use `$CODEX_HOME/nmnm.jsonc`, defaulting to `~/.codex/nmnm.jsonc`; project settings use `<session-cwd>/.nanomneme/nmnm.jsonc`.
-- Register and trust the separate `hooks/context.js` handlers for `SessionStart`, `UserPromptSubmit` and `SessionEnd`. They read existing stores and manage disposable cadence state; memory writes remain MCP. Direct registration does not install the optional memory skill.
+- Register and trust the separate `hooks/context.js` handlers for `SessionStart`, `UserPromptSubmit` and `SessionEnd`. They read existing stores and manage disposable cadence state; hook-driven context never writes memories; ordinary model writes use MCP, while explicit summary capture uses the CLI. Direct registration does not install the optional memory skill.
 - Preserve native context budgets, scalar overrides, deduplicated rule merging and never/ask/automatic precedence. Count real user-prompt events, not MCP calls. Context settings reload per event; disabled/invalid reinjection leaves state untouched, and failed due builds still advance enabled cadence. Logging keeps its first-operation snapshot until server restart.
 - Use preparation for the full physical production closure, not only core/parser. The compatible `node scripts/check-logging-packages.js --prepare-codex` route validates packages before preparing dependencies; restart remains separate.
 - Migrate former marketplace installations before direct setup. For local tarballs, strip npm's `package/` prefix when extracting; keep installation paths stable and avoid duplicate server/hook registrations.

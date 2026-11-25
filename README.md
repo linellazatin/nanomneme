@@ -27,6 +27,10 @@
 
 See [CHANGELOG](CHANGELOG.md) for release history, feature introductions, and breaking changes.
 >
+> ### v0.11.0: Project work summaries and startup briefs
+> - save, correct and soft-remove explicit project summaries through the CLI; preview historical context with `nmnm brief`
+> - opt into project-only briefs across Pi, OpenCode, Claude and Codex within existing context budgets
+> - no transcript ingestion or separate model; see the [summary contract and JSON example](docs/CORE_CLI_MANUAL.md#project-work-summaries-and-briefs)
 > ### v0.10.0: Core SQLite operations enhancements
 > - skip unchanged tag/FTS writes and batch tag loading for retrieval and export
 > - accelerate recent, namespace and source retrieval with a backward-compatible optional index; preserve exact totals, ordering, and existing adapter behavior
@@ -35,12 +39,6 @@ See [CHANGELOG](CHANGELOG.md) for release history, feature introductions, and br
 > - bounded `nmnm-opencode` browser-read retries; mutations never retry
 > - fixed `nmnm-pi` browser pagination at the core offset limit
 > - shared validation and host compatibility gates for CI and releases
-> ### v0.9.1 - `nmnm-pi` pi v1.5.0 compatibility and browser safety
-> - validated Pi compatibility and tool argument handling while retaining support for older hosts
-> - escaped stored terminal controls in browser/list displays without changing saved memories
-> - improved selection visibility during navigation and resizing, distinguished identical previews in native dialogs, and fixed pagination failures after concurrent removals
-> ### v0.9.0 - `nmnm-codex` 0.3.0 Codex adapter MCP redesign
-> - transitioned `nmnm-codex` from direct, shell-backed JSON runner to a more accessible stdio MCP runtime (currently via local checkout)
 >
 
 nanomneme is a small, deterministic SQLite core for coding-agent memory: useful context survives a session without becoming an opaque service. Inspired by [`openpi-memory`](https://github.com/linellazatin/openpi-memory) and [`openclaude-memory`](https://github.com/linellazatin/openclaude-memory), and their demonstration that memory can persist in inspectable files, it replaces (or complements*) per-harness memory formats with one shared system for `Pi`, `Claude Code*`, `OpenCode`, `Codex*`, and future adapters.
@@ -152,6 +150,8 @@ Every individual core call targets one physical store. The CLI, adapters, and UI
 Use Node.js 22.19+ with built-in `node:sqlite` and FTS5. The Pi adapter is published as `@openlines/nmnm-pi` and the OpenCode adapter as `@openlines/nmnm-opencode`; Claude Code is a separately installed Git-first plugin.
 
 ## Quick start
+
+Explicit [project work summaries and brief preview](docs/CORE_CLI_MANUAL.md#project-work-summaries-and-briefs) are available through core/CLI without a separate model or transcript access. Adapter brief delivery is opt-in through existing `brief.enabled` context settings.
 
 ```sh
 npm install --global @openlines/nmnm-cli

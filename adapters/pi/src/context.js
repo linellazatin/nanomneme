@@ -70,8 +70,9 @@ export function captureAvailability(options = {}) {
   const global = readSettings(settingsPath({ ...options, store: 'global' }));
   return {
     enabled: project.summary?.autocapture?.enabled ?? global.summary?.autocapture?.enabled ?? false,
-    supported: false,
-    reason: 'No supported additive compaction prompt integration in this Pi adapter',
+    supported: true,
+    reason: 'Native compaction text requires trusted project and interactive review',
+    guidance: autoretentionContent(project, global) ?? '',
   };
 }
 

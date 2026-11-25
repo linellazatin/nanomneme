@@ -118,3 +118,19 @@ test('OpenCode Node bridge returns the brief and complete detail for per-request
   assert.equal(detail.ok, true);
   assert.deepEqual(JSON.parse(detail.text), record);
 });
+
+
+test('native Pi checkpoints render through the shared core with read-only opt-in delivery', t => {
+  const { path, settings, render } = setup(t);
+  const db = open(path);
+  let record;
+  try { record = db.retainSummary({ source: 'pi', summary: { format: 'nanomneme/native-compaction-summary', format_version: 1, title: 'Native checkpoint', as_of: '2026-11-25T09:00:00.000Z', text: 'Historical native checkpoint text.' } }); } finally { db.close(); }
+  assert.equal(render().includes('Nanomneme project brief:'), false);
+  settings({ brief: { enabled: true } });
+  const before = readFileSync(path);
+  const context = render();
+  assert.match(context, /native \(unverified\)/);
+  assert.match(context, /Historical native checkpoint text/);
+  assert.ok(context.includes(record.id));
+  assert.deepEqual(readFileSync(path), before);
+});

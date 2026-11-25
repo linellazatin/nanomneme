@@ -38,3 +38,9 @@ export function readProjectBrief(options, budget) {
   const store = open(path, { create: false, readOnly: true });
   try { return store.brief({ budget }); } finally { store.close(); }
 }
+
+// Called only after native text validation and explicit review approval.
+export function saveProjectSummary(options, input) {
+  const store = open(databasePath({ ...options, store: 'project' }));
+  try { return store.retainSummary(input); } finally { store.close(); }
+}

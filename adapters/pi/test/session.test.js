@@ -260,6 +260,7 @@ test('memory status reports the full next-injection character count without expo
       `Last                      session_start at .+ · 1 entry · ${expectedPayload.length} characters`,
       'Autoretention             enabled',
       'Summary autocapture       disabled',
+      'Last summary capture      none',
       'Pins                      project: 0 · global: 0',
       `Index                     budget: 2000 · current: ${expectedPayload.length} · unresolved: 0`,
       'Error                     none$',

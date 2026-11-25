@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { CURSOR_MARKER, matchesKey, truncateToWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui';
 
 import { buildMemoryIndex, captureAvailability, pin, piAgentDir, pinsPath, readPins, readSettings, settingsPath, unpin, updatePins } from './context.js';
+import { createCompactionCapture } from './compaction.js';
 import { getPiLogger, piSessionId } from './logslines.js';
 import { databasePath, runMemory, supportsGlobalStore } from './store.js';
 
@@ -473,6 +474,8 @@ export function registerPiMemory(pi, options = {}) {
   const agentDir = options.agentDir ?? piAgentDir({ home: options.home });
   const logger = options.logger ?? getPiLogger({ home: options.home, agentDir });
   const memoryOptions = { ...options, agentDir };
+  const captureCompaction = createCompactionCapture({ ...memoryOptions, logger });
+  let lastCapture;
   const index = (cwd, { includeProject = true } = {}) => buildMemoryIndex({
     cwd,
     ...memoryOptions,
@@ -502,7 +505,8 @@ export function registerPiMemory(pi, options = {}) {
       statusLine('Prompts since injection', promptCountSinceInjection),
       statusLine('Last', last),
       statusLine('Autoretention', memoryIndex ? (memoryIndex.autoretention ? 'enabled' : 'disabled') : 'unavailable'),
-      statusLine('Summary autocapture', capture ? (capture.enabled ? `unavailable: ${capture.reason}` : 'disabled') : 'unavailable'),
+      statusLine('Summary autocapture', capture ? (capture.enabled ? `review required: ${capture.reason}` : 'disabled') : 'unavailable'),
+      statusLine('Last summary capture', lastCapture?.state ?? 'none'),
       statusLine('Pins', `project: ${projectPins?.length ?? 'unavailable'} · global: ${globalPins?.length ?? 'unavailable'}`),
       statusLine('Index', `budget: ${memoryIndex?.budget ?? 'unavailable'} · current: ${memoryIndex ? memoryIndexContent(memoryIndex).length : 'unavailable'} · unresolved: ${memoryIndex?.unresolved ?? 'unavailable'}`),
       statusLine('Error', lastError ? `${lastError.message} at ${lastError.occurredAt}` : 'none'),
@@ -522,12 +526,19 @@ export function registerPiMemory(pi, options = {}) {
         includeProject: projectIsTrusted(ctx),
       });
       const capture = captureAvailability({ cwd: ctx.cwd, ...memoryOptions, includeProject: projectIsTrusted(ctx) });
-      if (capture.enabled) notify(ctx, `Nanomneme summary autocapture unavailable: ${capture.reason}. Use explicit project summaries and briefs.`);
+      if (capture.enabled) notify(ctx, `Nanomneme native summary capture: ${capture.reason}.`);
     } catch (error) {
       notify(ctx, `Nanomneme configuration unavailable: ${error.message}`);
     }
   });
-  pi.on('session_compact', () => refresh('compact'));
+  pi.on('session_compact', async (event, ctx) => {
+    refresh('compact');
+    lastCapture = await captureCompaction(event, ctx);
+    refresh('compact');
+    if (lastCapture.state === 'saved') {
+      try { notify(ctx, `Nanomneme saved project checkpoint ${lastCapture.id}.`); } catch {}
+    }
+  });
   pi.on('before_agent_start', (event, ctx) => {
     if (event.messageType === 'custom') return undefined;
     if (!pending && periodicPolicy.enabled) {

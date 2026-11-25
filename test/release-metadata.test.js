@@ -38,15 +38,15 @@ test('release metadata aligns project-summary minors and adapter patches', () =>
   assert.equal(ui.exports, './src/launcher.js');
   assert.equal(ui.engines.node, root.engines.node);
   assert.equal(lock.packages['node_modules/@openlines/nmnm-ui'].resolved, 'packages/nmnm-ui');
-  assert.equal(pi.version, '0.4.10');
+  assert.equal(pi.version, '0.5.0');
   assert.equal(claude.name, '@openlines/nmnm-claude');
-  assert.equal(claude.version, '0.2.5');
+  assert.equal(claude.version, '0.3.0');
   assert.equal(claude.dependencies['@modelcontextprotocol/sdk'], '^1.32.2');
   assert.equal(lock.packages['adapters/claude'].dependencies['@modelcontextprotocol/sdk'], claude.dependencies['@modelcontextprotocol/sdk']);
   const [sdkMajor, sdkMinor] = lock.packages['node_modules/@modelcontextprotocol/sdk'].version.split('.').map(Number);
   assert.ok(sdkMajor > 1 || (sdkMajor === 1 && sdkMinor >= 32), 'MCP SDK must include the current advisory fixes');
-  assert.equal(codex.version, '0.3.2');
-  assert.equal(opencode.version, '0.3.4');
+  assert.equal(codex.version, '0.4.0');
+  assert.equal(opencode.version, '0.4.0');
   for (const [path, pkg] of [['', root], ['packages/nmnm-core', core], ['packages/nmnm-cli', cli], ['packages/nmnm-ui', ui],
     ['adapters/pi', pi], ['adapters/claude', claude], ['adapters/codex', codex], ['adapters/opencode', opencode]]) {
     assert.equal(lock.packages[path].version, pkg.version, `${path || 'root'} lockfile version`);

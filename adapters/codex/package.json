@@ -1,6 +1,6 @@
 {
   "name": "@openlines/nmnm-codex",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "private": true,
   "description": "Stdio MCP Codex adapter for nanomneme local SQLite memory",
   "type": "module",

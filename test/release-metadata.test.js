@@ -10,7 +10,7 @@ function json(path) {
   return JSON.parse(readFileSync(path, 'utf8'));
 }
 
-test('release metadata aligns core improvements and dependency-only adapter patches', () => {
+test('release metadata aligns project-summary minors and adapter patches', () => {
   const root = json(new URL('../package.json', import.meta.url));
   const lock = json(new URL('../package-lock.json', import.meta.url));
   const pi = json(new URL('../adapters/pi/package.json', import.meta.url));
@@ -20,33 +20,33 @@ test('release metadata aligns core improvements and dependency-only adapter patc
   const claude = json(new URL('../adapters/claude/package.json', import.meta.url));
   const codex = json(new URL('../adapters/codex/package.json', import.meta.url));
   const opencode = json(new URL('../adapters/opencode/package.json', import.meta.url));
-  assert.equal(root.version, '0.10.0');
+  assert.equal(root.version, '0.11.0');
   assert.equal(lock.version, root.version);
   assert.equal(lock.packages['adapters/codex'].name, '@openlines/nmnm-codex');
   assert.equal(lock.packages['node_modules/@openlines/nmnm-codex'].resolved, 'adapters/codex');
-  assert.equal(core.version, '0.3.3');
+  assert.equal(core.version, '0.4.0');
   assert.equal(core.exports['./logging'], './src/logslines.js');
   assert(core.files.includes('src/logslines.js'));
   assert(!core.files.includes('src/logging.js'));
-  assert.equal(cli.version, '0.4.3');
+  assert.equal(cli.version, '0.5.0');
   assert.equal(ui.name, '@openlines/nmnm-ui');
-  assert.equal(ui.version, '0.1.3');
+  assert.equal(ui.version, '0.1.4');
   assert.notEqual(ui.private, true);
   assert(semver.satisfies(ui.version, cli.dependencies['@openlines/nmnm-ui']));
-  assert(semver.subset(cli.dependencies['@openlines/nmnm-ui'], '^0.1.3'));
+  assert(semver.subset(cli.dependencies['@openlines/nmnm-ui'], '^0.1.4'));
   assert.equal(cli.engines.node, ui.engines.node);
   assert.equal(ui.exports, './src/launcher.js');
   assert.equal(ui.engines.node, root.engines.node);
   assert.equal(lock.packages['node_modules/@openlines/nmnm-ui'].resolved, 'packages/nmnm-ui');
-  assert.equal(pi.version, '0.4.9');
+  assert.equal(pi.version, '0.4.10');
   assert.equal(claude.name, '@openlines/nmnm-claude');
-  assert.equal(claude.version, '0.2.4');
+  assert.equal(claude.version, '0.2.5');
   assert.equal(claude.dependencies['@modelcontextprotocol/sdk'], '^1.32.2');
   assert.equal(lock.packages['adapters/claude'].dependencies['@modelcontextprotocol/sdk'], claude.dependencies['@modelcontextprotocol/sdk']);
   const [sdkMajor, sdkMinor] = lock.packages['node_modules/@modelcontextprotocol/sdk'].version.split('.').map(Number);
   assert.ok(sdkMajor > 1 || (sdkMajor === 1 && sdkMinor >= 32), 'MCP SDK must include the current advisory fixes');
-  assert.equal(codex.version, '0.3.1');
-  assert.equal(opencode.version, '0.3.3');
+  assert.equal(codex.version, '0.3.2');
+  assert.equal(opencode.version, '0.3.4');
   for (const [path, pkg] of [['', root], ['packages/nmnm-core', core], ['packages/nmnm-cli', cli], ['packages/nmnm-ui', ui],
     ['adapters/pi', pi], ['adapters/claude', claude], ['adapters/codex', codex], ['adapters/opencode', opencode]]) {
     assert.equal(lock.packages[path].version, pkg.version, `${path || 'root'} lockfile version`);
@@ -57,7 +57,7 @@ test('release metadata aligns core improvements and dependency-only adapter patc
     const range = pkg.dependencies['@openlines/nmnm-core'];
     assert(range.startsWith('^'), `${pkg.name} must allow compatible core patches`);
     assert(semver.satisfies(core.version, range), `${pkg.name} must accept checkout core`);
-    assert(semver.subset(range, '^0.3.3'), `${pkg.name} must require patched core and exclude the next minor`);
+    assert(semver.subset(range, '^0.4.0'), `${pkg.name} must require summary-capable core and exclude the next minor`);
   }
   for (const path of ['packages/nmnm-cli', 'packages/nmnm-ui', 'adapters/pi', 'adapters/codex', 'adapters/opencode']) {
     assert.equal(lock.packages[path].dependencies['@openlines/nmnm-core'], json(new URL(`../${path}/package.json`, import.meta.url)).dependencies['@openlines/nmnm-core'], `${path} lockfile core range`);

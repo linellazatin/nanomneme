@@ -112,3 +112,19 @@ test('CLI summary remove accepts source IDs, preserves unrelated memories, and l
   const logs = readFileSync(join(shared, 'logs/nmnm-cli.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
   assert.deepEqual(logs.filter(row => row.operation === 'remove').map(row => row.status), ['failed', 'ok', 'not_found']);
 });
+
+test('CLI native checkpoints support explicit correction, transfer and ID removal', t => {
+  const { run, json } = environment(t);
+  const summary = { format: 'nanomneme/native-compaction-summary', format_version: 1, title: 'Native checkpoint', as_of: '2026-11-25T09:00:00.000Z', text: 'Native full text\n' + 'x'.repeat(6600) };
+  const record = json(['summary', 'add', '--file', '-'], JSON.stringify(summary));
+  assert.deepEqual(json(['recall', record.id]).metadata.summary, summary);
+  assert.match(json(['brief']).text, /native.*unverified/);
+  assert.equal(run(['summary', 'update', record.id, '--file', '-'], JSON.stringify(fixture.base_payload)).status, 1);
+  const corrected = json(['summary', 'update', record.id, '--file', '-'], JSON.stringify({ ...summary, text: 'Reviewed correction' }));
+  assert.equal(corrected.metadata.source, 'cli');
+  assert.match(json(['brief']).text, /Reviewed correction/);
+  assert.equal(json(['summary', 'remove', record.id]).id, record.id);
+  assert.equal(json(['brief']).text, '');
+  json(['retain', '--id', record.id]);
+  assert.deepEqual(json(['brief']).source_ids, [record.id]);
+});

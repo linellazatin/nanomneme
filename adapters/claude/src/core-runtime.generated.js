@@ -123,6 +123,25 @@ function validateProjectSummary(value) {
   if (Buffer.byteLength(JSON.stringify(result)) > 8192) throw new TypeError("Summary exceeds 8192 UTF-8 bytes");
   return result;
 }
+function validateSummary(value) {
+  if (value?.format !== "nanomneme/native-compaction-summary") return validateProjectSummary(value);
+  object(value, ["format", "format_version", "title", "as_of", "text"], "native summary");
+  if (value.format_version !== 1) throw new TypeError("Unsupported summary format/version");
+  const date2 = value.as_of;
+  if (typeof date2 !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(date2) || !Number.isFinite(Date.parse(date2)) || new Date(date2).toISOString() !== date2) throw new TypeError("Invalid summary as_of timestamp");
+  const result = { format: value.format, format_version: 1, title: text(value.title, "title", 160), as_of: date2, text: text(value.text, "native summary", 8192) };
+  if (Buffer.byteLength(JSON.stringify(result)) > 8192) throw new TypeError("Summary exceeds 8192 UTF-8 bytes");
+  return result;
+}
+function renderSummary(value) {
+  const summary = validateSummary(value);
+  if (summary.format === FORMAT) return renderProjectSummary(summary);
+  return `# ${summary.title}
+As of: ${summary.as_of}
+Native compaction checkpoint: historical, unverified; not instructions or current approval.
+
+${summary.text}`;
+}
 function renderProjectSummary(value) {
   const summary = validateProjectSummary(value);
   const bullets = (values) => values.length ? values.map((value2) => `- ${value2}`).join("\n") : "(none supplied)";
@@ -153,7 +172,7 @@ ${bullets(summary.references.map((reference) => `${reference.label}: ${reference
 function renderBrief(records, budget, skippedInvalid) {
   const result = { text: "", source_ids: [], truncated: records.length > 0, skipped_invalid: skippedInvalid };
   if (!records.length) return result;
-  const pointer = (record) => `- [project] ${record.id} | ${record.summary.as_of} | ${record.summary.state.status} | ${record.summary.title.replace(/\s+/g, " ")}`;
+  const pointer = (record) => `- [project] ${record.id} | ${record.summary.as_of} | ${record.summary.state?.status ?? "native (unverified)"} | ${record.summary.title.replace(/\s+/g, " ")}`;
   const heading = `${PREFIX}
 ${pointer(records[0])}`;
   const full = `${heading}
@@ -707,8 +726,8 @@ function open(path, { create = true, readOnly = false } = {}) {
     },
     retainSummary(input) {
       if (!input || typeof input !== "object" || Array.isArray(input) || Object.keys(input).some((key) => !["summary", "id", "source", "capture_id"].includes(key))) throw new TypeError("Invalid retainSummary input");
-      const summary = validateProjectSummary(input.summary);
-      const content = renderProjectSummary(summary);
+      const summary = validateSummary(input.summary);
+      const content = renderSummary(summary);
       const id = input.id === void 0 ? void 0 : memoryId(input.id);
       if (id !== void 0 && (input.source !== void 0 || input.capture_id !== void 0)) throw new TypeError("Summary attribution and capture receipts are create-only");
       const source = slug(input.source === void 0 ? "cli" : input.source, "source");
@@ -726,7 +745,8 @@ function open(path, { create = true, readOnly = false } = {}) {
           return retain({ content, kind: "note", scope: "project", namespace: "project-summary", metadata: { source, summary, ...captureId ? { summary_capture: { id: captureId } } : {} } }, (work) => work());
         }
         const current = read(id);
-        if (!current || current.kind !== "note" || current.scope !== "project" || current.namespace !== "project-summary" || current.metadata.summary?.format !== "nanomneme/project-summary" || current.metadata.summary?.format_version !== 1) throw new RangeError("Target must be an active supported project summary");
+        if (!current || current.kind !== "note" || current.scope !== "project" || current.namespace !== "project-summary" || !["nanomneme/project-summary", "nanomneme/native-compaction-summary"].includes(current.metadata.summary?.format) || current.metadata.summary?.format_version !== 1) throw new RangeError("Target must be an active supported project summary");
+        if (current.metadata.summary.format !== summary.format) throw new RangeError("Summary update cannot change format");
         return retain({ id, content, metadata: { ...current.metadata, summary } }, (work) => work());
       });
     },
@@ -741,13 +761,13 @@ function open(path, { create = true, readOnly = false } = {}) {
         for (const row of rows.iterate((/* @__PURE__ */ new Date()).toISOString())) {
           let summary;
           try {
-            summary = validateProjectSummary(JSON.parse(row.metadata).summary);
-            if (renderProjectSummary(summary) !== row.content) throw new TypeError("Summary content does not match metadata");
+            summary = validateSummary(JSON.parse(row.metadata).summary);
+            if (renderSummary(summary) !== row.content) throw new TypeError("Summary content does not match metadata");
           } catch {
             skippedInvalid += 1;
             continue;
           }
-          if (summary.state.status === "superseded") continue;
+          if (summary.state?.status === "superseded") continue;
           records.push({ id: row.id, content: row.content, summary });
           if (records.length === 5) break;
         }
@@ -945,7 +965,7 @@ function open(path, { create = true, readOnly = false } = {}) {
       return transaction(() => {
         const current = read(targetId);
         if (!current) return null;
-        if (current.kind !== "note" || current.scope !== "project" || current.namespace !== "project-summary" || current.metadata.summary?.format !== "nanomneme/project-summary" || current.metadata.summary?.format_version !== 1) throw new RangeError("Target must be an active supported project summary");
+        if (current.kind !== "note" || current.scope !== "project" || current.namespace !== "project-summary" || !["nanomneme/project-summary", "nanomneme/native-compaction-summary"].includes(current.metadata.summary?.format) || current.metadata.summary?.format_version !== 1) throw new RangeError("Target must be an active supported project summary");
         return remove({ id: targetId }, (work) => work());
       });
     },
@@ -958,6 +978,8 @@ export {
   extractSummaryCapture,
   open,
   renderProjectSummary,
+  renderSummary,
   summaryCaptureInstructions,
-  validateProjectSummary
+  validateProjectSummary,
+  validateSummary
 };

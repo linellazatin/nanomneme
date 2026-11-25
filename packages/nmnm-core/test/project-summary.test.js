@@ -242,3 +242,57 @@ test('summary removal is ID-based, guarded, reversible and changes the next brie
   assert.equal(db.brief().text, '');
   assert.equal(db.verify().ok, true);
 });
+
+const native = changes => ({ format: 'nanomneme/native-compaction-summary', format_version: 1, title: 'Pi compaction checkpoint', as_of: '2026-11-25T09:00:00.000Z', text: 'Native context\n\tUnicode 界', ...changes });
+
+test('native summary contract preserves full bounded text without weakening structured validation', t => {
+  const { db, path } = store(t);
+  const summary = native({ text: 'Native\n' + 'x'.repeat(6600) });
+  assert.throws(() => core.validateProjectSummary(summary));
+  const first = db.retainSummary({ summary, source: 'pi', capture_id: captureId });
+  assert.deepEqual(first.metadata.summary, summary);
+  assert.ok(first.content.endsWith(summary.text));
+  assert.match(first.content, /unverified/);
+  assert.deepEqual(db.retainSummary({ summary, source: 'pi', capture_id: captureId }), first);
+  assert.equal(db.brief({ budget: 10000 }).text.endsWith(summary.text), true);
+  const fallback = db.brief({ budget: 1000 });
+  assert.deepEqual(fallback.source_ids, [first.id]);
+  assert.match(fallback.text, /native.*unverified/);
+  assert.match(fallback.text, /recall_memory/);
+  assert.equal(fallback.truncated, true);
+  const before = readFileSync(path);
+  const reader = core.open(path, { readOnly: true });
+  try { assert.deepEqual(reader.brief(), fallback); } finally { reader.close(); }
+  assert.deepEqual(readFileSync(path), before);
+  const structured = db.retainSummary({ summary: payload() });
+  assert.throws(() => db.retainSummary({ id: first.id, summary: payload() }), /format/);
+  assert.throws(() => db.retainSummary({ id: structured.id, summary }), /format/);
+  const corrected = db.retainSummary({ id: first.id, summary: native({ text: 'Reviewed correction' }) });
+  assert.equal(corrected.metadata.source, 'pi');
+  assert.deepEqual(corrected.metadata.summary_capture, { id: captureId });
+  assert.throws(() => db.retainSummary({ summary, source: 'pi', capture_id: captureId }), /conflict/);
+  assert.equal(db.brief({ budget: 10000 }).source_ids[0], first.id);
+  db.removeSummary({ id: first.id });
+  assert.ok(!db.brief().source_ids.includes(first.id));
+  assert.throws(() => db.retainSummary({ summary, source: 'pi', capture_id: captureId }), /conflict/);
+  assert.equal(db.recall({ id: first.id }), null);
+  for (const invalid of [native({ text: '' }), native({ text: '\ud800' }), native({ text: 'ESC\x1b' }), native({ text: '界'.repeat(3000) }), native({ title: 'x'.repeat(161) }), native({ as_of: '2026-02-30T00:00:00.000Z' }), native({ extra: true }), native({ format_version: 2 })]) {
+    assert.throws(() => db.retainSummary({ summary: invalid }), TypeError);
+  }
+  assert.equal(db.verify().ok, true);
+});
+
+test('native byte boundary, mixed date ties and invalid content are deterministic', t => {
+  const { db } = store(t);
+  const minimum = native({ text: 'x' });
+  const remaining = 8192 - Buffer.byteLength(JSON.stringify(minimum));
+  const exact = native({ text: 'x'.repeat(remaining + 1) });
+  assert.equal(Buffer.byteLength(JSON.stringify(core.validateSummary(exact))), 8192);
+  assert.throws(() => core.validateSummary({ ...exact, text: exact.text + 'x' }), /8192/);
+  const first = db.retainSummary({ summary: native() });
+  const second = db.retainSummary({ summary: payload({ as_of: first.metadata.summary.as_of }) });
+  assert.deepEqual(db.brief({ budget: 10000 }).source_ids, [first.id, second.id].sort());
+  db.retain({ id: first.id, content: 'Generic inconsistent native edit' });
+  assert.deepEqual(db.brief().source_ids, [second.id]);
+  assert.equal(db.brief().skipped_invalid, 1);
+});

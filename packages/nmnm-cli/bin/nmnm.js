@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { open, validateProjectSummary } from '@openlines/nmnm-core';
+import { open, validateSummary } from '@openlines/nmnm-core';
 import { getCLILogger } from '../src/logslines.js';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
@@ -128,7 +128,7 @@ function readSummary(path) {
   if (!isUtf8(input)) throw new TypeError('Summary input must be valid UTF-8');
   let payload;
   try { payload = JSON.parse(input.toString('utf8')); } catch { throw new TypeError('Summary input must be valid JSON'); }
-  return validateProjectSummary(payload);
+  return validateSummary(payload);
 }
 
 function summaryCommand(positionals, options) {

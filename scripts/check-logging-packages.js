@@ -392,6 +392,16 @@ export function checkLoggingPackages({ prepareCodex = false } = {}) {
     `);
     execFileSync(process.execPath, ['verify.mjs'], { cwd: consumer, env: { ...process.env, HOME: temporary }, stdio: 'pipe' });
 
+    // Exercise the actual packed OpenCode capture modules, including native lifecycle routing
+    // when the caller supplies disposable host selectors. Tests stay outside published files.
+    const installedOpenCode = join(consumer, 'node_modules/@openlines/nmnm-opencode');
+    const captureTests = ['compaction.test.js', 'native-compaction.test.js'];
+    mkdirSync(join(installedOpenCode, 'test'));
+    for (const name of captureTests) cpSync(join(root, 'adapters/opencode/test', name), join(installedOpenCode, 'test', name));
+    execFileSync(process.execPath, ['--test', ...captureTests.map(name => join(installedOpenCode, 'test', name))], {
+      cwd: consumer, env: { ...process.env, HOME: temporary, NMNM_ADAPTER_ROOT: installedOpenCode }, stdio: 'inherit', timeout: 180000,
+    });
+
     // Pack exactly the checkout's locked production tree, without registry re-resolution.
     const codex = join(temporary, 'codex');
     cpSync(join(root, 'adapters/codex'), codex, { recursive: true, filter: path => basename(path) !== 'node_modules' });

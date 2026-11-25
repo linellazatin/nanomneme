@@ -184,6 +184,7 @@ Project settings override global. Template:
   // Character budget for all transient injected context (index + autoretention).
   // Non-negative integer. Default 2000.
   "injection_budget": 2000,
+  "brief": { "enabled": false },
 
   // Inert on OpenCode: context is rebuilt for each applicable request (primary only on V2).
   // Parsed so project settings remain compatible with Pi and Claude.
@@ -203,7 +204,7 @@ Project settings override global. Template:
 }
 ```
 
-`injection_budget` bounds the index plus any autoretention guidance together; a rule is never partially emitted, and guidance that alone exceeds the budget is an error (context omitted).
+`injection_budget` bounds the index, optional project brief and autoretention guidance together; a rule is never partially emitted, and guidance that alone exceeds the budget is an error (context omitted).
 
 ### Pins: `nmnm-opencode.json`
 
@@ -270,3 +271,25 @@ Diagnostics default off. Enable shared `logging.enabled` in `~/.local/share/nano
 User overrides use OpenCode's config-directory resolver. Diagnostics cover Node tool operations, CLI mutations, and confirmed TUI mutations, not index/navigation reads. Each bridge reloads settings. Proven spawn failures emit one Bun-host `failed` record with the verbatim error; post-spawn transport/parse failures stay unlogged because the bridge may have recorded the outcome. Server tools forward the tool-context `sessionID`; TUI/CLI correlation is null.
 
 `src/logslines.js` supplies the adapter-specific logging binding. The [Logger manual](../../../docs/LOGGER.md#source-and-artifact-map) owns the shared source, generated-artifact, and package-check reference.
+
+## Project startup briefs
+
+A summary is an explicitly supplied, persisted project work account. A brief is an on-demand deterministic historical view of eligible summaries; it is not another memory record and uses no separate model or transcript access. Save the [JSON example](../../../docs/examples/project-summary.json) using `nmnm summary add --file summary.json --json`, then inspect `nmnm brief`. Configure the existing user or project `nmnm.jsonc`:
+
+```json
+{
+  "brief": { "enabled": true }
+}
+```
+
+Brief delivery defaults off. Project `brief.enabled` overrides the user value, including explicit false. A malformed brief-only object disables the brief without discarding otherwise valid ordinary context. Invalid broader settings retain their existing behavior. User settings may enable delivery across projects, but each brief reads only the receiving project's store. Existing ordinary global previews remain available; no global brief is constructed.
+
+Both OpenCode server versions deliver the brief through the existing Node bridge on each primary model request. Reinjection cadence remains inert; the next primary request rebuilds context after changes.
+
+Run `NMNM_OPENCODE_V1=/absolute/v1/opencode NMNM_OPENCODE_V2=/absolute/v2/opencode node --test adapters/opencode/test/native-brief.test.js` from the repository for native provider-request observations. Each selected host loads the adapter in a temporary home and sends requests to a local synthetic OpenAI-compatible endpoint. Fresh sessions cover enabled delivery with the historical warning, project disablement and summary removal. These checks establish native request delivery, not real-model compliance or same-session refresh; bridge/lifecycle tests cover context rebuilding separately. Unset host selectors produce explicit skips.
+
+The unchanged total injection budget covers guidance, pins where supported, brief and recent previews. Guidance and pins keep priority; the brief receives at most 1000 UTF-16 code units and half the remaining space, including separators. Unused allocation returns to recent previews. If full primary content cannot fit, the core emits a complete historical-data warning, UUID/date/status/title pointer and recall guidance; if that fallback cannot fit, it emits nothing. Only emitted project source IDs are excluded from unpinned recent previews. Explicit pins may intentionally duplicate a brief source. Disabled or failed brief delivery retains ordinary preview behavior; malformed/unsupported/inconsistent summaries remain ordinary records rather than being silently repaired.
+
+Use the existing `recall_memory` tool with the returned project UUID for full detail; existing tool output limits still apply. `nmnm summary update <id> --file summary.json` corrects an active supported summary. Existing removal, explicit restoration, expiry and transfer operations apply. Brief reads are read-only and unlogged and never create a missing store. See the [core/CLI contract](../../../docs/CORE_CLI_MANUAL.md#project-work-summaries-and-briefs) for fields, limits, historical scope and concurrent-update behavior.
+
+To remove a brief source, use `nmnm summary remove <id> --json` with its project summary UUID. Briefs have no separate stored ID; the next configured refresh/reinjection or new session renders the remaining eligible summaries, or no brief when none remain. Already-injected context is unchanged.

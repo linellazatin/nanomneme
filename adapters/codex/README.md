@@ -38,6 +38,7 @@ Create or keep `$CODEX_HOME/nmnm.jsonc`, defaulting to `~/.codex/nmnm.jsonc`. Th
 ```jsonc
 {
   "injection_budget": 10000,
+  "brief": { "enabled": false },
   "reinjection": { "enabled": true, "every_n_prompts": 5 },
   "logging": { "enabled": false },
   "autoretention": {
@@ -86,3 +87,9 @@ Codex reads `logging.enabled` from the same native `$CODEX_HOME/nmnm.jsonc`; pro
 Run `node --test adapters/codex/test/*.test.js` from the repository root, then `npm run validate` for generated checks, the full suite, production audit and independent package validation. Installed and copied artifacts exercise both MCP and context hooks. Native Codex CLI 0.166.0 on macOS loaded an independently packed artifact from a spaced path, accepted normal hook trust review, delivered bounded context and actual prompt cadence, and completed 14 project/global MCP calls through a local deterministic provider fixture. These checks establish host delivery and adapter semantics; real-model compliance, other providers and desktop/IDE behavior require separate evidence.
 
 Removal is marked destructive and follows host approval policy. Noninteractive `codex exec` with approvals disabled may reject it before adapter execution; such rejection produces no memory log. Deliberate per-tool approval configuration is described in the [manual](docs/CODEX_ADAPTER_MANUAL.md#host-approval-policy).
+
+## Project startup briefs
+
+Set `brief.enabled` to true in the existing user/project `nmnm.jsonc` to include a deterministic project handoff through existing context delivery. Default is off; project false overrides user enablement. Save summaries explicitly with `nmnm summary add --file summary.json`, then preview `nmnm brief`. No transcript ingestion, global brief store or separate model is involved. Guidance and pins retain priority within the existing budget. See [configuration, timing and limits](docs/CODEX_ADAPTER_MANUAL.md#project-startup-briefs).
+
+To remove a brief source, use `nmnm summary remove <id> --json` with its project summary UUID. Briefs have no separate stored ID; the next configured refresh/reinjection or new session renders the remaining eligible summaries, or no brief when none remain. Already-injected context is unchanged.

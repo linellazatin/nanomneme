@@ -51,3 +51,9 @@ Claude uses its existing user settings resolver (`CLAUDE_PLUGIN_DATA` when suppl
 Pin mutations use a same-directory lock and atomic replacement. Competing writers receive a retry error; locks are never reclaimed automatically. After a crash, stop all adapter writers, remove the affected pin file’s `.lock` manually, then retry.
 
 `src/logslines.js` binds this adapter to its local `src/logging-runtime.generated.js`, built from the same shared observer source as core's logging export. Persistence uses the separate local `src/core-runtime.generated.js`; neither runtime requires an installed core package. See the [Logger manual](../../docs/LOGGER.md#source-and-artifact-map) for file roles and build rules.
+
+## Project startup briefs
+
+Set `brief.enabled` to true in the existing user/project `nmnm.jsonc` to include a deterministic project handoff through existing context delivery. Default is off; project false overrides user enablement. Save summaries explicitly with `nmnm summary add --file summary.json`, then preview `nmnm brief`. No transcript ingestion, global brief store or separate model is involved. Guidance and pins retain priority within the existing budget. See [configuration, timing and limits](docs/CLAUDE_ADAPTER_MANUAL.md#project-startup-briefs).
+
+To remove a brief source, use `nmnm summary remove <id> --json` with its project summary UUID. Briefs have no separate stored ID; the next configured refresh/reinjection or new session renders the remaining eligible summaries, or no brief when none remain. Already-injected context is unchanged.

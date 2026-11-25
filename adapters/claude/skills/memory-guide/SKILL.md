@@ -23,7 +23,11 @@ For `retain_memory`, omit `scope` for this repository or use `scope: global` for
 
 Retain durable, reusable facts: decisions and their rationale, project conventions, user preferences, standing instructions. Do not retain secrets, credentials, routine logs, or transient state. Prefer patching an existing memory (retain with its `id`) over creating a near-duplicate; retrieve first to check.
 
-If the project configures `autoretention` in `nmnm.jsonc`, its rules are injected as guidance at session start; `never_persist` rules always win. You remain the only decision maker; nothing is retained without your explicit `retain_memory` call.
+If the project configures `autoretention` in `nmnm.jsonc`, its rules are injected as guidance at session start; `never_persist` rules always win. Ordinary memory capture requires an explicit `retain_memory` call; user-requested project summary capture uses the CLI below.
+
+## Explicit project summaries
+
+When the user asks to capture a project work summary, use `nmnm summary add --file <path|->` or `nmnm summary update <id> --file <path|->` with the documented summary JSON contract; this specialized CLI operation is separate from ordinary MCP memory operations. No transcript capture or separate model is involved. Opt-in startup briefs are deterministic historical views, not current instructions or approval. Recall source UUIDs with MCP for detail; `nmnm summary remove <id>` removes a summary source, and the next brief reflects the remaining history. Briefs have no independent UUID.
 
 ## Kinds
 

@@ -81,6 +81,7 @@ The complete supported native shape in $CODEX_HOME/nmnm.jsonc, defaulting to ~/.
 {
   // Context size per lifecycle event in JavaScript UTF-16 code units.
   "injection_budget": 10000,
+  "brief": { "enabled": false },
   "reinjection": {
     "enabled": true,
     "every_n_prompts": 5
@@ -101,7 +102,8 @@ These are synthetic example rules. Existing native configuration files need no f
 
 | Setting | Default | Validation and effect |
 | --- | --- | --- |
-| injection_budget | 2000 | Nonnegative safe integer; bounds each event's emitted context, including rules, separators and index. Zero suppresses context without opening stores. |
+| injection_budget | 2000 | Nonnegative safe integer; bounds each event's emitted context, including rules, pins where supported, brief, separators and index. Zero suppresses context without opening stores. |
+| brief.enabled | false | Opt-in project brief; malformed brief-only values disable only the brief. |
 | reinjection.enabled | false | Boolean; enables counting UserPromptSubmit events and periodic context refresh. |
 | reinjection.every_n_prompts | 5 | Positive safe integer; inject on every Nth eligible prompt per session/workspace. MCP calls do not advance it. |
 | autoretention.enabled | false | Boolean; renders configured guidance when enabled and rules exist. |
@@ -246,3 +248,27 @@ Estimated complexity: moderate, subject to a native-host feasibility gate. Reche
 - Prove the approval route before implementation. Current hook documentation does not support `PreToolUse`'s `permissionDecision: "ask"`; do not rely on it. Test denial, missing/expired approval, changed content and policy precedence without exposing memory payloads in logs.
 
 Estimated complexity: moderate for deterministic restrictions, moderate to high for selective verified approval. Pattern checks cannot perfectly classify broad concepts such as personal data or secrets, and `always_persist` cannot guarantee that the model notices every eligible fact. These controls would govern Nanomneme MCP writes, not native Codex memory generation, other adapters or separate CLI/UI writes.
+
+## Project startup briefs
+
+A summary is an explicitly supplied, persisted project work account. A brief is an on-demand deterministic historical view of eligible summaries; it is not another memory record and uses no separate model or transcript access. Save the [JSON example](../../../docs/examples/project-summary.json) using `nmnm summary add --file summary.json --json`, then inspect `nmnm brief`. Configure the existing user or project `nmnm.jsonc`:
+
+```json
+{
+  "brief": { "enabled": true }
+}
+```
+
+Brief delivery defaults off. Project `brief.enabled` overrides the user value, including explicit false. A malformed brief-only object disables the brief without discarding otherwise valid ordinary context. Invalid broader settings retain their existing behavior. User settings may enable delivery across projects, but each brief reads only the receiving project's store. Existing ordinary global previews remain available; no global brief is constructed.
+
+Codex delivers the brief through the separately enabled/trusted SessionStart and configured UserPromptSubmit hooks. Existing SessionEnd cadence cleanup remains unchanged; no new hook registration or MCP tool is introduced.
+
+The unchanged total injection budget covers guidance, pins where supported, brief and recent previews. Guidance and pins keep priority; the brief receives at most 1000 UTF-16 code units and half the remaining space, including separators. Unused allocation returns to recent previews. If full primary content cannot fit, the core emits a complete historical-data warning, UUID/date/status/title pointer and recall guidance; if that fallback cannot fit, it emits nothing. Only emitted project source IDs are excluded from unpinned recent previews. Explicit pins may intentionally duplicate a brief source. Disabled or failed brief delivery retains ordinary preview behavior; malformed/unsupported/inconsistent summaries remain ordinary records rather than being silently repaired.
+
+Use the existing `recall_memory` tool with the returned project UUID for full detail; existing tool output limits still apply. `nmnm summary update <id> --file summary.json` corrects an active supported summary. Existing removal, explicit restoration, expiry and transfer operations apply. Brief reads are read-only and unlogged and never create a missing store. See the [core/CLI contract](../../../docs/CORE_CLI_MANUAL.md#project-work-summaries-and-briefs) for fields, limits, historical scope and concurrent-update behavior.
+
+Brief validation distinguishes direct hook/cadence and paged MCP recall tests from native CLI prompt delivery. Run `NMNM_CODEX_NATIVE=/absolute/codex node --test adapters/codex/test/native-brief.test.js` from the repository with Python 3.11+ and existing trusted Nanomneme hooks in the applicable `CODEX_HOME`. The test uses temporary project summaries, an ephemeral native session and a local Responses fixture; MCP servers and prompt reinjection are disabled for that invocation. It checks enabled/disabled SessionStart provider-request delivery and unchanged configuration/hook hashes. It does not register hooks, grant trust, bypass hook review or establish real-model compliance. A missing or stale trust prerequisite fails the enabled-delivery assertion.
+
+A bounded native real-model observation on 2026-11-25 also passed: a fresh ephemeral Codex session received a CLI-supplied planning summary and returned its objective, outcome, verification, unresolved question, next step, historical authorization and source UUID without those facts repeated in the prompt. It reported no current implementation approval. Subsequent CLI correction/removal changed brief rendering; configuration/trust hashes stayed unchanged. This is one continuity sample, not general model-compliance or other-host acceptance.
+
+To remove a brief source, use `nmnm summary remove <id> --json` with its project summary UUID. Briefs have no separate stored ID; the next configured refresh/reinjection or new session renders the remaining eligible summaries, or no brief when none remain. Already-injected context is unchanged.

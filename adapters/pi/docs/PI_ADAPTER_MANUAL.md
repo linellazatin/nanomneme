@@ -93,6 +93,7 @@ Copy this `nmnm.jsonc` template to either settings location for context options.
 {
   // Total character limit for transient autoretention guidance and the memory index.
   "injection_budget": 2000,
+  "brief": { "enabled": false },
 
   // Disabled unless explicitly true. Rebuild current bounded context every five user prompts.
   "reinjection": {
@@ -260,3 +261,23 @@ Injection still uses the `before_agent_start` system-prompt return. Structured s
 Markdown memory storage, consolidation, separate compaction handoff, and auto-resume are unsupported, regardless of settings/pins/browser use. See the [Core and CLI Manual](../../../docs/CORE_CLI_MANUAL.md) and [adapter quick start](../README.md).
 
 See the [Logger manual](../../../docs/LOGGER.md#source-and-artifact-map) for the shared source/artifact map and build/distribution checks.
+
+## Project startup briefs
+
+A summary is an explicitly supplied, persisted project work account. A brief is an on-demand deterministic historical view of eligible summaries; it is not another memory record and uses no separate model or transcript access. Save the [JSON example](../../../docs/examples/project-summary.json) using `nmnm summary add --file summary.json --json`, then inspect `nmnm brief`. Configure the existing user or project `nmnm.jsonc`:
+
+```json
+{
+  "brief": { "enabled": true }
+}
+```
+
+Brief delivery defaults off. Project `brief.enabled` overrides the user value, including explicit false. A malformed brief-only object disables the brief without discarding otherwise valid ordinary context. Invalid broader settings retain their existing behavior. User settings may enable delivery across projects, but each brief reads only the receiving project's store. Existing ordinary global previews remain available; no global brief is constructed.
+
+Pi delivers the brief at session startup and on its existing refresh, compaction and enabled prompt-cadence events. Untrusted project context is excluded; global memory is never a fallback for a project brief.
+
+The unchanged total injection budget covers guidance, pins where supported, brief and recent previews. Guidance and pins keep priority; the brief receives at most 1000 UTF-16 code units and half the remaining space, including separators. Unused allocation returns to recent previews. If full primary content cannot fit, the core emits a complete historical-data warning, UUID/date/status/title pointer and recall guidance; if that fallback cannot fit, it emits nothing. Only emitted project source IDs are excluded from unpinned recent previews. Explicit pins may intentionally duplicate a brief source. Disabled or failed brief delivery retains ordinary preview behavior; malformed/unsupported/inconsistent summaries remain ordinary records rather than being silently repaired.
+
+Use the existing `recall_memory` tool with the returned project UUID for full detail; existing tool output limits still apply. `nmnm summary update <id> --file summary.json` corrects an active supported summary. Existing removal, explicit restoration, expiry and transfer operations apply. Brief reads are read-only and unlogged and never create a missing store. See the [core/CLI contract](../../../docs/CORE_CLI_MANUAL.md#project-work-summaries-and-briefs) for fields, limits, historical scope and concurrent-update behavior.
+
+To remove a brief source, use `nmnm summary remove <id> --json` with its project summary UUID. Briefs have no separate stored ID; the next configured refresh/reinjection or new session renders the remaining eligible summaries, or no brief when none remain. Already-injected context is unchanged.

@@ -129,6 +129,7 @@ Project settings override global. Complete settings template:
   // Character budget for all transient injected context (index + autoretention).
   // Non-negative integer. Default 2000.
   "injection_budget": 2000,
+  "brief": { "enabled": false },
 
   // Periodic reinjection on UserPromptSubmit. Disabled by default.
   "reinjection": {
@@ -149,7 +150,7 @@ Project settings override global. Complete settings template:
 }
 ```
 
-`injection_budget` bounds the index plus any autoretention guidance together; a rule is never partially emitted, and guidance that alone exceeds the budget is an error. Autoretention only guides the active model; the model remains the sole decision maker and calls `retain_memory` itself.
+`injection_budget` bounds the index, optional project brief and autoretention guidance together; a rule is never partially emitted, and guidance that alone exceeds the budget is an error. Autoretention only guides the active model; the model remains the sole decision maker and calls `retain_memory` itself.
 
 ### Pins — `nmnm-claude.json`
 
@@ -187,3 +188,25 @@ Diagnostics default off. Enable shared `logging.enabled` in `~/.local/share/nano
 Claude uses its existing user settings resolver (`CLAUDE_PLUGIN_DATA` when supplied, otherwise `~/.claude/nmnm.jsonc`). Explicit MCP 4Rs and management mutations are observed; context hooks and read-only management are unlogged. Restart the MCP process to refresh cached settings. Correlation is null.
 
 `src/logslines.js` supplies the adapter-specific logging binding. The [Logger manual](../../../docs/LOGGER.md#source-and-artifact-map) owns the shared source, generated-artifact, and package-check reference.
+
+## Project startup briefs
+
+A summary is an explicitly supplied, persisted project work account. A brief is an on-demand deterministic historical view of eligible summaries; it is not another memory record and uses no separate model or transcript access. Save the [JSON example](../../../docs/examples/project-summary.json) using `nmnm summary add --file summary.json --json`, then inspect `nmnm brief`. Configure the existing user or project `nmnm.jsonc`:
+
+```json
+{
+  "brief": { "enabled": true }
+}
+```
+
+Brief delivery defaults off. Project `brief.enabled` overrides the user value, including explicit false. A malformed brief-only object disables the brief without discarding otherwise valid ordinary context. Invalid broader settings retain their existing behavior. User settings may enable delivery across projects, but each brief reads only the receiving project's store. Existing ordinary global previews remain available; no global brief is constructed.
+
+Claude delivers the brief through SessionStart and the existing enabled UserPromptSubmit cadence. No new hook or MCP tool is registered.
+
+The unchanged total injection budget covers guidance, pins where supported, brief and recent previews. Guidance and pins keep priority; the brief receives at most 1000 UTF-16 code units and half the remaining space, including separators. Unused allocation returns to recent previews. If full primary content cannot fit, the core emits a complete historical-data warning, UUID/date/status/title pointer and recall guidance; if that fallback cannot fit, it emits nothing. Only emitted project source IDs are excluded from unpinned recent previews. Explicit pins may intentionally duplicate a brief source. Disabled or failed brief delivery retains ordinary preview behavior; malformed/unsupported/inconsistent summaries remain ordinary records rather than being silently repaired.
+
+Use the existing `recall_memory` tool with the returned project UUID for full detail; existing tool output limits still apply. `nmnm summary update <id> --file summary.json` corrects an active supported summary. Existing removal, explicit restoration, expiry and transfer operations apply. Brief reads are read-only and unlogged and never create a missing store. See the [core/CLI contract](../../../docs/CORE_CLI_MANUAL.md#project-work-summaries-and-briefs) for fields, limits, historical scope and concurrent-update behavior.
+
+Credential-free native delivery check: set `NMNM_CLAUDE_NATIVE` to the installed Claude executable and run `node --test adapters/claude/test/native-brief.test.js` from the repository root. It uses temporary settings/stores, explicit startup-hook configuration and a local synthetic SSE provider; it verifies enabled/disabled prompt delivery without personal plugin registration or real-model acceptance.
+
+To remove a brief source, use `nmnm summary remove <id> --json` with its project summary UUID. Briefs have no separate stored ID; the next configured refresh/reinjection or new session renders the remaining eligible summaries, or no brief when none remain. Already-injected context is unchanged.

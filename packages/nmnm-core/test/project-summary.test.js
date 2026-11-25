@@ -4,11 +4,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
+import { execFile } from 'node:child_process';
 import * as core from '../src/index.js';
 
 const fixture = JSON.parse(readFileSync(new URL('./fixtures/project-summary.json', import.meta.url)));
 const payload = changes => ({ ...structuredClone(fixture.base_payload), ...changes });
 const empty = { text: '', source_ids: [], truncated: false, skipped_invalid: 0 };
+const captureId = '22345678-1234-4234-8234-123456789abc';
 function store(t) {
   const directory = mkdtempSync(join(tmpdir(), 'nmnm-summary-'));
   const path = join(directory, 'memory.db');
@@ -16,6 +18,58 @@ function store(t) {
   t.after(() => { db.close(); rmSync(directory, { recursive: true, force: true }); });
   return { db, path };
 }
+
+test('capture instructions and extraction require one bounded event-specific validated block', () => {
+  assert.equal(typeof core.summaryCaptureInstructions, 'function');
+  const options = { token: captureId, as_of: fixture.base_payload.as_of };
+  const instructions = core.summaryCaptureInstructions({ ...options, guidance: 'Never retain secret project beacons.' });
+  assert.match(instructions, /Never retain secret project beacons/);
+  assert.match(instructions, /approval/);
+  assert.throws(() => core.summaryCaptureInstructions({ ...options, guidance: 'x'.repeat(9000) }), /budget/);
+  const block = `NMNM_SUMMARY_${captureId}_BEGIN\n${JSON.stringify(payload())}\nNMNM_SUMMARY_${captureId}_END`;
+  assert.deepEqual(core.extractSummaryCapture(`Host summary\n${block}`, options), payload());
+  for (const text of ['', 'Host summary only', block + block, 'x'.repeat(1048577) + block, block.replace('_END', '_MISSING'), block.replace(captureId, 'wrong-token'), block.replace('"format_version":1', '"format_version":9'), block.replace('"format_version":1', 'broken json'), block.replace(fixture.base_payload.as_of, '2026-11-25T00:00:00.000Z'), block.replace('"objective":', '"unknown":1,"objective":'), block.replace('"objective":', `"padding":"${'x'.repeat(9000)}","objective":`)]) {
+    assert.equal(core.extractSummaryCapture(text, options), null);
+  }
+});
+
+test('summary capture attribution and receipts are atomic, idempotent and do not restore records', t => {
+  const { db } = store(t);
+  const input = { summary: payload(), source: 'claude-code', capture_id: captureId };
+  const first = db.retainSummary(input);
+  assert.equal(first.metadata.source, 'claude-code');
+  assert.deepEqual(first.metadata.summary_capture, { id: captureId });
+  assert.deepEqual(db.retainSummary(input), first);
+  assert.equal(db.retrieve({ namespace: 'project-summary' }).total, 1);
+  assert.throws(() => db.retainSummary({ ...input, source: 'pi' }), /capture/i);
+  assert.throws(() => db.retainSummary({ ...input, summary: payload({ objective: 'Conflicting retry.' }) }), /capture/i);
+  const corrected = db.retainSummary({ id: first.id, summary: payload({ objective: 'Corrected explicitly.' }) });
+  assert.equal(corrected.metadata.source, 'claude-code');
+  assert.deepEqual(corrected.metadata.summary_capture, { id: captureId });
+  assert.throws(() => db.retainSummary({ id: first.id, summary: payload(), source: 'pi' }), /create/i);
+  db.removeSummary({ id: first.id });
+  assert.throws(() => db.retainSummary(input), /capture/i);
+  assert.equal(db.recall({ id: first.id }), null);
+  const second = db.retainSummary({ ...input, capture_id: '32345678-1234-4234-8234-123456789abc' });
+  db.removeSummary({ id: second.id });
+  assert.equal(db.retainSummary({ ...input, capture_id: '32345678-1234-4234-8234-123456789abc' }).removed_at !== null, true);
+  assert.equal(db.recall({ id: second.id }), null);
+  const expired = db.retain({ id: second.id, expires_at: '2000-01-01T00:00:00.000Z' });
+  assert.deepEqual(db.retainSummary({ ...input, capture_id: '32345678-1234-4234-8234-123456789abc' }), expired);
+  assert.equal(db.recall({ id: second.id }), null);
+  assert.equal(db.retainSummary({ summary: payload() }).metadata.source, 'cli');
+  for (const extra of [{ source: '' }, { source: null }, { source: 'bad source' }, { capture_id: 'bad' }]) assert.throws(() => db.retainSummary({ summary: payload(), ...extra }));
+});
+
+test('independent writers serialize one capture receipt to one record', async t => {
+  const { db, path } = store(t);
+  const script = `import {open} from ${JSON.stringify(new URL('../src/index.js', import.meta.url).href)}; const db=open(${JSON.stringify(path)}); try { console.log(db.retainSummary(${JSON.stringify({ summary: fixture.base_payload, source: 'claude-code', capture_id: captureId })}).id); } finally { db.close(); }`;
+  const ids = await Promise.all([0, 1].map(() => new Promise((resolve, reject) => {
+    execFile(process.execPath, ['--input-type=module', '-e', script], (error, stdout) => error ? reject(error) : resolve(stdout.trim()));
+  })));
+  assert.equal(ids[0], ids[1]);
+  assert.equal(db.retrieve({ namespace: 'project-summary' }).total, 1);
+});
 
 test('summary validates and renders the independent handoff fixture canonically', () => {
   assert.equal(typeof core.validateProjectSummary, 'function');

@@ -3,7 +3,7 @@ import { closeSync, existsSync, linkSync, mkdirSync, openSync, statSync, unlinkS
 import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { validateProjectSummary, renderProjectSummary, renderBrief } from './project-summary.js';
-export { validateProjectSummary, renderProjectSummary } from './project-summary.js';
+export { validateProjectSummary, renderProjectSummary, summaryCaptureInstructions, extractSummaryCapture } from './project-summary.js';
 
 const DEFAULTS = Object.freeze({ kind: 'note', scope: 'project', namespace: 'default', importance: 0.5, confidence: 1 });
 const KINDS = new Set(['note', 'decision', 'preference', 'fact', 'instruction']);
@@ -559,12 +559,25 @@ export function open(path, { create = true, readOnly = false } = {}) {
     retain(input) { return retain(input); },
 
     retainSummary(input) {
-      if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(key => !['summary', 'id'].includes(key))) throw new TypeError('Invalid retainSummary input');
+      if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(key => !['summary', 'id', 'source', 'capture_id'].includes(key))) throw new TypeError('Invalid retainSummary input');
       const summary = validateProjectSummary(input.summary);
       const content = renderProjectSummary(summary);
       const id = input.id === undefined ? undefined : memoryId(input.id);
+      if (id !== undefined && (input.source !== undefined || input.capture_id !== undefined)) throw new TypeError('Summary attribution and capture receipts are create-only');
+      const source = slug(input.source === undefined ? 'cli' : input.source, 'source');
+      const captureId = input.capture_id === undefined ? undefined : memoryId(input.capture_id);
       return transaction(() => {
-        if (id === undefined) return retain({ content, kind: 'note', scope: 'project', namespace: 'project-summary', metadata: { source: 'cli', summary } }, work => work());
+        if (id === undefined) {
+          if (captureId) {
+            const receipt = db.prepare("SELECT id FROM memories WHERE json_extract(metadata, '$.summary_capture.id') = ? LIMIT 1").get(captureId);
+            if (receipt) {
+              const current = read(receipt.id, false);
+              if (current.kind !== 'note' || current.scope !== 'project' || current.namespace !== 'project-summary' || current.metadata.source !== source || current.content !== content || JSON.stringify(current.metadata.summary) !== JSON.stringify(summary)) throw new RangeError('Summary capture receipt conflicts with an existing record');
+              return current;
+            }
+          }
+          return retain({ content, kind: 'note', scope: 'project', namespace: 'project-summary', metadata: { source, summary, ...(captureId ? { summary_capture: { id: captureId } } : {}) } }, work => work());
+        }
         const current = read(id);
         if (!current || current.kind !== 'note' || current.scope !== 'project' || current.namespace !== 'project-summary'
           || current.metadata.summary?.format !== 'nanomneme/project-summary' || current.metadata.summary?.format_version !== 1) throw new RangeError('Target must be an active supported project summary');

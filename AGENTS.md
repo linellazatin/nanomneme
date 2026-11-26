@@ -75,7 +75,7 @@ UI and Claude logging bundle JSONC; core keeps it external. Diagnostics default 
 
 - Block CI/release on `npm audit --audit-level=high --omit=dev`; keep `npm audit --audit-level=high` informational. Recheck the lockfile and registry rather than relying on historical clean-audit claims.
 - Declare host-harness dependencies with a tested minimum compatible version rather than an exact pin.
-- Keep the root OpenCode Zod/Effect TOML overrides until the upstream fixes are verified. Exact selections belong in the manifest/lock; root overrides protect checkout/CI npm installs, not independently installed adapters or Bun caches.
+- Keep the root OpenCode Zod/Effect TOML overrides until the upstream fixes are verified. Exact selections belong in the manifest/lock; root overrides protect checkout/CI npm installs, not independently installed adapters or Bun caches. The documented [standalone OpenCode audit exception](adapters/opencode/docs/OPENCODE_ADAPTER_MANUAL.md#standalone-dependency-audit-exception) does not waive the checkout production audit.
 - After an upstream fix, remove applicable overrides and rerun frozen install, adapter/native-host checks, production audit and standalone validation. Keep the tested host floor; do not force audit downgrades. Root and Claude's independent lockfiles must each resolve patched external dependencies.
 
 Pack-output parsing accepts arrays and package-name-keyed objects, rejecting mismatched packages/versions and malformed or unsafe file lists.

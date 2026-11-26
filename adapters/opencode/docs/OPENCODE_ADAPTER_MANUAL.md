@@ -57,7 +57,13 @@ V1's separate `./tui` entry (`tui.js` → `src/tui-v1.js`) uses the same bridge 
 
 ## Install
 
-Registry examples use the published package; use the local development instructions below for unpublished changes. Manifests and lockfiles define dependency requirements. Root-only security overrides do not propagate to independently installed adapters or Bun-managed caches; upstream dependency fixes remain pending.
+Registry examples use the published package; use the local development instructions below for unpublished changes. Manifests and lockfiles define dependency requirements. See the [standalone dependency audit exception](#standalone-dependency-audit-exception) before choosing an installation route.
+
+### Standalone dependency audit exception
+
+The release accepts known high-severity advisories in the independently resolved OpenCode dependency tree while upstream fixes are pending. Fresh standalone npm installs of the previous release and this release candidate both failed `npm audit --omit=dev --audit-level=high`. The affected tree comes through `@opencode-ai/plugin`, including [Zod](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5) and [TOML](https://github.com/advisories/GHSA-4qx8-w7c3-pj3p) via Effect. The audit identifies affected versions; it does not establish whether Nanomneme reaches the affected code.
+
+The blocking checkout audit remains in place. Its root overrides do not apply to standalone npm installs or OpenCode's Bun-managed plugin cache. To use the audited resolution for these dependencies, run `npm ci` in the checkout and load the adapter by local path as described below. Retire this exception once an upstream-compatible standalone install passes the high-severity audit and the native compatibility checks.
 
 ### OpenCode V2
 

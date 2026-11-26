@@ -44,7 +44,7 @@ See [CHANGELOG](CHANGELOG.md) for release history, feature introductions, and br
 >
 
 >
-> ### Note to users that still use 'older' coding agents ver: 
+> ### Note to users that still use 'older' coding agents ver:
 > - pi < v1.x.x
 > - opencode < v2.x.x
 >
@@ -93,9 +93,9 @@ Nanomneme helps agents remember without pretending to be human memory.
 - **Human and agent output:** readable terminal messages or structured JSON, with JSONL reserved for exports.
 - **Safe targeting:** project defaults, standard global storage, explicit `--db` paths, `--both` retrieval, and validated command-specific options.
 
-### $\color{green}{\text{NEW}}$ Project summaries and startup briefs
+### Project summaries and startup briefs
 
-Inspired by Codex-style continuity, this feature started with manual project checkpoints and deterministic briefs. Autosummaries add eligible output from existing compaction calls. Manual capture uses the separately installed CLI; **neither path requires transcript ingestion, a separate model or extra inference**.
+**NEW!** Inspired by Codex-style continuity, this feature started with manual project checkpoints and deterministic briefs. Autosummaries add eligible output from existing compaction calls. Manual capture uses the separately installed CLI; **neither path requires transcript ingestion, a separate model or extra inference**.
 
 A **summary** is a durable UUID-backed record: `kind: note`, `scope: project`, `namespace: project-summary`, readable content and validated `metadata.summary`. Structured `nanomneme/project-summary` payloads contain title/`as_of`, objective, state/outcome/verification, decisions, questions, next steps, historical authorization and optional references. Native `nanomneme/native-compaction-summary` payloads preserve title/`as_of`/text. Both have an 8192-byte normalized UTF-8 limit, source attribution and optional retry-deduplication receipts.
 

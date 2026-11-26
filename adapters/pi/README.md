@@ -34,6 +34,18 @@ Pi package for the [nanomneme](https://nanomneme.openlines.dev) SQLite memory ad
 - **Safety boundaries:** terminal-safe display of stored text, validated pin targets, serialized atomic pin updates, ambiguity-safe removal, soft-only slash removal, non-creating native reads, and durable unresolved pins.
 
 
+### Project summaries and briefs
+
+Pi passes completed `session_compact` text directly to core as a bounded `nanomneme/native-compaction-summary` project note. It adds no structured work/authorization claims or model call. Core renders shared historical briefs.
+
+| Capability | Pi behavior |
+| --- | --- |
+| Manual summaries | Use shared CLI JSON add/update/remove commands in the project |
+| Compaction autosummaries | Default-off `summary.autocapture.enabled` authorizes unattended capture, including headless use, independently of ordinary autoretention rules; trust, validation and replay checks remain |
+| Briefs | Independently enable `brief.enabled` for startup and existing refresh/cadence delivery within context budgets |
+
+See the [overview and matrix](../../README.md#project-summaries-and-startup-briefs), [native capture contract](docs/PI_ADAPTER_MANUAL.md#native-compaction-checkpoints) and [manual JSON/lifecycle](../../docs/CORE_CLI_MANUAL.md#project-work-summaries-and-briefs).
+
 ## Quickstart
 
 >
@@ -74,6 +86,9 @@ See the [Pi Adapter Manual](docs/PI_ADAPTER_MANUAL.md) for npm, Git, and local i
 
 ## Project startup briefs
 
-Set `brief.enabled` to true in the existing user/project `nmnm.jsonc` to include a deterministic project handoff through existing context delivery. Default is off; project false overrides user enablement. Save summaries explicitly with `nmnm summary add --file summary.json`, then preview `nmnm brief`. No transcript ingestion, global brief store or separate model is involved. Guidance and pins retain priority within the existing budget. See [configuration, timing and limits](docs/PI_ADAPTER_MANUAL.md#project-startup-briefs).
+Set `brief.enabled` to true in the existing user/project `nmnm.jsonc` to include a deterministic project handoff through existing context delivery. Default is off; project false overrides user enablement. Use explicit summaries saved with `nmnm summary add --file summary.json` or eligible compaction autosummaries already saved in the project, then preview `nmnm brief`. No transcript ingestion, global brief store or separate model is involved. The brief uses space left by ordinary context. See [configuration, timing and limits](docs/PI_ADAPTER_MANUAL.md#project-startup-briefs).
 
 To remove a brief source, use `nmnm summary remove <id> --json` with its project summary UUID. Briefs have no separate stored ID; the next configured refresh/reinjection or new session renders the remaining eligible summaries, or no brief when none remain. Already-injected context is unchanged.
+
+
+Opt-in `summary.autocapture.enabled` automatically saves eligible completed native compaction text, including headless operation, independently of ordinary autoretention rules. Trusted project routing, current capture enablement and the normalized 8192-byte payload limit are required; invalid, oversized or ineligible captures save nothing. No extra model call is made. See [native checkpoints](docs/PI_ADAPTER_MANUAL.md#native-compaction-checkpoints).

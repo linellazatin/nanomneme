@@ -94,6 +94,7 @@ Copy this `nmnm.jsonc` template to either settings location for context options.
   // Total character limit for transient autoretention guidance and the memory index.
   "injection_budget": 2000,
   "brief": { "enabled": false },
+  "summary": { "autocapture": { "enabled": false } },
 
   // Disabled unless explicitly true. Rebuild current bounded context every five user prompts.
   "reinjection": {
@@ -222,6 +223,8 @@ Stopping all writers is mandatory: this pathname lock is not a process-owned ker
 
 ### Status card fields
 
+`Summary autocapture` reports disabled or automatic native capture requirements. `Last summary capture` reports the most recent outcome; enabled configuration never promises a write.
+
 `/memory status` and the Pi TUI browser’s Status tab show the same read-only card:
 
 | Field | Meaning |
@@ -231,6 +234,8 @@ Stopping all writers is mandatory: this pathname lock is not a process-owned ker
 | `Prompts since injection` | Eligible prompts counted with reinjection enabled; resets after a successful context build. |
 | `Last` | This session's last successful injection: trigger, timestamp, entry count, and full character count, or `none`. Not a database write/browser action. |
 | `Autoretention` | Whether effective autoretention guidance is enabled for the current index. |
+| `Summary autocapture` | Effective capture enablement and trusted-project requirements. |
+| `Last summary capture` | Latest capture outcome or `none`; saved checkpoints still contain unverified historical claims. |
 | `Pins` | Configured project and global pin counts, including pins whose targets are currently unresolved. |
 | `Index` | Effective budget, next-injection payload characters (including inter-section separator), and unresolved pins; no payload content. |
 | `Error` | Latest context-build/status-read error and timestamp, or `none`; successful context builds clear it. |
@@ -258,13 +263,13 @@ Pi 1.5 introduced pi-schema tool validation; the adapter retains TypeBox imports
 
 Injection still uses the `before_agent_start` system-prompt return. Structured sections introduced in Pi 0.87 remain a separate behavior/cache probe; Pi 0.99 guidance prefers them over whole-prompt replacement. This release changes neither the replacement path nor injection lifecycle and claims no cache improvement.
 
-Markdown memory storage, consolidation, separate compaction handoff, and auto-resume are unsupported, regardless of settings/pins/browser use. See the [Core and CLI Manual](../../../docs/CORE_CLI_MANUAL.md) and [adapter quick start](../README.md).
+Markdown memory/handoff storage, consolidation and automatic session resume remain unsupported, regardless of settings/pins/browser use. See the [Core and CLI Manual](../../../docs/CORE_CLI_MANUAL.md) and [adapter quick start](../README.md).
 
 See the [Logger manual](../../../docs/LOGGER.md#source-and-artifact-map) for the shared source/artifact map and build/distribution checks.
 
 ## Project startup briefs
 
-A summary is an explicitly supplied, persisted project work account. A brief is an on-demand deterministic historical view of eligible summaries; it is not another memory record and uses no separate model or transcript access. Save the [JSON example](../../../docs/examples/project-summary.json) using `nmnm summary add --file summary.json --json`, then inspect `nmnm brief`. Configure the existing user or project `nmnm.jsonc`:
+A summary is a persisted project work account supplied explicitly or captured by a supported adapter during compaction. A brief is an on-demand deterministic historical view of eligible summaries; it is not another memory record and uses no separate model or transcript access. Save the [JSON example](../../../docs/examples/project-summary.json) using `nmnm summary add --file summary.json --json`, then inspect `nmnm brief`. Configure the existing user or project `nmnm.jsonc`:
 
 ```json
 {
@@ -276,8 +281,29 @@ Brief delivery defaults off. Project `brief.enabled` overrides the user value, i
 
 Pi delivers the brief at session startup and on its existing refresh, compaction and enabled prompt-cadence events. Untrusted project context is excluded; global memory is never a fallback for a project brief.
 
-The unchanged total injection budget covers guidance, pins where supported, brief and recent previews. Guidance and pins keep priority; the brief receives at most 1000 UTF-16 code units and half the remaining space, including separators. Unused allocation returns to recent previews. If full primary content cannot fit, the core emits a complete historical-data warning, UUID/date/status/title pointer and recall guidance; if that fallback cannot fit, it emits nothing. Only emitted project source IDs are excluded from unpinned recent previews. Explicit pins may intentionally duplicate a brief source. Disabled or failed brief delivery retains ordinary preview behavior; malformed/unsupported/inconsistent summaries remain ordinary records rather than being silently repaired.
+The adapter budgets ordinary guidance and memory previews first, including pins where supported. The brief uses up to 1000 UTF-16 code units of spare space after separators. It can repeat a summary already shown as an ordinary preview. The core emits full primary content or a complete UUID, date, status and title pointer with recall guidance. If neither fits, or the brief read fails, ordinary context remains available.
 
 Use the existing `recall_memory` tool with the returned project UUID for full detail; existing tool output limits still apply. `nmnm summary update <id> --file summary.json` corrects an active supported summary. Existing removal, explicit restoration, expiry and transfer operations apply. Brief reads are read-only and unlogged and never create a missing store. See the [core/CLI contract](../../../docs/CORE_CLI_MANUAL.md#project-work-summaries-and-briefs) for fields, limits, historical scope and concurrent-update behavior.
 
 To remove a brief source, use `nmnm summary remove <id> --json` with its project summary UUID. Briefs have no separate stored ID; the next configured refresh/reinjection or new session renders the remaining eligible summaries, or no brief when none remain. Already-injected context is unchanged.
+
+
+## Native compaction checkpoints
+
+Compaction autosummary is an additional memory feature: Pi generates the summary during normal compaction, and Nanomneme automatically saves eligible completed text when `summary.autocapture.enabled` is true. This explicit operator opt-in is standing authorization for capture; no editor, confirmation or further approval is requested. Interactive and headless sessions use the same path. Native text is not semantically filtered or certified safe by schema validation.
+
+Capture defaults false and is independent of ordinary `autoretention.enabled`, `always_persist`, `always_ask` and `never_persist` guidance. These rules still guide ordinary model-directed memory operations but do not gate this separate capture feature. Project capture settings override user settings, including false; invalid capture-only settings disable capture without losing ordinary context. Malformed broader settings retain existing fail-open behavior. Disable `summary.autocapture.enabled` to stop capture. `brief.enabled` independently controls deterministic read-side delivery and never enables capture itself.
+
+The adapter reads the successful `session_compact` event’s completed summary. It does not change compaction prompts, replace compaction, rewrite provider requests or make another inference call. A trusted project is required. Effective capture enablement, project location and trust are checked again before saving; ineligible or disabled events create no store. There is no durable pending-text queue or automatic repair/retry.
+
+Records are project/note/project-summary with source pi and format `nanomneme/native-compaction-summary`. Full normalized text is preserved within the 8192 UTF-8 byte payload limit; oversized/invalid text is skipped whole. Completion dates do not verify claims inside the prose. Whole events, system messages, branch entries, native session/entry IDs and transcripts are not retained. Extension-produced compactions and unknown trigger values skip capture; absent trigger values are not invented. Required native entry type, bounded identifier and canonical timestamp must be present.
+
+In-process receipts suppress repeated callbacks while retained in the bounded 256-entry set. Project-scoped opaque core receipts prevent another record or restoration on replay across reloads, without prompting. Conflicts fail without repair. Generic metadata replacement, purge or store replacement can erase receipts; they are not an immutable audit ledger. No historical catch-up or global fallback occurs.
+
+Startup and `/memory status` report configuration and trusted-project requirements. The last capture row reports saved, untrusted, disabled, changed, duplicate, inactive, invalid or unavailable outcomes. A successful save queues the existing context refresh. Fresh sessions and other adapters consume the same core-rendered historical brief when their independent brief setting is enabled. Long native text normally appears as a complete recall pointer within existing budgets; use its UUID for full recall. Correct sources through `nmnm summary update <id> --file native-summary.json`; removal, explicit restoration and transfer use existing CLI/core operations.
+
+Native RPC checks use a local synthetic provider to exercise manual/automatic threshold capture, zero editor/confirmation requests, ordinary retention-rule independence, disablement, untrusted projects, provider failure and cancellation. Successful compaction uses one existing compaction request; capture adds none. Real-model summary semantics, overflow recovery and extension-generated capture remain unverified.
+
+Additional loaded-agent-runtime simulation completed 15 provider-scripted memory operations covering project/global creation, recall/search, patch, removal and restoration in 16 requests including the final continuation. The actual SDK built requests, parsed SSE and executed registered tools; only transport was substituted. This is runtime/tool-loop evidence, not native-terminal or real-model acceptance.
+
+Run `NMNM_PI_NATIVE=/absolute/path/to/pi node --test adapters/pi/test/native-compaction.test.js` from the repository root to reproduce native capture and fresh-session checks. It loads the production adapter with a local synthetic provider and no review prompts against disposable homes/projects; personal registration, trust and stores stay unchanged.

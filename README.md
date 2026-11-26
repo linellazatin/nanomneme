@@ -213,7 +213,7 @@ The npm command installs core and UI as regular CLI dependencies; the workbench 
 pi install npm:@openlines/nmnm-pi
 ```
 
-Claude Code remains a separately installed adapter.
+The separately installed Claude adapter requires Claude Code 2.1.196 or later.
 
 The Claude adapter ships generated core and logging runtimes. Its registry-only lock covers external dependencies, so PR checks and copied plugin installs no longer depend on publishing core first. See the [Claude installation and dependency refresh guide](adapters/claude/docs/CLAUDE_ADAPTER_MANUAL.md#install).
 
@@ -250,7 +250,7 @@ For any core efficiency changes, update each installation you use and restart it
 
 - **Pi:** update the installed adapter package, then restart Pi.
 - **OpenCode:** update the installed plugin, then restart the server and terminal. Keep separately registered server/TUI entries aligned; updating a checkout does not replace a cached registry plugin.
-- **Claude Code:** refresh the marketplace, update the installed plugin itself, then restart Claude Code. Refreshing only the marketplace does not replace the plugin. See the [Claude update guidance](adapters/claude/docs/CLAUDE_ADAPTER_MANUAL.md#install).
+- **Claude Code:** upgrade Claude Code to 2.1.196 or later, refresh the marketplace, update the installed plugin itself, then restart Claude Code. Refreshing only the marketplace does not replace the plugin. See the [Claude update guidance](adapters/claude/docs/CLAUDE_ADAPTER_MANUAL.md#install).
 - **CLI/core/UI:** update any separately installed copies or application dependencies and their lockfiles. Updating an adapter does not replace an unrelated global CLI. Updating the CLI brings its core and UI dependencies; restart any running workbench.
 - **Codex:** for an existing direct checkout installation, update the checkout and run these separate commands from its root, then restart Codex:
 

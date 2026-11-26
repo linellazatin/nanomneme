@@ -27,6 +27,10 @@ Core and adapters receive minor bumps for summary/brief capabilities; UI's patch
 - `nmnm-core` adds pure capture instructions/extraction and create-only summary attribution/transactional capture receipts; matching retries preserve records and removals, while conflicting retries fail. CLI defaults and canonical schema remain unchanged.
 - `nmnm-core` validates and stores explicitly supplied project work summaries and renders deterministic bounded historical briefs without models, transcript access, schema migration or read-side writes.
 
+### Compatibility
+
+- `nmnm-claude` now requires **Claude Code 2.1.196 or later**. Capture needs matching prompt IDs in `PreCompact` and `PostCompact`; older hosts without `PostCompact` can **reject** the entire hook file even when capture is off. Upgrade the host before updating the plugin.
+
 ### Fixed
 
 - Briefs and the `nmnm-codex` capture notice use spare context budget so they cannot displace ordinary guidance or memory previews.

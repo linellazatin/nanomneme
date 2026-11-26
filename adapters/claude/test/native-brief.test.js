@@ -40,14 +40,12 @@ test('native Claude delivers an opted-in project brief to a local synthetic prov
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => { server.closeAllConnections(); server.close(); });
-  const command = `"${process.execPath}" "${fileURLToPath(new URL('../hooks/session-start.js', import.meta.url))}"`;
-  const settings = join(root, 'settings.json');
-  writeFileSync(settings, JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: 'command', command }] }] } }));
+  const plugin = fileURLToPath(new URL('../', import.meta.url));
   const env = { PATH: process.env.PATH, HOME: root, TERM: 'dumb', ANTHROPIC_API_KEY: 'synthetic-not-a-secret', ANTHROPIC_BASE_URL: `http://127.0.0.1:${server.address().port}`, DISABLE_TELEMETRY: '1' };
   for (const enabled of [true, false]) {
     writeFileSync(join(cwd, '.nanomneme/nmnm.jsonc'), JSON.stringify({ brief: { enabled } }));
     const start = requests.length;
-    const child = spawn(host, ['--print', '--model', 'local-fixture', '--output-format', 'json', '--settings', settings, '--setting-sources', '', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--tools', '', '--', 'Synthetic context check. Reply ok.'], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(host, ['--print', '--model', 'local-fixture', '--output-format', 'json', '--plugin-dir', plugin, '--setting-sources', '', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--tools', '', '--', 'Synthetic context check. Reply ok.'], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '', stderr = '';
     child.stdout.on('data', chunk => { stdout += chunk; });
     child.stderr.on('data', chunk => { stderr += chunk; });

@@ -57,15 +57,13 @@ test('native Claude production hooks capture checkpoints without extra inference
       const input = JSON.parse(Buffer.concat(chunks));
       appendFileSync(${JSON.stringify(proof)}, JSON.stringify({ event: input.hook_event_name, trigger: input.trigger, summaryAvailable: typeof input.compact_summary === 'string' }) + '\\n');
     `);
-    const nativeCommand = `"${process.execPath}" "${fileURLToPath(new URL('../hooks/compaction.js', import.meta.url))}"`;
-    writeFileSync(settings, JSON.stringify({ hooks: {
-      ...Object.fromEntries(['PreCompact', 'PostCompact'].map(event => [event, [{ hooks: [{ type: 'command', command: nativeCommand }, { type: 'command', command: `"${process.execPath}" "${hook}"` }, ...(scenario === 'cancelled' && event === 'PreCompact' ? [{ type: 'command', command: `"${process.execPath}" -e "process.exit(2)"` }] : [])] }]])),
-      SessionStart: [{ hooks: [{ type: 'command', command: `"${process.execPath}" "${fileURLToPath(new URL('../hooks/session-start.js', import.meta.url))}"` }] }],
-    } }));
+    const plugin = fileURLToPath(new URL('../', import.meta.url));
+    writeFileSync(settings, JSON.stringify({ hooks: Object.fromEntries(['PreCompact', 'PostCompact'].map(event => [event, [{ hooks: [{ type: 'command', command: `"${process.execPath}" "${hook}"` }, ...(scenario === 'cancelled' && event === 'PreCompact' ? [{ type: 'command', command: `"${process.execPath}" -e "process.exit(2)"` }] : [])] }]])) }));
     let autoWindow = false;
     const env = { PATH: process.env.PATH, HOME: home, TMPDIR: temp, TERM: 'dumb', ANTHROPIC_API_KEY: 'synthetic-not-a-secret', ANTHROPIC_BASE_URL: `http://127.0.0.1:${server.address().port}`, DISABLE_TELEMETRY: '1' };
     async function run(extra, prompt) {
-      const child = spawn(host, ['--print', '--model', 'local-fixture', ...(automatic && autoWindow ? ['--autocompact', '100000'] : []), '--output-format', 'json', '--settings', settings, '--setting-sources', '', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--tools', '', ...extra, '--', prompt], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+      const runEnv = automatic && autoWindow ? { ...env, CLAUDE_CODE_AUTO_COMPACT_WINDOW: '100000' } : env;
+      const child = spawn(host, ['--print', '--model', 'local-fixture', '--output-format', 'json', '--plugin-dir', plugin, '--settings', settings, '--setting-sources', '', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--tools', '', ...extra, '--', prompt], { cwd, env: runEnv, stdio: ['ignore', 'pipe', 'pipe'] });
       let stdout = '', stderr = ''; child.stdout.on('data', chunk => { stdout += chunk; }); child.stderr.on('data', chunk => { stderr += chunk; });
       const timer = setTimeout(() => child.kill('SIGKILL'), 20000);
       const code = await new Promise((resolve, reject) => { child.once('error', reject); child.once('close', resolve); }).finally(() => clearTimeout(timer));
@@ -77,7 +75,8 @@ test('native Claude production hooks capture checkpoints without extra inference
     answer = 'We are evaluating storage. No implementation is authorized.';
     inputTokens = 100;
     let seed = await run([], 'Plan storage evaluation only. Recovery is unresolved; implementation needs approval.');
-    if (automatic) for (let index = 0; index < 6; index++) {
+    // The minimum host needs several turns before manual compaction runs inference.
+    for (let index = 0; index < (automatic ? 6 : 3); index++) {
       inputTokens = index === 5 ? 150000 : 100;
       seed = await run(['--resume', seed.session_id], `Planning continuation ${index}; no implementation.`);
     }
@@ -93,7 +92,6 @@ test('native Claude production hooks capture checkpoints without extra inference
     };
     rejectCompaction = scenario === 'failed';
     const compacted = await run(['--resume', seed.session_id], automatic ? 'Continue reviewing the plan.' : '/compact');
-    if (!automatic) assert.equal(compacted.local_command, 'compact');
     if (['cancelled', 'failed'].includes(scenario)) {
       const events = readFileSync(proof, 'utf8').trim().split('\n').map(JSON.parse);
       assert.deepEqual(events.map(event => event.event), ['PreCompact']);
@@ -103,7 +101,7 @@ test('native Claude production hooks capture checkpoints without extra inference
     }
     const counts = compactionCounts[automatic ? 'auto' : 'manual'];
     counts.push(requests.length - start);
-    assert.ok(counts.at(-1) > 0);
+    assert.ok(counts.at(-1) > 0, `${scenario}: ${compacted.result}`);
     assert.equal(JSON.stringify(requests.slice(start)).includes('Nanomneme optional project checkpoint:'), enabled);
     const events = readFileSync(proof, 'utf8').trim().split('\n').map(JSON.parse);
     assert.deepEqual(events.map(event => event.event), ['PreCompact', 'PostCompact'], JSON.stringify({ compacted: {result:compacted.result, local_command:compacted.local_command}, requests:requests.length-start, events }));

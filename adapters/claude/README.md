@@ -23,7 +23,7 @@ No extra inference, transcript reads or repair turns. See the [overview and matr
 
 ## Install
 
-Requires Node.js 22.13+ with FTS5 in built-in `node:sqlite`; Node.js 22.19.0 is tested. Claude Code installs this plugin through the nanomneme marketplace (`.claude-plugin/marketplace.json` at the repo root):
+Requires Claude Code 2.1.196 or later and Node.js 22.13+ with FTS5 in built-in `node:sqlite`. Upgrade Claude Code before updating the plugin. Older hosts may reject the entire hook file even when capture is disabled. Install through the nanomneme marketplace (`.claude-plugin/marketplace.json` at the repo root):
 
 ```
 /plugin marketplace add linellazatin/nanomneme

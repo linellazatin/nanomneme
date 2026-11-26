@@ -61,6 +61,23 @@ test('summary capture attribution and receipts are atomic, idempotent and do not
   for (const extra of [{ source: '' }, { source: null }, { source: 'bad source' }, { capture_id: 'bad' }]) assert.throws(() => db.retainSummary({ summary: payload(), ...extra }));
 });
 
+test('a matching capture receipt survives a JSON transfer with reordered summary keys', t => {
+  const { db: original } = store(t);
+  const { db: imported } = store(t);
+  const input = { summary: payload(), source: 'claude-code', capture_id: captureId };
+  const first = original.retainSummary(input);
+  original.removeSummary({ id: first.id });
+  const records = JSON.parse(JSON.stringify(original.export(), (_key, value) =>
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)))
+      : value));
+  imported.import(records);
+
+  assert.deepEqual(imported.retainSummary(input), records[0]);
+  assert.deepEqual(imported.export(), records);
+  assert.equal(imported.recall({ id: first.id }), null);
+});
+
 test('independent writers serialize one capture receipt to one record', async t => {
   const { db, path } = store(t);
   const script = `import {open} from ${JSON.stringify(new URL('../src/index.js', import.meta.url).href)}; const db=open(${JSON.stringify(path)}); try { console.log(db.retainSummary(${JSON.stringify({ summary: fixture.base_payload, source: 'claude-code', capture_id: captureId })}).id); } finally { db.close(); }`;

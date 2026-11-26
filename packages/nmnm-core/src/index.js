@@ -572,7 +572,9 @@ export function open(path, { create = true, readOnly = false } = {}) {
             const receipt = db.prepare("SELECT id FROM memories WHERE json_extract(metadata, '$.summary_capture.id') = ? LIMIT 1").get(captureId);
             if (receipt) {
               const current = read(receipt.id, false);
-              if (current.kind !== 'note' || current.scope !== 'project' || current.namespace !== 'project-summary' || current.metadata.source !== source || current.content !== content || JSON.stringify(current.metadata.summary) !== JSON.stringify(summary)) throw new RangeError('Summary capture receipt conflicts with an existing record');
+              let storedSummary;
+              try { storedSummary = validateSummary(current.metadata.summary); } catch { /* An invalid stored payload conflicts with the receipt. */ }
+              if (current.kind !== 'note' || current.scope !== 'project' || current.namespace !== 'project-summary' || current.metadata.source !== source || current.content !== content || JSON.stringify(storedSummary) !== JSON.stringify(summary)) throw new RangeError('Summary capture receipt conflicts with an existing record');
               return current;
             }
           }

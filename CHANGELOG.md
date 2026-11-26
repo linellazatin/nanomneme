@@ -36,6 +36,7 @@ Core and adapters receive minor bumps for summary/brief capabilities; UI's patch
 
 - Briefs and the `nmnm-codex` capture notice use spare context budget so they cannot displace ordinary guidance or memory previews.
 - `nmnm-core` rejects sparse summary arrays during validation with a field-specific error.
+- Matching capture retries survive JSON export/import that reorders object keys, without writing a duplicate or restoring a removed record.
 
 ### Documentation
 
@@ -44,7 +45,8 @@ Core and adapters receive minor bumps for summary/brief capabilities; UI's patch
 
 ### Validation
 
-- Native-enabled repository validation passed all 698 tests and standalone package checks. `nmnm-pi` native capture covers installed and minimum hosts, full-text persistence, fresh-session briefs, and eligibility without extra inference. Real-model semantics and overflow recovery remain unverified.
+- After the receipt fix, native-enabled `npm run validate` passed 698 of 699 (skipped 1, no failures) repository tests and standalone package checks; the trusted native Codex test was not rerun. The shipped Claude plugin passed brief delivery and manual/automatic capture on Claude Code 2.1.196 and 2.1.330.
+- `nmnm-pi` native capture covers installed and minimum hosts, full-text persistence, fresh-session briefs, and eligibility without extra inference. Real-model semantics and overflow recovery remain unverified.
 - Live simulations cover 15 scripted memory operations per native `nmnm-claude`, `nmnm-codex` and `nmnm-opencode` V1/V2 adapter and loaded `nmnm-pi` runtime, plus 34 CLI invocations across memory, summary, brief, transfer and integrity operations.
 - Native `nmnm-claude` covers manual and automatic compaction, cancellation, provider failures and rejected output. `nmnm-opencode` covers manual compaction, provider failures and absent or invalid checkpoints. Both verify provenance, fresh-session briefs and unchanged inference counts. `nmnm-pi` RPC checks cover manual and automatic capture without extra compaction calls or approval prompts.
 - Native `nmnm-codex` trusted SessionStart and `nmnm-opencode` V1/V2 brief delivery pass with synthetic providers; Codex registration/trust stays unchanged, and OpenCode disablement/source removal are covered. Installed tarball checks cover `nmnm-cli`/`nmnm-core` summary lifecycle, `nmnm-claude` generated core contracts, and `nmnm-opencode`/`nmnm-pi` capture routing.

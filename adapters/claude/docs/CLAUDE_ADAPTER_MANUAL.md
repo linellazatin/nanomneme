@@ -6,7 +6,7 @@
 
 The plugin lives at `adapters/claude` inside the nanomneme monorepo. Claude Code installs plugins through a **marketplace** (`.claude-plugin/marketplace.json`), which this repo ships at its root; the plugin manifest (`adapters/claude/.claude-plugin/plugin.json`) alone only supports local dev loading. On enable, Claude reads the bundled `.mcp.json`, `hooks/hooks.json`, `skills/memory-guide/SKILL.md`, and `commands/memory.md`.
 
-**Prerequisite:** Node.js 22.13+ (built-in `node:sqlite` with FTS5). The plugin runs Node subprocesses with full local-system access (an MCP server and two command hooks); review the source before installing.
+**Prerequisite:** Node.js 22.13+ (built-in `node:sqlite` with FTS5). The plugin runs Node subprocesses with full local-system access: an MCP server and command handlers for SessionStart, UserPromptSubmit, PreCompact and PostCompact. Review the source before installing; opt-in PostCompact capture can write project summaries.
 
 ### Option A: Install from the marketplace (recommended)
 
@@ -69,7 +69,7 @@ The stdio MCP server (`mcp/server.js`) registers four model-facing tools. Claude
 | `retrieve_memory` | Optional `query`, filters, ordering, pagination, `store` | Search or list active memories. | One store only; missing stores return `{ total: 0, items: [] }`. |
 | `remove_memory` | `id`; optional `store` | Soft-remove an active memory. | Reversible via a retain patch; purge requires CLI or UI workbench action; missing stores return `null`. |
 
-For `retain_memory`, omitted scope means the project store and `scope: "global"` means the global store. Scope is trimmed and validated before selecting or creating a store; invalid values fail without creating a database. The other tools accept `store` (`"project"` or `"global"`) to select a physical database. Project data is `./.nanomneme/memory.db`; global data is `~/.local/share/nanomneme/memory.db` on Linux and macOS. Results are canonical core JSON. Only `retain_memory` creates a missing store; reads and removal leave missing stores absent. The server resolves the project directory from `NMNM_PROJECT_DIR`, set to `${CLAUDE_PROJECT_DIR}` in `.mcp.json`, falling back to the process working directory.
+For `retain_memory`, omitted scope means the project store and `scope: "global"` means the global store. Scope is trimmed and validated before selecting or creating a store; invalid values fail without creating a database. The other tools accept `store` (`"project"` or `"global"`) to select a physical database. Project data is `./.nanomneme/memory.db`; global data is `~/.local/share/nanomneme/memory.db` on Linux and macOS. Results are canonical core JSON. Among MCP tools, only `retain_memory` creates a missing store; reads and removal leave missing stores absent. The server resolves the project directory from `NMNM_PROJECT_DIR`, set to `${CLAUDE_PROJECT_DIR}` in `.mcp.json`, falling back to the process working directory.
 
 Core hardening introduced in `0.3.0` passes through unchanged: Unicode/structured search, malformed-text and numeric-range validation, private first-use storage, and monotonic mutation timestamps. Handler tests cover validation rejections and project/global first-use creation; clock tests use frozen and backward mocks across reopened stores. Validation throws reach Claude Code as MCP tool errors with the core message verbatim and never crash the server. Retain still accepts null metadata (new records add the `claude-code` source; patches normalize it to `{}`); null rejection applies to core import/verification. Export/import/verification remain `nmnm` CLI operations, not adapter tools.
 
@@ -130,6 +130,7 @@ Project settings override global. Complete settings template:
   // Non-negative integer. Default 2000.
   "injection_budget": 2000,
   "brief": { "enabled": false },
+  "summary": { "autocapture": { "enabled": false } },
 
   // Periodic reinjection on UserPromptSubmit. Disabled by default.
   "reinjection": {
@@ -166,8 +167,8 @@ Pin mutations use a same-directory lock and atomic replacement. Competing writer
 ## Safety boundaries
 
 - Model-facing `remove_memory` is soft-only and reversible; irreversible purge requires an explicit CLI (`nmnm remove --purge`) or UI workbench action.
-- Reads and removal never create a missing store; only `retain_memory` does.
-- Injection is transient context, never a persistent session-message snapshot or an automatic memory write.
+- Reads and removal never create a missing store. Among MCP tools, only `retain_memory` creates one; eligible opt-in PostCompact capture can also create the project store.
+- Ordinary index/brief injection is transient context and does not write memories. Separately enabled compaction capture validates and saves a project summary after successful compaction.
 - The adapter never writes SQLite directly or parses CLI output; all operations go through `nmnm-core`.
 - Do not commit `.nanomneme/`, personal global databases, or pin files with local data.
 
@@ -191,7 +192,7 @@ Claude uses its existing user settings resolver (`CLAUDE_PLUGIN_DATA` when suppl
 
 ## Project startup briefs
 
-A summary is an explicitly supplied, persisted project work account. A brief is an on-demand deterministic historical view of eligible summaries; it is not another memory record and uses no separate model or transcript access. Save the [JSON example](../../../docs/examples/project-summary.json) using `nmnm summary add --file summary.json --json`, then inspect `nmnm brief`. Configure the existing user or project `nmnm.jsonc`:
+A summary is a persisted project work account supplied explicitly or captured by a supported adapter during compaction. A brief is an on-demand deterministic historical view of eligible summaries; it is not another memory record and uses no separate model or transcript access. Save the [JSON example](../../../docs/examples/project-summary.json) using `nmnm summary add --file summary.json --json`, then inspect `nmnm brief`. Configure the existing user or project `nmnm.jsonc`:
 
 ```json
 {
@@ -201,12 +202,42 @@ A summary is an explicitly supplied, persisted project work account. A brief is 
 
 Brief delivery defaults off. Project `brief.enabled` overrides the user value, including explicit false. A malformed brief-only object disables the brief without discarding otherwise valid ordinary context. Invalid broader settings retain their existing behavior. User settings may enable delivery across projects, but each brief reads only the receiving project's store. Existing ordinary global previews remain available; no global brief is constructed.
 
-Claude delivers the brief through SessionStart and the existing enabled UserPromptSubmit cadence. No new hook or MCP tool is registered.
+Claude delivers briefs through SessionStart and the existing enabled UserPromptSubmit cadence. Optional automatic capture uses the separate PreCompact/PostCompact handlers below; no new MCP tool is added.
 
-The unchanged total injection budget covers guidance, pins where supported, brief and recent previews. Guidance and pins keep priority; the brief receives at most 1000 UTF-16 code units and half the remaining space, including separators. Unused allocation returns to recent previews. If full primary content cannot fit, the core emits a complete historical-data warning, UUID/date/status/title pointer and recall guidance; if that fallback cannot fit, it emits nothing. Only emitted project source IDs are excluded from unpinned recent previews. Explicit pins may intentionally duplicate a brief source. Disabled or failed brief delivery retains ordinary preview behavior; malformed/unsupported/inconsistent summaries remain ordinary records rather than being silently repaired.
+The adapter budgets ordinary guidance and memory previews first, including pins where supported. The brief uses up to 1000 UTF-16 code units of spare space after separators. It can repeat a summary already shown as an ordinary preview. The core emits full primary content or a complete UUID, date, status and title pointer with recall guidance. If neither fits, or the brief read fails, ordinary context remains available.
 
 Use the existing `recall_memory` tool with the returned project UUID for full detail; existing tool output limits still apply. `nmnm summary update <id> --file summary.json` corrects an active supported summary. Existing removal, explicit restoration, expiry and transfer operations apply. Brief reads are read-only and unlogged and never create a missing store. See the [core/CLI contract](../../../docs/CORE_CLI_MANUAL.md#project-work-summaries-and-briefs) for fields, limits, historical scope and concurrent-update behavior.
 
 Credential-free native delivery check: set `NMNM_CLAUDE_NATIVE` to the installed Claude executable and run `node --test adapters/claude/test/native-brief.test.js` from the repository root. It uses temporary settings/stores, explicit startup-hook configuration and a local synthetic SSE provider; it verifies enabled/disabled prompt delivery without personal plugin registration or real-model acceptance.
 
 To remove a brief source, use `nmnm summary remove <id> --json` with its project summary UUID. Briefs have no separate stored ID; the next configured refresh/reinjection or new session renders the remaining eligible summaries, or no brief when none remain. Already-injected context is unchanged.
+
+## Automatic compaction checkpoints
+
+Automatic capture is opt-in and independent of brief delivery. Configure the existing user/project `nmnm.jsonc`:
+
+```json
+{
+  "summary": { "autocapture": { "enabled": true } },
+  "brief": { "enabled": true }
+}
+```
+
+Project `summary.autocapture.enabled` overrides the user value, including false. Invalid capture-only settings disable capture without discarding otherwise valid ordinary context; malformed broader settings retain their existing failure behavior. Enabling briefs never enables writes. OpenCode also supports same-call capture; Pi offers automatic native-text capture; Codex reports capture unavailable. All adapters can read eligible project summaries through existing brief delivery. Management status reports configuration and required native callbacks, not proof of installed/trusted hooks.
+
+The shipped PreCompact command adds a bounded marked JSON checkpoint request to the host's existing summarization call, preserving its normal summary. PostCompact extracts the matching checkpoint, validates the existing project-summary contract and writes through bundled core with `metadata.source: claude-code` and an opaque `metadata.summary_capture.id` receipt. No CLI subprocess, new model request, worker, transcript read or host identity bridge is introduced. Instructions and output can cost additional tokens within the existing compaction request. The model may omit the checkpoint; no repair or follow-up inference is started.
+
+Native events must supply an absolute project directory, session/prompt identifiers and a manual/auto trigger. Event identifiers only scope a hashed temporary filename; they are not stored in memories or logs. A private temporary directory holds only a random marker, timestamp, policy hash and consumed flag. Markers are eligible for one hour; changed policy, stale markers, unsafe state paths and overlapping callbacks skip capture. Each new PreCompact attempt replaces the marker; old completion blocks cannot consume the current attempt. A completed attempt is consumed before writing and never retried automatically, including after a storage failure. Temporary bookkeeping is disposable; expiry limits eligibility rather than scheduling a cleanup worker. Cancelled/failed compaction saves nothing. Native hook input and completed summary extraction are bounded to 1 MiB; the checkpoint retains the 8192-byte JSON contract limit. Oversized hook instructions skip capture rather than accepting the host's truncated instructions.
+
+Configured never/ask retention guidance is included even when ordinary autoretention injection is disabled. The model must omit the entire checkpoint if required content needs approval, policy is unclear or no useful permitted checkpoint is available. Capture opt-in is not blanket retention approval or permission to implement historical proposals. Validation enforces schema/markers/limits, not semantic classification: correct omission of sensitive content and faithful summaries still depend on the host's compaction model. Unknown verification must remain explicit. No claim of general model compliance is made.
+
+Core serializes capture receipt checks and creation in one write transaction. Matching retries return the original record without updating it or restoring a removed/expired record; conflicting content/provenance rejects the retry. Explicit summary updates preserve source and receipts. General metadata replacement or purge can remove the receipt; core deduplication requires that receipt to remain present. New captures append dated records rather than overwriting manual summaries; existing summary update/remove, export/import and brief fallback behavior applies. Successful capture is observed once as `retain` when diagnostics are enabled; skipped/read-only/replayed events are unlogged, correlation remains null, and payload/event identifiers are omitted.
+
+Upgrade/reload the plugin to load its shipped hook definitions through your normal native host process; personal hook registration/trust changes are separate. This implementation was observed on native Claude Code 2.1.330. Older or other hosts that do not expose the required events, identifiers or completed summary cannot capture automatically; manual summaries and briefs remain available.
+
+Run `NMNM_CLAUDE_NATIVE=/absolute/claude node --test adapters/claude/test/native-compaction.test.js` from the repository. It uses production hooks, disposable homes and a local synthetic provider. Manual baseline/valid/missing/invalid/malformed/oversized cases each used one compaction request; automatic disabled/enabled cases each used two requests, including the ordinary continuation. Native cancellation and provider failure saved nothing. Valid checkpoints retained Claude provenance and reached a fresh native session with their UUID and historical warning. Automatic triggering uses synthetic provider usage accounting and host-generated history. This proves native delivery/persistence and unchanged request count, not real-model generation or policy compliance.
+
+
+Additional disposable native simulation completed 15 provider-scripted memory operations through the real MCP executor: project/global creation, recall/search, patch, removal and restoration. Tool results returned to the local synthetic provider and canonical state/provenance/timestamps matched; 16 requests included the final continuation. This establishes execution and routing, not model judgment.
+
+Enabled project briefs can also include Pi native compaction checkpoints. The shared core labels that text historical/unverified and uses a complete recall pointer when full text exceeds the brief budget. Recall the project UUID for full detail; summary updates must preserve their original format.

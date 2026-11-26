@@ -2,16 +2,28 @@
 
 Claude Code adapter for [nanomneme](../../README.md): a plugin that gives Claude native, observable memory tools backed by the shared nanomneme SQLite store, plus bounded memory injection at session start. Memory is reusable across Claude, Pi, and other adapters; only the harness-facing surface differs.
 
-## What it provides
+## Features
 
 - A local stdio **MCP server** (`mcp/server.js`) exposing `retain_memory`, `recall_memory`, `retrieve_memory`, and `remove_memory`, using generated core and logging runtimes built from the checkout. New retains record `metadata.source` as `"claude-code"`; ID-based patches preserve existing source when metadata is omitted. `list` and `search` accept `--source all|claude-code`.
 - A **`SessionStart` hook** that injects optional autoretention guidance before the bounded project/global index as transient context. Disabled **`UserPromptSubmit`** reinjection reads settings only; enabled reinjection persists an ephemeral prompt counter and builds context only on its configured cadence.
 - A **`memory-guide` Skill** (`/nanomneme:memory-guide`) teaching when to use memory and how to choose project vs global.
 - A deterministic **`memory` command**: `bin/memory.js` (`status`, `list`, `search`, `show`, `pin`, `unpin`, `remove`) plus a `/nanomneme:memory` slash command that embeds it and relays output through the model. Invoke the script directly with `!` for output without a model turn.
 
+### Project summaries and briefs
+
+PreCompact adds checkpoint/retention instructions to Claude’s existing compaction call; PostCompact validates matching output and saves it through generated core. Manual and automatic summaries share project storage and historical briefs.
+
+| Capability | Claude behavior |
+| --- | --- |
+| Manual summaries | Use shared CLI JSON add/update/remove commands in the project |
+| Compaction autosummaries | Default-off `summary.autocapture.enabled`; valid matching output saves with Claude source and receipt; the compaction model must omit checkpoints not permitted by retention guidance |
+| Briefs | Independently enable `brief.enabled` for existing context-hook delivery within context budgets |
+
+No extra inference, transcript reads or repair turns. See the [overview and matrix](../../README.md#project-summaries-and-startup-briefs), [capture lifecycle](docs/CLAUDE_ADAPTER_MANUAL.md#automatic-compaction-checkpoints) and [manual JSON contract](../../docs/CORE_CLI_MANUAL.md#project-work-summaries-and-briefs).
+
 ## Install
 
-Requires Node.js 22.13+ with FTS5 in built-in `node:sqlite`; Node.js 22.19.0 is tested. Claude Code installs this plugin through the nanomneme marketplace (`.claude-plugin/marketplace.json` at the repo root):
+Requires Claude Code 2.1.196 or later and Node.js 22.13+ with FTS5 in built-in `node:sqlite`. Upgrade Claude Code before updating the plugin. Older hosts may reject the entire hook file even when capture is disabled. Install through the nanomneme marketplace (`.claude-plugin/marketplace.json` at the repo root):
 
 ```
 /plugin marketplace add linellazatin/nanomneme
@@ -42,6 +54,8 @@ node --test adapters/claude/test/*.test.js
 
 `npm run validate` also installs a disposable copied plugin from its external-only lockfile with lifecycle scripts disabled, audits that dependency tree, runs this suite and the full core contract against the generated bundle, and exercises the stdio MCP 4Rs and management CLI without installing registry core. It does not establish native Claude registration or provider behavior. See the manual's [runtime and dependency refresh procedure](docs/CLAUDE_ADAPTER_MANUAL.md#refresh-bundled-runtimes-and-external-dependencies).
 
+Opt-in [automatic compaction checkpoints](docs/CLAUDE_ADAPTER_MANUAL.md#automatic-compaction-checkpoints) use `summary.autocapture.enabled` independently of `brief.enabled`. PreCompact requests structured output in the existing model call; PostCompact validates and saves it with Claude provenance. Invalid/missing output skips capture without another inference request. Retention policy compliance remains model-dependent. Native production-hook tests cover manual/automatic compaction, failure and fresh-session brief delivery.
+
 ## Shared opt-in diagnostics
 
 Diagnostics default off. Enable shared `logging.enabled` in `~/.local/share/nanomneme/config.jsonc`. User-level adapter settings can override it. Raw error messages are not redacted. See the [Logger manual](../../docs/LOGGER.md#configuration-and-record-contract) for configuration, record fields, permissions, and privacy boundaries.
@@ -51,3 +65,11 @@ Claude uses its existing user settings resolver (`CLAUDE_PLUGIN_DATA` when suppl
 Pin mutations use a same-directory lock and atomic replacement. Competing writers receive a retry error; locks are never reclaimed automatically. After a crash, stop all adapter writers, remove the affected pin file’s `.lock` manually, then retry.
 
 `src/logslines.js` binds this adapter to its local `src/logging-runtime.generated.js`, built from the same shared observer source as core's logging export. Persistence uses the separate local `src/core-runtime.generated.js`; neither runtime requires an installed core package. See the [Logger manual](../../docs/LOGGER.md#source-and-artifact-map) for file roles and build rules.
+
+## Project startup briefs
+
+Set `brief.enabled` to true in the existing user/project `nmnm.jsonc` to include a deterministic project handoff through existing context delivery. Default is off; project false overrides user enablement. Use explicit summaries saved with `nmnm summary add --file summary.json` or eligible compaction autosummaries already saved in the project, then preview `nmnm brief`. No transcript ingestion, global brief store or separate model is involved. The brief uses space left by ordinary context. See [configuration, timing and limits](docs/CLAUDE_ADAPTER_MANUAL.md#project-startup-briefs).
+
+To remove a brief source, use `nmnm summary remove <id> --json` with its project summary UUID. Briefs have no separate stored ID; the next configured refresh/reinjection or new session renders the remaining eligible summaries, or no brief when none remain. Already-injected context is unchanged.
+
+Enabled project briefs can also include Pi native compaction checkpoints. The shared core labels that text historical/unverified and uses a complete recall pointer when full text exceeds the brief budget. Recall the project UUID for full detail; summary updates must preserve their original format.

@@ -8,6 +8,25 @@
 
 Local-first SQLite memory CLI for [nanomneme](https://github.com/linellazatin/nanomneme).
 
+## Features
+
+- **Memory management:** retain, recall, retrieve and remove memories in project/global stores, with explicit restore, purge, JSONL transfer and integrity commands.
+- **Local review workbench:** launch `nmnm ui` on demand to inspect stores and explicitly enable editing.
+
+### Project summaries and briefs
+
+The CLI manages manual and adapter-generated structured/native summaries through core. It validates JSON and previews project briefs without background generation or model calls.
+
+| Capability | CLI surface |
+| --- | --- |
+| Manual summaries | `summary add --file`, `summary update <id> --file`, `summary remove <id>`; explicit JSON file or stdin for writes |
+| Autosummaries | Recall, inspect, correct, remove, restore or transfer adapter-created records with existing commands |
+| Briefs | `nmnm brief` or `nmnm brief --budget 1000 --json`; read-only, with no store creation |
+
+Corrections preserve source/receipts and format; adapters own capture and delivery. See the [overview and matrix](../../README.md#project-summaries-and-startup-briefs) and [JSON contracts and lifecycle](../../docs/CORE_CLI_MANUAL.md#project-work-summaries-and-briefs).
+
+## Installation and usage
+
 Requires Node.js 22.19.0 or later and the built-in `node:sqlite` runtime with FTS5.
 
 Core is independently installable and does not require this CLI.
@@ -74,3 +93,22 @@ nmnm ui --version
 Diagnostics default off. Enable shared `logging.enabled` in `~/.local/share/nanomneme/config.jsonc`. Raw error messages are not redacted. See the [Logger manual](../../docs/LOGGER.md#configuration-and-record-contract) for configuration, record fields, permissions, and privacy boundaries.
 
 The CLI observes retain, recall, retrieve, remove, import, export, verify, and repair once per command. Combined retrieval and repair have one aggregate outcome; transfer output completion is included. Successful help/version/UI launch, unknown terminal commands, and temporary validation stores are unlogged. The UI owns its separate `nmnm-ui` binding for mutations and general errors. The terminal CLI reads shared settings per invocation, has no adapter override, and uses null correlation.
+
+## Project summaries and brief preview
+
+A summary is a stored project work account; a brief is a deterministic historical view of its source summaries. For explicit CLI writes, you or the current agent supplies JSON; supported adapters can also save compaction autosummaries. Nanomneme uses no separate model and reads no transcripts. Save the [JSON example](../../docs/examples/project-summary.json) locally, then use:
+
+```sh
+nmnm summary add --file summary.json --json
+nmnm brief
+nmnm brief --budget 1000 --json
+nmnm summary update <returned-id> --file summary.json --json
+```
+
+Use `--file -` for explicit stdin. These commands use only the current project's store and reject global/custom selectors. Invalid input is rejected before store creation. `brief` is read-only, unlogged, and quiet when the store is absent or empty. Summary writes log as `retain`. Update replaces the complete payload of an active supported summary while preserving identity and original provenance; concurrent updates use last-successful-write semantics. Existing recall/retrieve/remove, explicit restore, purge and export/import remain available. Adapter brief delivery is opt-in through existing `brief.enabled` context settings. See the [complete contract and limits](../../docs/CORE_CLI_MANUAL.md#project-work-summaries-and-briefs).
+
+Remove a contributing summary with `nmnm summary remove <id> --json` (core: `store.removeSummary({ id })`). This guarded soft removal rejects ordinary records and changes the next brief; remaining history may become the primary source. Briefs have no separate ID. Existing explicit restoration and permanent purge remain available through general memory operations. Already-injected conversation context is not erased.
+
+Claude and OpenCode can also supply summaries through opt-in [automatic compaction capture](../../adapters/claude/docs/CLAUDE_ADAPTER_MANUAL.md#automatic-compaction-checkpoints). The existing CLI can inspect, correct or remove those records; no new CLI flag or automatic model call is introduced. `brief.enabled` remains independent of capture. OpenCode uses its native compaction hooks/live completion events; Pi offers automatic native-text capture; Codex reports capture unavailable. See the [adapter capability matrix](../../docs/CORE_CLI_MANUAL.md#automatic-capture-contract).
+
+The same summary commands accept the separate native compaction JSON contract for full-text inspection, correction and ID removal. Updates cannot switch formats. Pi capture opt-in authorizes automatic native-text persistence independently of ordinary autoretention rules; no separate model is needed. See the [native contract and working JSON](../../docs/CORE_CLI_MANUAL.md#native-compaction-summary-contract).

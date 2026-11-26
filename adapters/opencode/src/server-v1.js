@@ -1,5 +1,6 @@
 import { tool } from '@opencode-ai/plugin';
 import { storeContext, runBridge } from './bridge-client.js';
+import { createCaptureHooksV1 } from './capture-hooks.js';
 
 // OpenCode server plugin. Functional parity with the Pi and Claude Code adapters: the four
 // nanomneme 4R tools, bounded transient memory-index injection, adapter-owned pins, and
@@ -60,6 +61,7 @@ export const NanomnemePlugin = async (input = {}) => {
   }
 
   return {
+    ...createCaptureHooksV1(ctx),
     tool: {
       retain_memory: tool({
         description: 'Create or explicitly patch a nanomneme memory. Prefer project scope unless the fact clearly applies to all projects (then scope: global).',

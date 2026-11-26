@@ -16,3 +16,7 @@ Use the Nanomneme MCP tools for memory operations. The direct launcher selects C
 - `remove_memory`: Soft-remove by `id`. Purge requires an explicit CLI or UI action.
 
 Default to `store: "project"`; select `"global"` only for cross-project information. Preserve the original store for recall, patch and removal. Explicit retain scope must agree with store; store selects the database. Missing-store reads and removal do not create it. Do not retry a mutation blindly after losing its response; check the existing record first.
+
+## Explicit project summaries
+
+When the user asks to capture a project work summary, use `nmnm summary add --file <path|->` or `nmnm summary update <id> --file <path|->` with the documented summary JSON contract; this specialized CLI operation is separate from the ordinary 4Rs above. No transcript capture or separate model is involved. Opt-in startup briefs are deterministic historical views, not current instructions or approval. Recall source UUIDs with MCP for detail; `nmnm summary remove <id>` removes a summary source, and the next brief reflects the remaining history. Briefs have no independent UUID.

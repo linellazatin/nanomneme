@@ -102,9 +102,15 @@ Ordinary single-store 4Rs open writable, create-capable stores, including recall
 | `verify` | None | Report schema, integrity, tag, and FTS defects. | Read-only. |
 | `export` | None | Write canonical JSONL. | `--out` uses atomic replacement; no `--json`. |
 | `import` | `<file>` | Validate then transactionally import canonical JSONL. | No partial import. |
+| `summary add` | `--file <path\|->` | Save a supplied project work summary. | Project-only; file or explicit stdin. |
+| `summary remove` | `<id>` | Soft-remove a supported project summary by UUID. | Missing/inactive targets return null; ordinary records are rejected. |
+| `summary update` | `<id> --file <path\|->` | Replace an active supported summary payload. | Preserves identity and original provenance. |
+| `brief` | Optional `--budget <integer>` | Render a bounded historical project handoff. | Read-only; missing stores remain absent. |
 | `repair` | `--rebuild-fts` | Rebuild derived FTS rows, then verify. | Writable maintenance command. |
 
 ### Common flags
+
+`summary` and `brief` accept only their documented project-only flags; `--db`, `--global`, `--both` and explicit scope are rejected for those commands.
 
 | Flag | Value | Description | Notes |
 |---|---|---|---|
@@ -141,6 +147,124 @@ Ordinary single-store 4Rs open writable, create-capable stores, including recall
 | `--offset` | `0..1000` | Skip returned rows. | Applied across the combined `--both` sequence. |
 
 `remove` also accepts `--purge`; `export` accepts `--out <file>`; `repair` requires `--rebuild-fts`. Run `nmnm --help` for exact current syntax.
+
+## Project work summaries and briefs
+
+A **summary** is an explicitly supplied or adapter-captured account of project work, stored as a canonical note with a UUID in namespace `project-summary`. A **brief** is a bounded deterministic view of eligible summaries, generated on demand without a separate record, model, service or cache. Project storage persists across sessions using the same database; no global summary/brief or transcript collection is involved. Your current agent can draft a summary when asked, using its existing model and tokens. Unsaved conversation context cannot be recovered by this feature.
+
+See the [feature origin, architecture and component capability matrix](../README.md#project-summaries-and-startup-briefs). Manual JSON and eligible compaction output share the same storage and brief-selection rules; adapters own host capture while core owns validation/persistence/rendering. Codex autosummaries are deferred, with manual input and brief delivery available.
+
+Adapters expose no dedicated model tools for summary creation/correction. Use the separately installed CLI or a custom integration with core’s public summary APIs; ordinary memory-tool writes do not invoke summary validation/rendering. Supported automatic capture and brief delivery use core directly or through adapter runtimes, without the CLI.
+
+### Supply a summary
+
+Use the complete [JSON example](examples/project-summary.json) as `summary.json`, or supply this payload:
+
+```json
+{
+  "format": "nanomneme/project-summary",
+  "format_version": 1,
+  "title": "Synthetic planning checkpoint",
+  "as_of": "2026-11-24T09:00:00.000Z",
+  "objective": "Compare two storage approaches for a disposable example project.",
+  "state": {
+    "status": "in-progress",
+    "outcome": "Approach A selected for evaluation.",
+    "verification": "Design reviewed; implementation not started."
+  },
+  "decisions": [
+    "Evaluate approach A before approach B."
+  ],
+  "open_questions": [
+    "Measure recovery behavior."
+  ],
+  "next_steps": [
+    "Request approval before coding."
+  ],
+  "authorization": {
+    "allowed": [
+      "Assess the alternatives."
+    ],
+    "not_authorized": [
+      "Implement either approach."
+    ]
+  },
+  "references": [
+    {
+      "label": "Synthetic design",
+      "path": "docs/example-design.md"
+    }
+  ]
+}
+```
+
+```sh
+nmnm summary add --file summary.json --json
+nmnm brief
+nmnm brief --budget 1000 --json
+nmnm summary update <returned-id> --file summary.json --json
+nmnm recall <returned-id> --json
+nmnm retrieve recovery --namespace project-summary --json
+nmnm summary remove <returned-id> --json
+```
+
+`--file -` explicitly reads JSON from stdin; omitted input never reads stdin implicitly. The source is bounded to 64 KiB and must be valid UTF-8 JSON. Validation precedes writable-store creation; unknown fields, including caller-supplied scope, content and host identity, are rejected. Add/update JSON output is the complete canonical record. Text output includes its ID. Brief text output is exactly the rendered text; an empty/missing store emits nothing and creates no directories/database. JSON brief output contains exactly `text`, `source_ids`, `truncated` and `skipped_invalid`. Briefs are read-only and unlogged; summary writes use the existing `retain` diagnostic category.
+
+### JSON contract and lifecycle
+
+Require every example field except `references`, which defaults to `[]`. Objects reject unknown keys. Status is `in-progress`, `completed`, `blocked` or `superseded`. `as_of` must be a canonical, calendar-valid UTC millisecond timestamp with a four-digit year; it is supplied evidence dating, not host identity or verification. Strings are trimmed, nonempty and well-formed Unicode; controls other than newline/tab are rejected. Arrays must have a value at every index. Order is preserved and empty arrays render as `(none supplied)`. References are inert labels/paths and need not exist.
+
+Normalized payloads are limited to 8192 UTF-8 bytes. Titles and reference labels allow 160 Unicode code points, other scalar strings 2048, and array entries/reference paths 1024. String arrays and references allow at most 16 entries each. The total byte limit still applies. The format number describes the JSON contract, not the package release.
+
+The record has `kind: note`, `scope: project`, `namespace: project-summary`, `metadata.summary` containing validated input, and `metadata.source: cli` on creation. Content is the canonical readable rendering of that payload. Update takes an explicit UUID and complete replacement payload, preserving other fields and original provenance. It requires an active supported marked summary, rejects ordinary/missing/removed/expired targets, and can repair supported marked records after generic content/payload edits. Concurrent valid updates serialize; the last successful update wins. There is no optimistic revision check.
+
+Use `summary remove <id>` for guarded project-summary soft removal (`--json` returns the removal result or `null` for a missing/inactive target). It rejects ordinary records and unsupported summary markers; it does not accept `--file`, global/custom selectors or purge. The core exposes the same atomic target-check/removal as `store.removeSummary({ id })`. Existing `remove <id>` remains available for general soft removal, `retain --id <id>` for explicit restoration, and `remove <id> --purge` for permanent deletion. Expiry is managed through ordinary retain. Generic retain and UI edits can desynchronize content and metadata; briefs skip inconsistent or unsupported records until repaired through summary update. Canonical export/import preserves summary records and their IDs; it does not confer trust or host provenance.
+
+A brief has no independent UUID or stored record. Use its `source_ids` with `summary remove <id>` to remove contributing summaries. The next rendering falls back to remaining eligible history or becomes empty when no sources remain. This does not erase context already injected into a running session; observe the change on the next configured refresh/reinjection or a new session.
+
+### Native compaction summary contract
+
+The separate native format preserves host prose without inventing objective, state, verification or authorization fields. All five fields below are required; unknown keys are rejected. Title allows 160 Unicode code points; `text` is nonempty, trimmed, well-formed Unicode with only newline/tab controls. The entire normalized JSON payload, including escaped characters, must fit 8192 UTF-8 bytes. Dates use the same canonical UTC millisecond format. Oversized captures skip whole. Native completion dating is not verification of each claim.
+
+```json
+{
+  "format": "nanomneme/native-compaction-summary",
+  "format_version": 1,
+  "title": "Pi compaction checkpoint",
+  "as_of": "2026-11-25T09:00:00.000Z",
+  "text": "Synthetic native context. Historical work and authorization claims remain unverified."
+}
+```
+
+Save this as `native-summary.json`, then run `nmnm summary add --file native-summary.json --json`. Inspect with `nmnm recall <id> --json`, correct with `nmnm summary update <id> --file native-summary.json --json`, and soft-remove with `nmnm summary remove <id> --json`. Updates preserve provenance and receipts and cannot change summary format. Native and structured summaries share date/UUID ordering and brief budgets; native pointers/content explicitly identify unverified historical text. Briefs remain derived project-local views, never global memories. Existing structured validation/rendering remains strict and byte-compatible. Older readers skip unsupported native summaries while ordinary recall/transfer remains available.
+
+### Automatic capture contract
+
+Compaction autosummary is an additional adapter feature: the host’s existing compaction call generates summary content, and the adapter saves an eligible project checkpoint. Claude and OpenCode request structured checkpoints; Pi automatically captures completed native text when opted in, independently of ordinary autoretention guidance. A brief is a separate deterministic view of saved summaries, built when requested or delivered as context; it needs no model and has no independent stored record. Capture and brief delivery default off and are enabled independently.
+
+Manual CLI input and commands remain unchanged. Claude and OpenCode V1/V2 can opt into `summary.autocapture.enabled` to request the same structured payload during an existing native compaction call and save it afterward; `brief.enabled` controls delivery separately. Pi offers automatic native-text capture; Codex explicitly reports capture unavailable while preserving manual capture/brief delivery. No separate model, transcript collection, global promotion or new schema is required. See [Claude configuration and observed limits](../adapters/claude/docs/CLAUDE_ADAPTER_MANUAL.md#automatic-compaction-checkpoints), [OpenCode live-event capture](../adapters/opencode/docs/OPENCODE_ADAPTER_MANUAL.md#automatic-compaction-checkpoints) and [Pi native compaction autosummaries](../adapters/pi/docs/PI_ADAPTER_MANUAL.md#native-compaction-checkpoints).
+
+| Adapter | Automatic capture | Required native path |
+| --- | --- | --- |
+| Claude | Opt-in | PreCompact instructions and PostCompact completed summary with event identifiers |
+| OpenCode V1 | Opt-in | Additive compaction context, identified live summary text and successful completion |
+| OpenCode V2 | Opt-in | Native compaction hook and live ended event with plain-text checkpoint |
+| Pi | Opt-in, automatic native text | Successful native session_compact event, trusted project and valid bounded payload; no UI approval |
+| Codex | Unavailable | No completed summary text in supported hooks |
+
+Capture may add prompt/output tokens within the existing call. It never adds inference, reads earlier transcripts or repairs output with another turn. Opaque provider checkpoints skip capture. Schema validation does not prove factual accuracy or semantic never/ask compliance; Claude/OpenCode compaction models must omit content needing consent. Pi capture opt-in is standing authorization for automatic native-text saving independently of those ordinary retention rules; enablement, project location and trust are rechecked before writing. Native text is not semantically filtered by validation. Configuration status does not establish installed native callbacks.
+
+Core `retainSummary` accepts create-only `source` (slug, default `cli`) and optional UUID `capture_id`; callers must supply accurate attribution and route to the project store. Captures store `metadata.source` and `metadata.summary_capture.id`. One write transaction checks all records for that receipt before creating a note. A matching retry returns the original record unchanged, including removed/expired state. JSON object key order does not affect the match; mismatched payload/content/provenance or an unrelated target rejects. Explicit updates preserve receipts and source; callers cannot replace attribution on patches. Canonical export/import preserves this metadata. Generic edits can cause a retry conflict; general metadata replacement or purge can delete the receipt and therefore remove core retry deduplication for that token. Receipts deduplicate operation retries, not project/session identity or equivalent summaries with different receipts.
+
+Pure `summaryCaptureInstructions({ token, as_of, guidance? })` builds a bounded additive checkpoint prompt; pure `extractSummaryCapture(text, { token, as_of })` accepts exactly one matching block, exact issued date and a valid normalized project-summary payload, otherwise returns null. Tokens are UUIDs; raw checkpoint JSON is limited to 8192 UTF-8 bytes, host summary input to 1 MiB and hook instructions to 9000 UTF-16 code units. These helpers perform no inference or storage and cannot certify semantic retention approval. Adapters own opt-in configuration, native events, pending markers, expiry, no-retry behavior, policy guidance and diagnostics. Claude uses private temporary event state; OpenCode keeps pending attempts in memory. For Claude/OpenCode, never/ask rules outrank automatic capture. Their compaction models must omit checkpoints where approval cannot be established; Pi instead uses its capture opt-in as standing authorization, independently of ordinary autoretention rules. Schema validation is not a semantic privacy filter.
+
+### Brief selection and budgets
+
+One SQLite read snapshot selects active project/note/project-summary records by payload `as_of` descending, then UUID ascending. Candidates must have valid supported payloads and exactly matching canonical content. Superseded summaries are excluded. Editing a record does not change evidence recency unless `as_of` is explicitly changed. The newest entry is a dated historical handoff, never proof of current state; removing it may expose an older historical entry. At most three earlier-summary pointers follow it. Invalid candidates encountered during selection contribute to `skipped_invalid`, which is not a full integrity audit.
+
+The default brief budget is 1000 JavaScript UTF-16 code units; any nonnegative safe integer is accepted. Full primary content is emitted when it fits. Otherwise only a historical-data warning, complete ID/date/status/title pointer and recall guidance are emitted. If even that fallback cannot fit, text and source IDs are empty. No partial sections, UUIDs or surrogate pairs are emitted. `truncated` indicates eligible content omitted by budget or pointer cap; it is false when no eligible summaries exist. The budget includes headers and separators. Source IDs describe only records actually represented. Ordinary context/recall occurs separately and does not share the brief's snapshot.
+
+Automatic adapter brief delivery is opt-in through `brief.enabled`. Adapters preserve ordinary context and use spare budget for the brief. See each adapter manual for lifecycle timing. Existing adapter tools can still inspect summaries as ordinary memory records.
 
 ## Developer guide
 
@@ -186,6 +310,9 @@ CLI 4Rs and `retrieve --both` open writable (`--both` only existing stores), so 
 
 | Method | Input | Return |
 |---|---|---|
+| `retainSummary({ summary, id?, source?, capture_id? })` | Validated project summary, optionally an active target UUID | Canonical created/updated record. |
+| `removeSummary({ id })` | Active supported project-summary UUID | Soft-removal result or `null`; rejects unrelated records atomically. |
+| `brief({ budget = 1000 })` | Nonnegative safe-integer character budget | `{ text, source_ids, truncated, skipped_invalid }`; read-only snapshot. |
 | `retain(input)` | New record fields, or existing `id` plus fields to patch | Complete stored memory. |
 | `recall({ id })` | UUID v4 | Active, unexpired memory or `null`. |
 | `retrieve(selector)` | Query, filters, ranges, ordering, and pagination | `{ total, items }`. |
@@ -205,6 +332,8 @@ New records start with equal wall-clock `created_at` and `updated_at`. Patches (
 Mutations acquire a write transaction before reading patch/removal targets or checking existing import IDs. Retain normalizes caller input before locking, merges patches with the latest committed record, and captures the result before commit. Unrelated concurrent patches are preserved; the last successfully applied patch wins for the same field. Canonical rows, tags, and FTS updates commit or roll back together. Recall, retrieval, export, and verification each read one database snapshot; CLI `--both` reads the two stores separately. A five-second SQLite busy timeout bounds lock waiting; contention can still fail, and core does not automatically retry operations.
 
 Retrieve selectors support `query`; `source` matching `metadata.source`; scalar or array `kind`, `scope`, and `namespace`; an array of `tags`; numeric `importance` and `confidence` values or `{ gt, gte, lt, lte }` ranges; `expires`; `order_by`; `limit`; and `offset`. Text retrieval uses FTS5/BM25 and supports Unicode terms. Punctuation-bearing terms such as `node.js`, `C++`, and `key:value` are quoted for SQLite tokenization, not interpreted as column filters or substring searches. Space-separated terms imply AND. Case-insensitive `AND`/`OR`/`NOT`, quoted phrases (escape embedded quotes as `""`), trailing `*` prefixes, and parentheses up to 32 levels are supported. Proximity uses `NEAR(foo bar, 2)` with an optional distance from 0 through 2147483647; infix `foo NEAR bar` searches NEAR literally. Malformed expressions, including deeper grouping, fall back to quoted literal terms with operator words retained. Queries without searchable terms return zero matches. SQLite storage failures retain their original errors. Equal lexical scores prefer higher importance, then ID. Without a query, the default is newest `updated_at` first.
+
+The main core export provides format-aware `validateSummary(payload)` and `renderSummary(payload)`, plus the unchanged structured-only `validateProjectSummary(payload)` and `renderProjectSummary(payload)`. Both are pure, reject invalid input and perform no store access or model calls. Core remains path-based: callers must open the intended project store because a record's project scope cannot certify the physical database path. Summary create/update and ordinary persistence share one mutation body; summary target checking and mutation occur under the same write transaction. Brief reads use one deferred snapshot.
 
 ### Schema ownership
 

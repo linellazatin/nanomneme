@@ -1,5 +1,56 @@
 # Changelog
 
+## 0.11.0 - Project work summaries and startup briefs
+
+### Updated components
+
+| Component | Version |
+| --- | --- |
+| Repository | 0.11.0 |
+| `@openlines/nmnm-core` | 0.4.0 |
+| `@openlines/nmnm-cli` | 0.5.0 |
+| `@openlines/nmnm-ui` | 0.1.4 |
+| `@openlines/nmnm-pi` | 0.5.0 |
+| `@openlines/nmnm-opencode` | 0.4.0 |
+| `@openlines/nmnm-claude` | 0.3.0 |
+| `@openlines/nmnm-codex` | 0.4.0 |
+
+Core and adapters receive minor bumps for summary/brief capabilities; UI's patch refreshes its core dependency only. Claude bundles the matching core and plugin version. Codex remains a private direct adapter.
+
+### Added
+
+- `nmnm-cli` adds project-only `summary add`, `summary update` and `brief`, with bounded file/stdin JSON, canonical transfer, safe summary updates and existing retain diagnostics. Automatic adapter brief delivery is opt-in.
+  - Guarded `summary remove <id>` and core `removeSummary` soft-remove project summary sources atomically; subsequent briefs fall back to remaining history or become empty.
+- `nmnm-pi`, `nmnm-opencode`, `nmnm-claude` and `nmnm-codex` context delivery supports opt-in project briefs within existing budgets, preserving ordinary guidance and previews, pin priority, and project isolation.
+- `nmnm-claude` and `nmnm-opencode` V1/V2 add default-off `summary.autocapture.enabled`: structured checkpoint generation within the existing compaction call, followed by validated project persistence; no transcript reads or repair inference. Brief delivery remains independently opt-in.
+- `nmnm-pi` adds default-off automatic native compaction capture authorized by feature opt-in, independent of ordinary autoretention rules and UI availability; shared core/CLI support bounded native-text summaries, ID corrections/removal and historical briefs across adapters. No extra inference or transcript access. Codex capture remains unavailable.
+- `nmnm-core` adds pure capture instructions/extraction and create-only summary attribution/transactional capture receipts; matching retries preserve records and removals, while conflicting retries fail. CLI defaults and canonical schema remain unchanged.
+- `nmnm-core` validates and stores explicitly supplied project work summaries and renders deterministic bounded historical briefs without models, transcript access, schema migration or read-side writes.
+
+### Compatibility and release exception
+
+- `nmnm-claude` now requires **Claude Code 2.1.196 or later**. Capture needs matching prompt IDs in `PreCompact` and `PostCompact`; older hosts without `PostCompact` can **reject** the entire hook file even when capture is off. Upgrade the host before updating the plugin.
+- This release accepts the inherited [standalone OpenCode dependency audit failure](adapters/opencode/docs/OPENCODE_ADAPTER_MANUAL.md#standalone-dependency-audit-exception) pending upstream fixes. The checkout production audit remains blocking; root overrides do not protect registry installs or Bun-managed caches.
+
+### Fixed
+
+- Briefs and the `nmnm-codex` capture notice use spare context budget so they cannot displace ordinary guidance or memory previews.
+- `nmnm-core` rejects sparse summary arrays during validation with a field-specific error.
+- Matching capture retries survive JSON export/import that reorders object keys, without writing a duplicate or restoring a removed record.
+
+### Documentation
+
+- Added dedicated summary/brief feature subsections covering origin, structured/native formats, architecture and component capability tables; `nmnm-codex` autosummary capture is explicitly deferred while manual summaries and briefs remain available.
+- Clarified summary repair after kind/namespace edits, separated `nmnm-opencode` index delivery from compaction capture, and updated `nmnm-claude` hook/write boundaries and complete capture settings template.
+
+### Validation
+
+- After the receipt fix, native-enabled `npm run validate` passed 698 of 699 (skipped 1, no failures) repository tests and standalone package checks; the trusted native Codex test was not rerun. The shipped Claude plugin passed brief delivery and manual/automatic capture on Claude Code 2.1.196 and 2.1.330.
+- `nmnm-pi` native capture covers installed and minimum hosts, full-text persistence, fresh-session briefs, and eligibility without extra inference. Real-model semantics and overflow recovery remain unverified.
+- Live simulations cover 15 scripted memory operations per native `nmnm-claude`, `nmnm-codex` and `nmnm-opencode` V1/V2 adapter and loaded `nmnm-pi` runtime, plus 34 CLI invocations across memory, summary, brief, transfer and integrity operations.
+- Native `nmnm-claude` covers manual and automatic compaction, cancellation, provider failures and rejected output. `nmnm-opencode` covers manual compaction, provider failures and absent or invalid checkpoints. Both verify provenance, fresh-session briefs and unchanged inference counts. `nmnm-pi` RPC checks cover manual and automatic capture without extra compaction calls or approval prompts.
+- Native `nmnm-codex` trusted SessionStart and `nmnm-opencode` V1/V2 brief delivery pass with synthetic providers; Codex registration/trust stays unchanged, and OpenCode disablement/source removal are covered. Installed tarball checks cover `nmnm-cli`/`nmnm-core` summary lifecycle, `nmnm-claude` generated core contracts, and `nmnm-opencode`/`nmnm-pi` capture routing.
+
 ## 0.10.0 - Core SQLite operations enhancements
 
 ### Updated components

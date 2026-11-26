@@ -24,6 +24,17 @@ function cleanup({ project, home }) {
   rmSync(home, { recursive: true, force: true });
 }
 
+test('status reports capture opt-in and its native prerequisites without creating stores', () => {
+  const f = fixture();
+  try {
+    assert.match(runCli({ argv: ['status'], ...f.ctx }).text, /Summary autocapture\s+disabled/);
+    mkdirSync(f.globalDir, { recursive: true });
+    writeFileSync(join(f.globalDir, 'nmnm.jsonc'), '{"summary":{"autocapture":{"enabled":true}}}');
+    assert.match(runCli({ argv: ['status'], ...f.ctx }).text, /Summary autocapture\s+enabled; requires native PreCompact\/PostCompact/);
+    assert.equal(existsSync(join(f.project, '.nanomneme/memory.db')), false);
+  } finally { cleanup(f); }
+});
+
 test('parseArgs recognizes every command and its optional store/paging arguments', () => {
   assert.deepEqual(parseArgs([]), { command: 'status' });
   assert.deepEqual(parseArgs(['status']), { command: 'status' });

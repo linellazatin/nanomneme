@@ -2,7 +2,7 @@ import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, r
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { parse } from 'jsonc-parser';
-import { databasePath, runMemory, supportsGlobalStore } from './store.js';
+import { databasePath, readProjectBrief, runMemory, supportsGlobalStore } from './store.js';
 
 export const DEFAULT_INJECTION_BUDGET = 2000;
 export const DEFAULT_REINJECTION_PROMPTS = 5;
@@ -39,6 +39,12 @@ function normalizedReinjection(value) {
   };
 }
 
+function normalizedBrief(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key => key !== 'enabled')
+    || (value.enabled !== undefined && typeof value.enabled !== 'boolean')) return { enabled: false };
+  return value.enabled === undefined ? {} : { enabled: value.enabled };
+}
+
 function normalizedSettings(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('Pi memory settings must be an object');
   const budget = value.injection_budget;
@@ -47,8 +53,25 @@ function normalizedSettings(value) {
   const reinjection = value.reinjection;
   return {
     ...(budget === undefined ? {} : { injection_budget: budget }),
+    ...(value.brief === undefined ? {} : { brief: normalizedBrief(value.brief) }),
+    ...(value.summary === undefined ? {} : { summary: normalizedSummary(value.summary) }),
     ...(reinjection === undefined ? {} : { reinjection: normalizedReinjection(reinjection) }),
     ...(autoretention === undefined ? {} : { autoretention: normalizedAutoretention(autoretention) }),
+  };
+}
+
+function normalizedSummary(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key => key !== 'autocapture')) return { autocapture: { enabled: false } };
+  return value.autocapture === undefined ? {} : { autocapture: normalizedBrief(value.autocapture) };
+}
+
+export function captureAvailability(options = {}) {
+  const project = options.includeProject === false ? {} : readSettings(settingsPath({ ...options, store: 'project' }));
+  const global = readSettings(settingsPath({ ...options, store: 'global' }));
+  return {
+    enabled: project.summary?.autocapture?.enabled ?? global.summary?.autocapture?.enabled ?? false,
+    supported: true,
+    reason: 'Native compaction text saves automatically in trusted projects',
   };
 }
 
@@ -247,8 +270,20 @@ export function buildMemoryIndex({ cwd, home, agentDir, platform, budget, includ
     content += next;
     total += 1;
   }
+  let brief;
+  if (includeProject && (projectSettings.brief?.enabled ?? globalSettings.brief?.enabled ?? false)) {
+    const ordinary = total ? content.trimEnd() : '';
+    const allocation = Math.min(1000, indexBudget - (ordinary ? ordinary.length + 2 : 0));
+    if (allocation > 0) {
+      try {
+        brief = readProjectBrief({ cwd, home, platform }, allocation)?.text;
+        if (brief) content = [ordinary, brief].filter(Boolean).join('\n\n');
+      } catch { /* Keep the ordinary index if the optional brief fails. */ }
+    }
+  }
   return {
     content: content.slice(0, indexBudget),
+    ...(brief ? { brief } : {}),
     autoretention,
     unresolved,
     total,

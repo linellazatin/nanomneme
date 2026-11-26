@@ -4,6 +4,29 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'node:
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 
+test('Codex reports capture unavailable without writes and bounds its context notice', async t => {
+  const { resolveSettings } = await import('../src/config.js');
+  const { buildContext } = await import('../src/context.js');
+  const home = mkdtempSync(join(tmpdir(), 'nmnm-codex-capture-')), cwd = join(home, 'project'); mkdirSync(cwd);
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  const options = { home, cwd, env: { CODEX_HOME: home } };
+  writeFileSync(join(home, 'nmnm.jsonc'), '{"summary":{"autocapture":{"enabled":true}}}');
+  const settings = resolveSettings(options);
+  assert.equal(settings.summary.autocapture.enabled, true);
+  assert.equal(settings.summary.autocapture.supported, false);
+  assert.match(buildContext(options), /autocapture: unavailable in Codex/);
+  assert.equal(buildContext({ ...options, settings: { ...settings, injection_budget: 0 } }), '');
+  assert.ok(buildContext({ ...options, settings: { ...settings, injection_budget: 20 } }).length <= 20);
+  assert.equal(existsSync(join(cwd, '.nanomneme')), false);
+  mkdirSync(join(cwd, '.nanomneme'));
+  const path = join(cwd, '.nanomneme/nmnm.jsonc');
+  writeFileSync(path, '{"summary":{"autocapture":{"enabled":false}}}');
+  assert.equal(resolveSettings(options).summary.autocapture.enabled, false);
+  writeFileSync(path, '{"summary":{"autocapture":{"enabled":"yes"}},"injection_budget":1200}');
+  assert.equal(resolveSettings(options).summary.autocapture.enabled, false);
+  assert.equal(resolveSettings(options).injection_budget, 1200);
+});
+
 test('native JSONC settings merge project scalars and complete user/project rule sets', async t => {
   const { resolveSettings } = await import('../src/config.js');
   const home = mkdtempSync(join(tmpdir(), 'nmnm-codex-config-'));

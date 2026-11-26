@@ -5,6 +5,7 @@ import {
   pin,
   pinsPath,
   readPins,
+  readCaptureSettings,
   renderContext,
   unpin,
   updatePins,
@@ -171,6 +172,8 @@ function formatShow(store, memory, pinned) {
 }
 
 export function status(ctx) {
+  const capture = readCaptureSettings(ctx);
+  const availability = ctx.captureAvailability;
   const index = buildMemoryIndex({ cwd: ctx.cwd, home: ctx.home, globalDir: ctx.globalDir, platform: ctx.platform });
   const current = renderContext(index).length;
   const pins = pinSets(ctx);
@@ -181,6 +184,7 @@ export function status(ctx) {
     statusLine('Injection budget', `${index.budget} • ${current} • ur: ${index.unresolved}`),
     statusLine('Periodic reinjection', index.reinjection.enabled ? `every ${index.reinjection.every_n_prompts} prompts` : 'disabled'),
     statusLine('Autoretention', index.autoretention ? 'enabled' : 'disabled'),
+    statusLine('Summary autocapture', !capture.enabled ? 'disabled' : availability?.supported === false ? `unavailable: ${availability.reason}` : 'enabled; requires compatible native compaction callbacks and completed plain-text checkpoints'),
     statusLine('Pins', `project: ${pins.project.size} • global: ${pins.global.size}`),
     statusLine('Memories', `project: ${totals.project} • global: ${totals.global}`),
   ].join('\n');

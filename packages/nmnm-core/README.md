@@ -8,6 +8,25 @@
 
 Deterministic local SQLite memory storage for [nanomneme](https://github.com/linellazatin/nanomneme).
 
+## Features
+
+- **Local memory operations:** deterministic SQLite retain, recall, retrieve and remove, with project/global scope, full-text search and canonical JSONL transfer.
+- **Integrity and lifecycle controls:** read-only opens, verification, explicit FTS repair, expiry, reversible removal and permanent purge.
+
+### Project summaries and briefs
+
+Core stores manual and automatic summaries as canonical `project-summary` notes with validated metadata, readable content, provenance and optional receipts. Structured payloads record work fields; native payloads preserve bounded prose. Briefs are derived historical views.
+
+| Capability | Core responsibility |
+| --- | --- |
+| Manual summaries | `validateSummary`/`renderSummary`; `retainSummary` creation and same-format correction; `removeSummary` soft removal |
+| Autosummaries | Validate/persist adapter-supplied output atomically; matching receipts reuse records without restoring them |
+| Briefs | `store.brief` reads one snapshot, applies date/UUID ordering and budgets, and renders full content or recall pointers |
+
+Adapters own generation, capture authorization and timing; core performs no inference. See the [overview and matrix](../../README.md#project-summaries-and-startup-briefs) and [formats, examples and limits](../../docs/CORE_CLI_MANUAL.md#project-work-summaries-and-briefs).
+
+## Installation and usage
+
 Requires Node.js 22.13+ with FTS5 in built-in `node:sqlite`. The official macOS arm64 Node 22.13.0 binary lacks FTS5; use an FTS5-capable build. Node 22.19.0 is verified compatible.
 
 ```sh
@@ -51,3 +70,13 @@ On POSIX, new databases request `0600` before SQLite initialization; new directo
 ## Opt-in diagnostics
 
 `@openlines/nmnm-core/logging` exports `createMemoryLogger` via `src/logslines.js`, loading the shared generated observer without importing SQLite. Persistence methods do not auto-emit records. Component `src/logslines.js` bindings supply identity/caller settings; standalone identity defaults to `nmnm-core`. See the [Logger manual](../../docs/LOGGER.md) for configuration, file roles and generation rules.
+
+## Project work summaries
+
+`validateSummary(payload)` and `renderSummary(payload)` validate and render structured work summaries and native compaction text without model calls. `validateProjectSummary(payload)` and `renderProjectSummary(payload)` retain their strict structured-only contract. `store.retainSummary({ summary, id?, source?, capture_id? })` creates or updates an active project summary; `store.brief({ budget = 1000 })` renders dated historical context from one read snapshot without writes. Summaries are ordinary project notes in namespace `project-summary`; briefs are derived views, not retained memories. No transcript access or schema migration is required. See the [contract, JSON example and lifecycle](../../docs/CORE_CLI_MANUAL.md#project-work-summaries-and-briefs). Callers own physical project-store routing; concurrent updates use last-successful-write semantics. Unknown or generically edited inconsistent summaries are skipped until repaired explicitly.
+
+Remove a contributing summary with `nmnm summary remove <id> --json` (core: `store.removeSummary({ id })`). This guarded soft removal rejects ordinary records and changes the next brief; remaining history may become the primary source. Briefs have no separate ID. Existing explicit restoration and permanent purge remain available through general memory operations. Already-injected conversation context is not erased.
+
+`source` and UUID `capture_id` are create-only caller attribution and idempotency inputs; omitted source remains `cli`. Matching capture retries return the original record without restoration or timestamp changes; conflicts reject under the write lock. Patches preserve original attribution/receipts. Pure `summaryCaptureInstructions({ token, as_of, guidance? })` and `extractSummaryCapture(text, { token, as_of })` support bounded same-call compaction output; adapters own lifecycle and policy. Claude and OpenCode consume native completed output; Pi offers automatic native-text capture; Codex reports capture unavailable. See the [capture contract](../../docs/CORE_CLI_MANUAL.md#automatic-capture-contract).
+
+Native summaries share lifecycle/receipts and project brief ordering, label claims as historical/unverified, and reject cross-format updates. Pi owns opt-in capture authorization; core validation does not certify semantic retention policy or filter sensitive text.

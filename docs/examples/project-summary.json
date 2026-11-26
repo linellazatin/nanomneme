@@ -1,0 +1,35 @@
+{
+  "format": "nanomneme/project-summary",
+  "format_version": 1,
+  "title": "Synthetic planning checkpoint",
+  "as_of": "2026-11-24T09:00:00.000Z",
+  "objective": "Compare two storage approaches for a disposable example project.",
+  "state": {
+    "status": "in-progress",
+    "outcome": "Approach A selected for evaluation.",
+    "verification": "Design reviewed; implementation not started."
+  },
+  "decisions": [
+    "Evaluate approach A before approach B."
+  ],
+  "open_questions": [
+    "Measure recovery behavior."
+  ],
+  "next_steps": [
+    "Request approval before coding."
+  ],
+  "authorization": {
+    "allowed": [
+      "Assess the alternatives."
+    ],
+    "not_authorized": [
+      "Implement either approach."
+    ]
+  },
+  "references": [
+    {
+      "label": "Synthetic design",
+      "path": "docs/example-design.md"
+    }
+  ]
+}

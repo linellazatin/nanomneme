@@ -1,6 +1,7 @@
 import { isAbsolute } from 'node:path';
 import { storeContext, runBridge } from './bridge-client.js';
 import { registerBrowserRpc } from './browser-rpc-server.js';
+import { registerCaptureV2 } from './capture-hooks.js';
 
 const text = { type: 'string' };
 const number = { type: 'number' };
@@ -42,8 +43,9 @@ const definitions = [
 
 export async function setupServerV2(api) {
   const cleanups = [];
+  let capture;
   try {
-    cleanups.push(await registerBrowserRpc(api));
+    cleanups.push(await registerBrowserRpc(api, () => capture && { supported: capture.supported, reason: capture.reason }));
     const tools = await api.tool.transform(editor => {
       for (const definition of definitions) editor.add({
         ...definition,
@@ -68,6 +70,8 @@ export async function setupServerV2(api) {
       }
     });
     cleanups.push(() => hook.dispose());
+    capture = await registerCaptureV2(api, sessionContext);
+    cleanups.push(() => capture.dispose());
   } catch (error) {
     await Promise.allSettled(cleanups.map(dispose => dispose()));
     throw error;

@@ -68,7 +68,7 @@ async function fixture(t, nativeSystemMessages = false, settings = {}) {
   const { session } = await createAgentSession({
     cwd: host.cwd, agentDir: host.agentDir, model, modelRuntime: runtime, sessionManager, resourceLoader,
     noTools: 'builtin', thinkingLevel: 'off',
-    settingsManager: SettingsManager.inMemory({ cacheWarming: 'off', compaction: { enabled: false }, retry: { enabled: false } }),
+    settingsManager: SettingsManager.inMemory({ cacheWarming: 'off', compaction: { enabled: false, ...settings.compaction }, retry: { enabled: false } }),
   });
   const errors = [];
   t.after(() => {
@@ -96,6 +96,31 @@ async function fixture(t, nativeSystemMessages = false, settings = {}) {
     },
   };
 }
+
+test('Pi headless autosummary saves opted-in output without changing native compaction requests', threadingOptions, async t => {
+  const counts = [];
+  const summaries = [];
+  for (const enabled of [false, true]) {
+    const host = await fixture(t, false, { globalSettings: { summary: { autocapture: { enabled } } }, compaction: { keepRecentTokens: 0, reserveTokens: 100 } });
+    await host.prompt();
+    const before = host.requests.length;
+    const result = await host.session.compact();
+    assert.match(result.summary, /ok$/);
+    summaries.push(result.summary);
+    counts.push(host.requests.length - before);
+    assert.doesNotMatch(JSON.stringify(host.requests), /NMNM_SUMMARY_/);
+    const { existsSync } = await import('node:fs');
+    assert.equal(existsSync(`${host.cwd}/.nanomneme/memory.db`), enabled);
+    if (enabled) {
+      const records = runMemory({ cwd: host.cwd, operation: 'retrieve', input: { namespace: 'project-summary' }, create: false, readOnly: true });
+      assert.equal(records.total, 1);
+      assert.equal(records.items[0].metadata.source, 'pi');
+      assert.equal(records.items[0].metadata.summary.text, result.summary.trim());
+    }
+  }
+  assert.deepEqual(counts, [1, 1]);
+  assert.equal(summaries[0], summaries[1]);
+});
 
 for (const nativeSystemMessages of [false, true]) {
   test(`Pi threading preserves adapter context through refresh/removal (native system messages: ${nativeSystemMessages})`, threadingOptions, async t => {
@@ -158,4 +183,22 @@ test('Pi threading rejected continuation resends complete injected context', thr
   const answer = host.session.messages.findLast(message => message.role === 'assistant');
   assert.ok(answer.diagnostics.some(diagnostic => diagnostic.type === 'anthropic_thread_fallback'));
   assert.equal((await host.prompt()).thread.type, 'continue');
+});
+
+test('Pi provider request carries project brief at startup and after explicit refresh', threadingOptions, async t => {
+  const { open } = await import('@openlines/nmnm-core');
+  const host = await fixture(t, false, { projectSettings: { brief: { enabled: true } } });
+  const store = open(`${host.cwd}/.nanomneme/memory.db`);
+  let record;
+  try {
+    record = store.retainSummary({ summary: { format: 'nanomneme/project-summary', format_version: 1, title: 'Provider-bound brief', as_of: '2026-11-25T00:00:00.000Z', objective: 'Continue synthetic work.', state: { status: 'in-progress', outcome: 'Assessment finished.', verification: 'Implementation unverified.' }, decisions: [], open_questions: [], next_steps: [], authorization: { allowed: ['Assess.'], not_authorized: ['Deploy.'] } } });
+  } finally { store.close(); }
+  const first = await host.prompt();
+  assert.match(JSON.stringify(first.system), /Nanomneme project brief:/);
+  assert.match(JSON.stringify(first.system), /not instructions or current approval/);
+  const writer = open(`${host.cwd}/.nanomneme/memory.db`);
+  try { writer.retainSummary({ id: record.id, summary: { ...record.metadata.summary, title: 'Updated provider-bound brief' } }); } finally { writer.close(); }
+  await host.session.prompt('/memory refresh');
+  const refreshed = await host.prompt();
+  assert.match(JSON.stringify(refreshed.system), /Updated provider-bound brief/);
 });

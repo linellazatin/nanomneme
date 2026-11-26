@@ -10,6 +10,7 @@ import { buildMemoryIndex, opencodeGlobalDir, renderContext } from './context.js
 import { handleTool } from './operations.js';
 import { getMemoryLogger } from './logslines.js';
 import { browsePage, detail, mutate, statusText } from './browse.js';
+import { captureOperation } from './capture.js';
 
 function respond(payload) {
   process.stdout.write(JSON.stringify(payload));
@@ -32,6 +33,10 @@ const session_id = validDiagnostic ? diagnostic?.session_id ?? null : '';
 try {
   let result;
   switch (request.op) {
+    case 'capture_prepare':
+    case 'capture_complete':
+      result = captureOperation(request.op, ctx, request);
+      break;
     case 'tool':
       result = { text: handleTool(request.name, request.params ?? {}, ctx, { logger: getMemoryLogger(ctx), session_id }).text };
       break;
@@ -46,7 +51,7 @@ try {
       break;
     }
     case 'status':
-      result = statusText({ ctx });
+      result = statusText({ ctx, captureAvailability: request.capture_availability });
       break;
     case 'browse':
       result = browsePage({ ctx, ...request });

@@ -4,6 +4,23 @@
 
 The adapter uses the standard project database, `<project>/.nanomneme/memory.db`, and global database, `~/.local/share/nanomneme/memory.db`. Existing records need no migration. Native context hooks support startup context and configured prompt reinjection; all memory writes use MCP. No Windows support is claimed.
 
+## Features
+
+- **Native memory tools:** retain, recall, retrieve and soft-remove memories through the local stdio MCP server, using project and global stores.
+- **Bounded context delivery:** separately registered trusted hooks inject memory context at startup and configured prompt intervals.
+
+### Project summaries and briefs
+
+The CLI manages supplied structured/native project summaries. Codex hooks deliver core-rendered briefs, including other adapters’ captures. PostCompact exposes lifecycle metadata without completed summary text, so autosummaries remain deferred.
+
+| Capability | Codex behavior |
+| --- | --- |
+| Manual summaries | Use shared CLI JSON add/update/remove commands in the project |
+| Compaction autosummaries | **Deferred** pending a suitable integration; enabled capture requests report unavailable, with no transcript reader or later model/tool-turn fallback |
+| Briefs | Independently enable `brief.enabled` for existing registered/trusted context-hook delivery within budgets |
+
+Supplied summaries and brief rendering need no additional model. See the [overview and matrix](../../README.md#project-summaries-and-startup-briefs), [current capture limits](docs/CODEX_ADAPTER_MANUAL.md#automatic-capture-availability) and [manual JSON contract](../../docs/CORE_CLI_MANUAL.md#project-work-summaries-and-briefs).
+
 ## Quick start
 
 Existing marketplace-plugin users must follow the [migration procedure](docs/CODEX_ADAPTER_MANUAL.md#migration-rollback-and-uninstall) before adding the direct server or hooks.
@@ -39,6 +56,7 @@ Create or keep `$CODEX_HOME/nmnm.jsonc`, defaulting to `~/.codex/nmnm.jsonc`. Th
 {
   "injection_budget": 10000,
   "brief": { "enabled": false },
+  "summary": { "autocapture": { "enabled": false } },
   "reinjection": { "enabled": true, "every_n_prompts": 5 },
   "logging": { "enabled": false },
   "autoretention": {
@@ -90,6 +108,11 @@ Removal is marked destructive and follows host approval policy. Noninteractive `
 
 ## Project startup briefs
 
-Set `brief.enabled` to true in the existing user/project `nmnm.jsonc` to include a deterministic project handoff through existing context delivery. Default is off; project false overrides user enablement. Save summaries explicitly with `nmnm summary add --file summary.json`, then preview `nmnm brief`. No transcript ingestion, global brief store or separate model is involved. Guidance and pins retain priority within the existing budget. See [configuration, timing and limits](docs/CODEX_ADAPTER_MANUAL.md#project-startup-briefs).
+Set `brief.enabled` to true in the existing user/project `nmnm.jsonc` to include a deterministic project handoff through existing context delivery. Default is off; project false overrides user enablement. Use explicit summaries saved with `nmnm summary add --file summary.json` or eligible compaction autosummaries already saved in the project, then preview `nmnm brief`. No transcript ingestion, global brief store or separate model is involved. The brief uses space left by ordinary context. See [configuration, timing and limits](docs/CODEX_ADAPTER_MANUAL.md#project-startup-briefs).
 
 To remove a brief source, use `nmnm summary remove <id> --json` with its project summary UUID. Briefs have no separate stored ID; the next configured refresh/reinjection or new session renders the remaining eligible summaries, or no brief when none remain. Already-injected context is unchanged.
+
+
+Automatic summary capture is currently unavailable in this adapter, even if `summary.autocapture.enabled` is requested. Manual summaries and project briefs remain available. See [capability limits](docs/CODEX_ADAPTER_MANUAL.md#automatic-capture-availability).
+
+Enabled project briefs can also include Pi native compaction checkpoints. The shared core labels that text historical/unverified and uses a complete recall pointer when full text exceeds the brief budget. Recall the project UUID for full detail; summary updates must preserve their original format.

@@ -82,6 +82,7 @@ The complete supported native shape in $CODEX_HOME/nmnm.jsonc, defaulting to ~/.
   // Context size per lifecycle event in JavaScript UTF-16 code units.
   "injection_budget": 10000,
   "brief": { "enabled": false },
+  "summary": { "autocapture": { "enabled": false } },
   "reinjection": {
     "enabled": true,
     "every_n_prompts": 5
@@ -251,7 +252,7 @@ Estimated complexity: moderate for deterministic restrictions, moderate to high 
 
 ## Project startup briefs
 
-A summary is an explicitly supplied, persisted project work account. A brief is an on-demand deterministic historical view of eligible summaries; it is not another memory record and uses no separate model or transcript access. Save the [JSON example](../../../docs/examples/project-summary.json) using `nmnm summary add --file summary.json --json`, then inspect `nmnm brief`. Configure the existing user or project `nmnm.jsonc`:
+A summary is a persisted project work account supplied explicitly or captured by a supported adapter during compaction. A brief is an on-demand deterministic historical view of eligible summaries; it is not another memory record and uses no separate model or transcript access. Save the [JSON example](../../../docs/examples/project-summary.json) using `nmnm summary add --file summary.json --json`, then inspect `nmnm brief`. Configure the existing user or project `nmnm.jsonc`:
 
 ```json
 {
@@ -263,7 +264,7 @@ Brief delivery defaults off. Project `brief.enabled` overrides the user value, i
 
 Codex delivers the brief through the separately enabled/trusted SessionStart and configured UserPromptSubmit hooks. Existing SessionEnd cadence cleanup remains unchanged; no new hook registration or MCP tool is introduced.
 
-The unchanged total injection budget covers guidance, pins where supported, brief and recent previews. Guidance and pins keep priority; the brief receives at most 1000 UTF-16 code units and half the remaining space, including separators. Unused allocation returns to recent previews. If full primary content cannot fit, the core emits a complete historical-data warning, UUID/date/status/title pointer and recall guidance; if that fallback cannot fit, it emits nothing. Only emitted project source IDs are excluded from unpinned recent previews. Explicit pins may intentionally duplicate a brief source. Disabled or failed brief delivery retains ordinary preview behavior; malformed/unsupported/inconsistent summaries remain ordinary records rather than being silently repaired.
+The adapter budgets ordinary guidance and memory previews first, including pins where supported. The brief uses up to 1000 UTF-16 code units of spare space after separators. It can repeat a summary already shown as an ordinary preview. The core emits full primary content or a complete UUID, date, status and title pointer with recall guidance. If neither fits, or the brief read fails, ordinary context remains available. The capture availability notice uses spare space after the brief and appears only if the whole notice fits.
 
 Use the existing `recall_memory` tool with the returned project UUID for full detail; existing tool output limits still apply. `nmnm summary update <id> --file summary.json` corrects an active supported summary. Existing removal, explicit restoration, expiry and transfer operations apply. Brief reads are read-only and unlogged and never create a missing store. See the [core/CLI contract](../../../docs/CORE_CLI_MANUAL.md#project-work-summaries-and-briefs) for fields, limits, historical scope and concurrent-update behavior.
 
@@ -272,3 +273,15 @@ Brief validation distinguishes direct hook/cadence and paged MCP recall tests fr
 A bounded native real-model observation on 2026-11-25 also passed: a fresh ephemeral Codex session received a CLI-supplied planning summary and returned its objective, outcome, verification, unresolved question, next step, historical authorization and source UUID without those facts repeated in the prompt. It reported no current implementation approval. Subsequent CLI correction/removal changed brief rendering; configuration/trust hashes stayed unchanged. This is one continuity sample, not general model-compliance or other-host acceptance.
 
 To remove a brief source, use `nmnm summary remove <id> --json` with its project summary UUID. Briefs have no separate stored ID; the next configured refresh/reinjection or new session renders the remaining eligible summaries, or no brief when none remain. Already-injected context is unchanged.
+
+
+## Automatic capture availability
+
+`summary.autocapture.enabled` defaults false and accepts project overrides, including false. Invalid capture-only settings disable the request while preserving ordinary context. Codex autosummary integration is deferred while a suitable capture path is investigated. Native PostCompact exists, but supported compaction hook inputs expose lifecycle metadata without completed summary text. The adapter does not read transcripts or defer capture into another model/tool turn. Manual `nmnm summary add/update/remove` and opt-in `brief.enabled` remain available, including briefs from summaries captured by another adapter in the same project. No global promotion or additional inference is introduced.
+
+Resolved settings expose `supported: false`; enabled requests add a bounded unavailability notice through existing context hooks. A zero context budget suppresses all output. No new hook registration is required.
+
+
+Additional disposable native simulation completed 15 provider-scripted memory operations through the direct MCP launcher: project/global creation, recall/search, patch, removal and restoration. Sixteen local Responses requests included the final continuation. Fixture MCP configuration and removal approval were command-line overrides only; personal registration/trust remained unchanged. This proves execution/routing, not model judgment.
+
+Enabled project briefs can also include Pi native compaction checkpoints. The shared core labels that text historical/unverified and uses a complete recall pointer when full text exceeds the brief budget. Recall the project UUID for full detail; summary updates must preserve their original format.

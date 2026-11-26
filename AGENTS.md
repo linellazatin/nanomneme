@@ -44,10 +44,12 @@ UI checks require Python Playwright, installed engines and root dev dependencies
 - Preserve the matching pinned CI/release Playwright image/package (`mcr.microsoft.com/playwright/python:v1.62.0-noble`), Node 22, Python 3.14, no runtime APT, 15-minute job limit, bounded setup and six-minute suite step. Chromium uses `install --only-shell chromium`; Firefox/WebKit have no reduced-shell equivalent. Retain engine-qualified evidence for seven days.
 - Follow [Workbench web standards](packages/nmnm-ui/docs/WEB_STANDARDS.md) for the WCAG 2.2 AA maintenance target, coverage, WebKit keyboard assumptions and required manual checks.
 
-## Supplied project summaries
+## Project summaries and briefs
 
-- Core owns explicit project-summary validation/storage and deterministic brief rendering; CLI provides `summary add --file <path|->`, `summary update <id> --file <path|->`, `summary remove <id>` and `brief`. No transcript ingestion or separate model is involved. Adapter brief delivery is opt-in through `brief.enabled` in existing context settings.
+- Core owns validation/storage of manually supplied and adapter-captured structured/native project summaries, plus deterministic brief rendering; CLI provides `summary add --file <path|->`, `summary update <id> --file <path|->`, `summary remove <id>` and `brief`. No transcript ingestion or separate model is involved. Adapter brief delivery is opt-in through `brief.enabled` in existing context settings.
 - Keep content derived from validated `metadata.summary`; generic/UI edits can invalidate brief eligibility. Update active supported summaries explicitly; removal/restoration/transfer use existing operations. Brief reads must remain read-only and project-local. See [summary contract](docs/CORE_CLI_MANUAL.md#project-work-summaries-and-briefs).
+
+- Claude supports default-off `summary.autocapture.enabled` independently of briefs. PreCompact augments the existing native model call; PostCompact saves only valid matching output with Claude source and a core capture receipt. Never add inference/transcript fallbacks. Temporary event markers contain no summary text; rejected/failed/replayed events must not create stores. Retention guidance is model-mediated, not a semantic privacy guarantee. OpenCode V1/V2 append instructions through native compaction hooks and consume live completed output, with Node-bridge persistence and OpenCode provenance. Pi offers automatic native-text capture; Codex autosummary integration is deferred and reports capture unavailable; Pi native capture opt-in authorizes automatic persistence independently of ordinary autoretention guidance; require trusted project routing, current capture enablement and unchanged location before saving; never replace compaction or rewrite raw provider requests to emulate support.
 
 ## Architecture
 

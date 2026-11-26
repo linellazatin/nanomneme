@@ -27,11 +27,24 @@ Local browser workbench for reviewing and cleaning memories captured by coding-a
 | Filters | Kind, exact namespace, one exact tag; combine with source/state/search. |
 | Listing | Five visible preview rows with independent scrolling; 50 records per page, newest updates first, record count, source and store labels. |
 | Details | Full content, classification, scope, source, database path, metadata, ID, and timestamps. |
+| Project summaries | Inspect stored checkpoints as ordinary notes; see [summary/brief capabilities](#project-summaries-and-briefs). |
 | Editing | Per-store authorization, changed-field patches, core validation. |
 | Cleanup | Expiry renewal/clearing, confirmed removal, explicit restore, separate purge confirmation. |
 | Drafts | Navigation/discard confirmation; draft retained when save fails or detects a conflict. |
 | Refresh | Explicit database reread; automatic list/detail refresh after successful mutations. |
 | Presentation | Package version beside memory workbench in the header, website-matched sun/moon theme toggle, fixed header/footer, keyboard focus and skip link, mobile details with Back navigation. |
+
+### Project summaries and briefs
+
+The workbench displays manual and captured summaries as ordinary notes with content and metadata. Core/CLI own their contract and canonical rendering.
+
+| Capability | Workbench behavior |
+| --- | --- |
+| Manual summaries | Inspect existing notes; use CLI summary commands for creation and canonical correction |
+| Autosummaries | Inspect/manage saved adapter records through ordinary lifecycle controls; no compaction capture |
+| Briefs | No dedicated renderer or delivery; use `nmnm brief` or adapter context delivery |
+
+Generic UI edits can invalidate brief eligibility; repair with a same-format CLI summary update. See the [overview and matrix](../../README.md#project-summaries-and-startup-briefs) and [editing boundaries](#editing).
 
 ## Launch
 
@@ -151,7 +164,7 @@ Combine recorded source, content search, kind, namespace, and tag filters.
 
 ## Editing
 
-Project work summaries appear as ordinary notes in namespace `project-summary`; no dedicated summary editor is provided. Generic content/namespace edits can desynchronize the validated summary envelope, causing brief readers to skip the record. Use CLI `summary update` with a complete payload to repair an active supported marked summary. See the [summary contract](../../docs/CORE_CLI_MANUAL.md#project-work-summaries-and-briefs).
+Project work summaries appear as ordinary notes in namespace `project-summary`; no dedicated summary editor is provided. Generic content, kind or namespace edits can make a summary ineligible for briefs. To repair it, first restore `kind: note` and `namespace: project-summary` through the editor or ordinary `retain` if changed, then use CLI `summary update` with a complete payload. The update requires an active project-scoped record with a supported summary marker in metadata. See the [summary contract](../../docs/CORE_CLI_MANUAL.md#project-work-summaries-and-briefs).
 
 Enable editing for a store, then inspect and update a memory's editable fields.
 
@@ -334,3 +347,5 @@ bash scripts/run-ui-browser-checks.sh
 - [Core and CLI Manual](../../docs/CORE_CLI_MANUAL.md): canonical contract, transfer, verification, and recovery.
 - [Changelog](../../CHANGELOG.md): repository release history.
 - Inter license: `public/assets/FONT-LICENSE.txt`; fonts/logo styling follow the Nanomneme website's Openlines design language.
+
+Native Pi compaction checkpoints remain ordinary project notes in `project-summary`. Generic UI edits can invalidate their brief eligibility; use CLI summary update with the same native format to restore canonical content. The workbench does not create compaction checkpoints or approve capture.

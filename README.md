@@ -43,6 +43,18 @@ See [CHANGELOG](CHANGELOG.md) for release history, feature introductions, and br
 > - shared validation and host compatibility gates for CI and releases
 >
 
+>
+> ### Note to users that still use 'older' coding agents ver: 
+> - pi < v1.x.x
+> - opencode < v2.x.x
+>
+> I will be bumping devDependency and compatibility floors to pi's 1.x.x and opencode's 2.x.x (including CI host validations for each). This will be initiated on the next 'minor' patch release of the project repo.
+>
+> This is for the purpose of tool improvement, by implementing adapter-specific enhancements introduced by *newer* harness releases.
+>
+> **Thank you for your support, as always. Let's keep our philosophies intact.**
+>
+
 nanomneme is a small, deterministic SQLite core for coding-agent memory: useful context survives a session without becoming an opaque service. Inspired by [`openpi-memory`](https://github.com/linellazatin/openpi-memory) and [`openclaude-memory`](https://github.com/linellazatin/openclaude-memory), and their demonstration that memory can persist in inspectable files, it replaces (or complements*) per-harness memory formats with one shared system for `Pi`, `Claude Code*`, `OpenCode`, `Codex*`, and future adapters.
 
 ## What the name means

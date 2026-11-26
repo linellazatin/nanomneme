@@ -21,7 +21,7 @@ function setup(t) {
   return { options, path, settings, render, seed, home, cwd };
 }
 
-test('brief is opt-in, project-only, read-only, and suppresses only emitted recent previews', t => {
+test('brief is opt-in, project-only, read-only, and preserves ordinary previews', t => {
   const { path, settings, render, seed, home } = setup(t);
   const record = seed();
   const disabled = render();
@@ -31,7 +31,8 @@ test('brief is opt-in, project-only, read-only, and suppresses only emitted rece
   const context = render();
   assert.match(context, /Nanomneme project brief: historical data/);
   assert.match(context, /No deployment checked\./);
-  assert.equal(context.split(record.id).length - 1, 1);
+  assert.ok(context.startsWith(disabled));
+  assert.equal(context.split(record.id).length - 1, 2);
   assert.ok(context.length <= 2000);
   assert.deepEqual(readFileSync(path), before);
   const globalPath = join(home, '.local/share/nanomneme/memory.db');
@@ -41,8 +42,8 @@ test('brief is opt-in, project-only, read-only, and suppresses only emitted rece
   assert.equal(render().split('GLOBAL_PRIVATE_CHECKPOINT').length - 1, 1);
   const withGlobal = render();
   const start = withGlobal.indexOf('Nanomneme project brief:');
-  const end = withGlobal.indexOf('Nanomneme memory index:', start);
-  assert.equal(withGlobal.slice(start, end).includes('GLOBAL_PRIVATE_CHECKPOINT'), false);
+  assert.ok(withGlobal.indexOf('GLOBAL_PRIVATE_CHECKPOINT') < start);
+  assert.equal(withGlobal.slice(start).includes('GLOBAL_PRIVATE_CHECKPOINT'), false);
   settings({ brief: { enabled: false } });
   assert.equal(render().includes('Nanomneme project brief:'), false);
 });
@@ -72,7 +73,33 @@ test('enabled briefs leave absent project stores absent and obey zero/tight budg
     assert.ok(content.length <= budget, `${budget}: ${content.length}`);
     assert.equal(content.isWellFormed(), true);
   }
-  
+});
+
+test('optional context preserves every ordinary row that fits the budget', t => {
+  const { path, settings, render, seed } = setup(t);
+  const db = open(path);
+  let pinned, recent;
+  try {
+    pinned = db.retain({ content: 'FIRST_ORDINARY ' + 'a'.repeat(250) });
+    recent = db.retain({ content: 'SECOND_ORDINARY ' + 'b'.repeat(250) });
+  } finally { db.close(); }
+  const ordinary = render();
+  assert.ok(ordinary.includes(pinned.id) && ordinary.includes(recent.id));
+  settings({ injection_budget: ordinary.length + 1, brief: { enabled: true } });
+  assert.equal(render(), ordinary, 'an empty brief must preserve the ordinary index');
+
+  const record = seed();
+  settings({});
+  const withSummary = render();
+  assert.ok(withSummary.includes(record.id) && withSummary.includes(recent.id));
+  settings({ injection_budget: withSummary.length + 1, brief: { enabled: true }, summary: { autocapture: { enabled: true } } });
+  assert.equal(render(), withSummary, 'an eligible brief must not displace ordinary context');
+
+  settings({ brief: { enabled: true } });
+  const combined = render();
+  assert.ok(combined.startsWith(withSummary));
+  assert.match(combined, /Nanomneme project brief:/);
+  assert.ok(combined.length <= 2000);
 });
 
 test('brief-only query failure and inconsistent summaries preserve ordinary context', t => {

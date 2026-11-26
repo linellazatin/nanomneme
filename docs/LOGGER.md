@@ -8,6 +8,8 @@ Nanomneme diagnostics are opt-in and append privacy-bounded `logslines/v1` JSONL
 
 The logger is intentionally shipped with `@openlines/nmnm-core/logging`, rather than fetched at runtime; Claude ships a self-contained generated copy of the same shared implementation. This lets the CLI and every adapter use one reviewed implementation and one pinned Logslines release. The observer does not serialize memory payload fields or stack traces; failed records preserve the thrown error's message and class name in `error`. Error messages are not redacted and may expose sensitive input, memory IDs, queries, or paths. Review logs before sharing.
 
+Opt-in Claude/OpenCode completed compaction capture and opt-in Pi native-text capture use the existing retain observer around validation-approved project persistence. Capture instructions, skipped/invalid output, in-process duplicate callbacks and brief reads are unlogged; Pi replay after reload can emit a retain observation for core receipt reuse; capture payloads and native event identifiers are not emitted. Correlation stays null. No new operation/event category is introduced. OpenCode validates and logs in its Node bridge, keeping SQLite out of the Bun plugin graph.
+
 ## Source and artifact map
 
 CLI `summary remove` uses the existing `remove` observer category, including not-found outcomes. CLI `summary add/update` uses the existing `retain` observer category once through stdout completion. Payloads are not logged; malformed JSON errors omit input excerpts. Brief reads and pure summary/brief rendering remain unlogged. No new operation/event catalog entry is introduced.

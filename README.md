@@ -50,7 +50,7 @@ See [CHANGELOG](CHANGELOG.md) for release history, feature introductions, and br
 >
 > I will be bumping devDependency and compatibility floors to pi's 1.x.x and opencode's 2.x.x (including CI host validations for each). This will be initiated on the next 'minor' patch release of the project repo.
 >
-> This is for the purpose of tool improvement, by implementing adapter-specific enhancements introduced by *newer* harness releases.
+> This is for the purpose of implementing further tool improvements, by adding adapter-specific enhancements introduced by *newer* harness releases.
 >
 > **Thank you for your support, as always. Let's keep our philosophies intact.**
 >
@@ -93,7 +93,7 @@ Nanomneme helps agents remember without pretending to be human memory.
 - **Human and agent output:** readable terminal messages or structured JSON, with JSONL reserved for exports.
 - **Safe targeting:** project defaults, standard global storage, explicit `--db` paths, `--both` retrieval, and validated command-specific options.
 
-### Project summaries and startup briefs
+### $\color{green}{\text{NEW}}$ Project summaries and startup briefs
 
 Inspired by Codex-style continuity, this feature started with manual project checkpoints and deterministic briefs. Autosummaries add eligible output from existing compaction calls. Manual capture uses the separately installed CLI; **neither path requires transcript ingestion, a separate model or extra inference**.
 
@@ -140,7 +140,7 @@ Diagnostics default off. CLI, UI mutations, and adapters use the shared Logsline
 - **Project and global memory:** explicit store selection with canonical records and no custom database-path parsing.
 - **Bounded automatic context:** transient autoretention guidance and the first-prompt memory index share one configurable character budget; pinned entries come first, with recent active fallback, store and recorded-source labels, unresolved-pin reporting, and refresh after successful compaction or memory mutations.
 - **Opt-in autoretention:** project/global JSONC rules guide the active model's `retain_memory` calls without a nested model, worker, or direct adapter write.
-- **Opt-in compaction autosummary:** automatically save eligible completed native compaction text into trusted project memory when opted in, independently of ordinary autoretention rules and without further UI approval, using the existing model call. Independently enable project briefs for bounded historical context at startup and refresh.
+- $\color{green}{\text{NEW}}$ **Opt-in compaction autosummary:** automatically save eligible completed native compaction text into trusted project memory when opted in, independently of ordinary autoretention rules and without further UI approval, using the existing model call. Independently enable project briefs for bounded historical context at startup and refresh.
 - **Adapter-owned configuration:** optional JSONC settings and separate JSON pin files, with project and global locations.
 - **Direct user controls:** `/memory refresh`, `status`, `list`, `remove`, `pin`, and `unpin` without model involvement; `status` reports injection state, autoretention, the effective index budget, current full-payload character count, and lifecycle metadata without exposing memory content.
 - **Native memory browser:** `/memory` and `/memory browse` open a Pi TUI menu with `Status`, `All`, `Project`, and `Global` tabs. Record details use a native action dialog; returning preserves selection. Standard selection keys honor configured `tui.select.*` bindings; arrows and `h/j/k/l` support navigation. Non-TUI UI modes use native dialogs.
@@ -152,7 +152,7 @@ Diagnostics default off. CLI, UI mutations, and adapters use the shared Logsline
 - **Shared and adapter-owned config:** project `nmnm.jsonc` settings shared with Pi and Claude, adapter-owned `nmnm-opencode.json` pins, and global settings under `${XDG_CONFIG_HOME:-~/.config}/opencode`.
 - **Model-free management CLI:** `nmnm-opencode` (`status`, `list`, `search`, `show`, `pin`, `unpin`, `remove`) with project-first combined pagination and `--source all|opencode`; purge is available through `nmnm remove --purge` or the UI workbench, outside adapter management.
 - **Model-free terminal browser:** **ctrl+alt+m** opens Status/All/Project/Global, filtering, pagination, pin/unpin, and confirmed soft removal. V1 registers via `tui.jsonc` and uses its local bridge; V2 loads `./tui` automatically or through global `cli.json`, routing operations over authenticated OpenCode RPC to server-owned stores. Reads briefly retry typed location-readiness failures; mutations never retry, and changed locations reject stale selections. See the [adapter guide](adapters/opencode/README.md) for setup and verification limits.
-- **Opt-in compaction autosummary:** native V1/V2 compaction hooks request and save eligible structured checkpoints through the Node bridge using the existing model call. Independently enabled project briefs deliver saved history in primary-request context.
+- $\color{green}{\text{NEW}}$ **Opt-in compaction autosummary:** native V1/V2 compaction hooks request and save eligible structured checkpoints through the Node bridge using the existing model call. Independently enabled project briefs deliver saved history in primary-request context.
 - **Native V1/V2 memory tools:** V2 support, introduced in adapter `0.3.0`, exposes retain, recall, retrieve, and soft remove through the server's short-lived Node bridge. Native evidence covers V1 1.19.0 and V2 2.3.0; among these tools, only retain creates missing stores and new records carry `"opencode"` source provenance. Eligible opt-in compaction capture can also create the project store.
 - **Bounded transient injection:** V1 uses its experimental system transform; V2 rebuilds context for each primary request using the session's location. Guidance precedes pins and recent memories. V2 omits the ordinary index from auxiliary generation and compaction requests; opt-in capture adds separate checkpoint instructions to the existing compaction call. The next primary request receives a fresh index.
 
@@ -163,14 +163,14 @@ Diagnostics default off. CLI, UI mutations, and adapters use the shared Logsline
 - **Shared and adapter-owned config:** project `nmnm.jsonc` settings shared with Pi, adapter-owned `nmnm-claude.json` pins, and global settings under `${CLAUDE_PLUGIN_DATA}` (fallback `~/.claude`). Memory databases remain in the standard Nanomneme locations.
 - **Model guidance:** a `memory-guide` Skill (`/nanomneme:memory-guide`) teaches the 4Rs, project-versus-global scope, and safe capture.
 - **Model-free management command:** `bin/memory.js` (`status`, `list`, `search`, `show`, `pin`, `unpin`, `remove`) reuses the shared store/context helpers; `list` and `search` accept `--source all|claude-code`. A `/nanomneme:memory` slash command embeds it and relays output verbatim, or invoke the CLI with `!` for a fully model-free path.
-- **Opt-in compaction autosummary:** PreCompact requests a structured checkpoint in the existing model call; PostCompact validates and saves eligible output. Independently enabled project briefs deliver saved history through context hooks.
+- $\color{green}{\text{NEW}}$ **Opt-in compaction autosummary:** PreCompact requests a structured checkpoint in the existing model call; PostCompact validates and saves eligible output. Independently enabled project briefs deliver saved history through context hooks.
 
 #### Codex adapter
 
 - **Native stdio MCP:** `@openlines/nmnm-codex` bundles checkout core and the locked production MCP runtime for retain, recall, retrieve and soft remove. Creation sets Codex provenance; patches preserve it, and absent-store reads/removal do not create databases.
 - **Direct registration:** a stable absolute MCP launcher binds to Codex's actual session directory without manual project-path exports. Bounded previews and lossless record paging keep model responses small.
 - **Native configuration:** user context hooks provide startup indexes, optional prompt reinjection and complete autoretention guidance from `nmnm.jsonc`. All persistence remains MCP; there is no autonomous writer, shell runner, pin management or adapter CLI. Removal follows host approval policy. Windows support is not claimed.
-- **Opt-in project briefs:** deliver saved project summaries, including compaction autosummaries from other adapters, through existing context hooks. Codex compaction autosummary capture remains unavailable.
+- $\color{green}{\text{NEW}}$ **Opt-in project briefs:** deliver saved project summaries, including compaction autosummaries from other adapters, through existing context hooks. Codex compaction autosummary capture remains unavailable.
 
 
 ## Architecture

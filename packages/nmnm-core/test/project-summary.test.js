@@ -82,6 +82,20 @@ test('summary validates and renders the independent handoff fixture canonically'
   assert.deepEqual(core.validateProjectSummary(missingReferences).references, []);
 });
 
+test('summary validation rejects empty array slots before storage', t => {
+  const { db } = store(t);
+  for (const input of [
+    payload({ decisions: new Array(1) }),
+    payload({ authorization: { ...payload().authorization, allowed: new Array(1) } }),
+    payload({ references: new Array(1) }),
+  ]) {
+    assert.throws(() => core.validateProjectSummary(input), TypeError);
+    assert.throws(() => core.validateSummary(input), /empty slots/);
+    assert.throws(() => db.retainSummary({ summary: input }), /empty slots/);
+  }
+  assert.deepEqual(db.export(), []);
+});
+
 test('summary rejects invalid contracts before mutation and accepts partial evidence', t => {
   const { db } = store(t);
   for (const example of fixture.cases.filter(c => c.change || c.omit)) {

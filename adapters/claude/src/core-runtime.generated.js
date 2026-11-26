@@ -90,9 +90,15 @@ function text(value, name, maximum = 2048) {
   if (!result || Array.from(result).length > maximum) throw new TypeError(`${name} must contain 1..${maximum} code points`);
   return result;
 }
+function array(value, name, normalize) {
+  if (!Array.isArray(value) || value.length > 16) throw new TypeError(`${name} must be an array of at most 16 entries`);
+  return Array.from({ length: value.length }, (_, index) => {
+    if (!Object.hasOwn(value, index)) throw new TypeError(`${name} must not contain empty slots`);
+    return normalize(value[index]);
+  });
+}
 function list(value, name) {
-  if (!Array.isArray(value) || value.length > 16) throw new TypeError(`${name} must be an array of at most 16 strings`);
-  return value.map((item) => text(item, name, 1024));
+  return array(value, name, (item) => text(item, name, 1024));
 }
 function validateProjectSummary(value) {
   object(value, ["format", "format_version", "title", "as_of", "objective", "state", "decisions", "open_questions", "next_steps", "authorization", "references"], "summary");
@@ -103,7 +109,6 @@ function validateProjectSummary(value) {
   if (!STATUSES.has(value.state.status)) throw new TypeError("Invalid summary status");
   object(value.authorization, ["allowed", "not_authorized"], "summary authorization");
   const references = value.references === void 0 ? [] : value.references;
-  if (!Array.isArray(references) || references.length > 16) throw new TypeError("Invalid summary references");
   const result = {
     format: FORMAT,
     format_version: 1,
@@ -115,7 +120,7 @@ function validateProjectSummary(value) {
     open_questions: list(value.open_questions, "open_questions"),
     next_steps: list(value.next_steps, "next_steps"),
     authorization: { allowed: list(value.authorization.allowed, "allowed"), not_authorized: list(value.authorization.not_authorized, "not_authorized") },
-    references: references.map((reference) => {
+    references: array(references, "references", (reference) => {
       object(reference, ["label", "path"], "summary reference");
       return { label: text(reference.label, "reference label", 160), path: text(reference.path, "reference path", 1024) };
     })

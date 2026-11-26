@@ -95,7 +95,7 @@ Nanomneme helps agents remember without pretending to be human memory.
 
 ### Project summaries and startup briefs
 
-**NEW!** Inspired by Codex-style continuity, this feature started with manual project checkpoints and deterministic briefs. Autosummaries add eligible output from existing compaction calls. Manual capture uses the separately installed CLI; **neither path requires transcript ingestion, a separate model or extra inference**.
+$\color{green}{\text{NEW}}$ Inspired by Codex-style continuity, this feature started with manual project checkpoints and deterministic briefs. Autosummaries add eligible output from existing compaction calls. Manual capture uses the separately installed CLI; **neither path requires transcript ingestion, a separate model or extra inference**.
 
 A **summary** is a durable UUID-backed record: `kind: note`, `scope: project`, `namespace: project-summary`, readable content and validated `metadata.summary`. Structured `nanomneme/project-summary` payloads contain title/`as_of`, objective, state/outcome/verification, decisions, questions, next steps, historical authorization and optional references. Native `nanomneme/native-compaction-summary` payloads preserve title/`as_of`/text. Both have an 8192-byte normalized UTF-8 limit, source attribution and optional retry-deduplication receipts.
 

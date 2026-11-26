@@ -10,10 +10,10 @@ Native evidence covers OpenCode V1 1.19.0 and V2 2.3.0, with earlier V2 2.0.29 c
 
 OpenCode adapter for [nanomneme](https://github.com/linellazatin/nanomneme): a server plugin that gives OpenCode native, observable memory tools backed by the shared nanomneme SQLite store, bounded transient memory-index injection during the session, and a model-free TUI memory browser. Memory is reusable across OpenCode, Pi, Claude Code, and other adapters; only the harness-facing surface differs.
 
-## What it provides
+## Features
 
-- A native **server plugin** (`index.js`, delegating to `src/server-v1.js` or `src/server-v2.js`) registers `retain_memory`, `recall_memory`, `retrieve_memory`, and `remove_memory`. Bun-hosted calls use the short-lived Node bridge (`src/bridge.js`) for SQLite access. No additional MCP server or daemon is introduced. New retains record `metadata.source: "opencode"`; patches preserve existing source when metadata is omitted. Only retain creates missing stores. Removal is soft; purge requires the core CLI or workbench.
-- **Bounded transient injection:** optional autoretention guidance precedes pins and recent memories. V1 uses `experimental.chat.system.transform`; V2 uses the primary session context hook, resolving the session directory each time. V2 auxiliary title/generate/compaction requests have no additional memory hook. The next primary request receives a fresh index. `reinjection` stays inert; context is never persisted.
+- A native **server plugin** (`index.js`, delegating to `src/server-v1.js` or `src/server-v2.js`) registers `retain_memory`, `recall_memory`, `retrieve_memory`, and `remove_memory`. Bun-hosted calls use the short-lived Node bridge (`src/bridge.js`) for SQLite access. No additional MCP server or daemon is introduced. New retains record `metadata.source: "opencode"`; patches preserve existing source when metadata is omitted. Among memory tools, only retain creates missing stores; eligible opt-in compaction capture can also create the project store. Removal is soft; purge requires the core CLI or workbench.
+- **Bounded transient injection:** optional autoretention guidance precedes pins and recent memories. V1 uses `experimental.chat.system.transform`; V2 uses the primary session context hook, resolving the session directory each time. V2 auxiliary title/generate requests have no additional memory hook; optional compaction capture uses a separate native hook. The next primary request receives a fresh index. `reinjection` stays inert; context is never persisted.
 - A deterministic, model-free **management CLI** — `nmnm-opencode` (`status`, `list`, `search`, `show`, `pin`, `unpin`, `remove`).
 - A model-free **terminal browser** on **ctrl+alt+m** provides Status/All/Project/Global, source cycling, pagination, pin/unpin, and confirmed soft removal. V1 uses a terminal-local bridge; V2 uses authenticated OpenCode RPC and the server's home/store paths. Location changes reject stale selections rather than mutating a different store.
 
@@ -22,6 +22,18 @@ OpenCode adapter for [nanomneme](https://github.com/linellazatin/nanomneme): a s
 ![ss-memory-list-all](docs/img/ss-memory-list-all.png)
 
 ![ss-memory-detail](docs/img/ss-memory-detail.png)
+
+### Project summaries and briefs
+
+V1 uses additive compaction context and identified live completion; V2 uses the native prompt and ended event. The Node bridge validates/saves checkpoints through core, keeping SQLite outside Bun. Manual and automatic summaries share brief rendering.
+
+| Capability | OpenCode behavior |
+| --- | --- |
+| Manual summaries | Use shared CLI JSON add/update/remove commands in the project |
+| Compaction autosummaries | Default-off `summary.autocapture.enabled`; valid matching live output saves with OpenCode source/receipt; missing, invalid or opaque output skips capture, and retention guidance controls model omission |
+| Briefs | Independently enable `brief.enabled` for primary-request context delivery within existing budgets |
+
+No extra inference or transcript reads. See the [overview and matrix](../../README.md#project-summaries-and-startup-briefs), [native capture lifecycle](docs/OPENCODE_ADAPTER_MANUAL.md#automatic-compaction-checkpoints) and [manual JSON contract](../../docs/CORE_CLI_MANUAL.md#project-work-summaries-and-briefs).
 
 ## Install
 
@@ -111,6 +123,11 @@ Pin mutations use a same-directory lock and atomic replacement. Competing writer
 
 ## Project startup briefs
 
-Set `brief.enabled` to true in the existing user/project `nmnm.jsonc` to include a deterministic project handoff through existing context delivery. Default is off; project false overrides user enablement. Save summaries explicitly with `nmnm summary add --file summary.json`, then preview `nmnm brief`. No transcript ingestion, global brief store or separate model is involved. Guidance and pins retain priority within the existing budget. See [configuration, timing and limits](docs/OPENCODE_ADAPTER_MANUAL.md#project-startup-briefs).
+Set `brief.enabled` to true in the existing user/project `nmnm.jsonc` to include a deterministic project handoff through existing context delivery. Default is off; project false overrides user enablement. Use explicit summaries saved with `nmnm summary add --file summary.json` or eligible compaction autosummaries already saved in the project, then preview `nmnm brief`. No transcript ingestion, global brief store or separate model is involved. The brief uses space left by ordinary context. See [configuration, timing and limits](docs/OPENCODE_ADAPTER_MANUAL.md#project-startup-briefs).
 
 To remove a brief source, use `nmnm summary remove <id> --json` with its project summary UUID. Briefs have no separate stored ID; the next configured refresh/reinjection or new session renders the remaining eligible summaries, or no brief when none remain. Already-injected context is unchanged.
+
+
+Default-off [automatic compaction checkpoints](docs/OPENCODE_ADAPTER_MANUAL.md#automatic-compaction-checkpoints) use `summary.autocapture.enabled` independently of `brief.enabled`. V1/V2 append instructions to the existing compaction call and validate live completed output through the Node bridge. Missing/invalid/opaque output skips capture; no transcript read or extra model request occurs. Status reports native callback requirements and connected V2 availability.
+
+Enabled project briefs can also include Pi native compaction checkpoints. The shared core labels that text historical/unverified and uses a complete recall pointer when full text exceeds the brief budget. Recall the project UUID for full detail; summary updates must preserve their original format.
